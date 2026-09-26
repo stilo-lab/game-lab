@@ -1,0 +1,18 @@
+[
+  {
+    "topic": "Moderation principle",
+    "text": "Do not punish a user solely because of one ambiguous message. Review context, previous behavior and evidence. AI recommendations are assistance, not proof."
+  },
+  {
+    "topic": "Disputes",
+    "text": "When two users are mutually escalating, prefer the private AI mediation flow. Serious scam, threat, doxxing or staff-abuse claims should be reviewed by human staff with evidence."
+  },
+  {
+    "topic": "Evidence",
+    "text": "Screenshots can be useful but may be incomplete or edited. Staff should verify message links, IDs, timestamps and server logs where possible."
+  },
+  {
+    "topic": "Appeals",
+    "text": "AI may summarize an appeal but must not decide whether a punishment is upheld or removed. A human moderator or administrator makes the decision."
+  }
+]

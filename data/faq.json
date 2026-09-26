@@ -1,0 +1,45 @@
+[
+  {
+    "question": "How do I find teammates for a game?",
+    "keywords": [
+      "teamsearch",
+      "teammate",
+      "mitspieler",
+      "team suchen",
+      "roblox team",
+      "fortnite team",
+      "brawl stars team",
+      "gta team"
+    ],
+    "answer": "Use /teamsearch. Choose your game, mode/activity, how many players you need, platform and whether a microphone is required. The bot creates a private team chat and starts a Ready Check when the team is full."
+  },
+  {
+    "question": "Which games does the bot support?",
+    "keywords": [
+      "games",
+      "spiele",
+      "welche spiele",
+      "supported games"
+    ],
+    "answer": "Use /games to see the default list. Teamsearch and events include an Other / Multi-Game option for games that are not listed."
+  },
+  {
+    "question": "How do support tickets work?",
+    "keywords": [
+      "ticket",
+      "support ticket",
+      "hilfe ticket"
+    ],
+    "answer": "Open a ticket in the support channel, choose a category and priority, then describe your problem. You can choose AI support or human support."
+  },
+  {
+    "question": "Can the AI make ban or report decisions?",
+    "keywords": [
+      "ban appeal",
+      "entbannen",
+      "report player",
+      "spieler melden"
+    ],
+    "answer": "No. Ban appeals, player reports and staff disputes require a human moderator. The AI may explain the process or summarize the case, but it does not decide punishments or appeals."
+  }
+]
