@@ -1,0 +1,19 @@
+{
+  "name": "stilo-multigame-community-bot",
+  "version": "1.2.0",
+  "description": "Multi-game Discord bot with professional staff management, AI moderation, dispute mediation, support, teamsearch, quests, coins, squads and events.",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "check": "node --check src/index.js && node --check src/community.js && node --check src/games.js && node --check src/staff.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "discord.js": "^14.19.3",
+    "dotenv": "^16.5.0",
+    "@google/genai": "^2.24.0"
+  }
+}
