@@ -304,12 +304,26 @@ function pendingTicketKey(guildId, userId) {
 
 function shouldAutoEscalate(ticket, messageText = "") {
   if (["ban-appeal", "report-player"].includes(ticket.category)) return true;
-  const text = messageText.toLowerCase();
-  return [
-    "ban appeal", "bann appeal", "entbannen", "wurde gebannt", "staff abuse",
-    "mod abuse", "report player", "spieler melden", "moderator melden", "admin abuse",
-    "drohung", "threat", "harassment", "streit", "dispute"
-  ].some(term => text.includes(term));
+
+  const text = String(messageText || "").toLowerCase();
+  const directEscalationTerms = [
+    "ban appeal", "bann appeal", "entbannen", "wurde gebannt",
+    "staff abuse", "mod abuse", "admin abuse", "report player", "spieler melden",
+    "moderator melden", "mod melden", "admin melden", "staff melden",
+    "drohung", "bedrohung", "threat", "harassment", "streit", "dispute"
+  ];
+  if (directEscalationTerms.some(term => text.includes(term))) return true;
+
+  // Staff accusations must never be decided by the AI. German phrases such as
+  // "einer von euren Mods hat mich gescammt" are handed to a human immediately.
+  const mentionsStaff = /\b(mod|mods|moderator|moderatoren|staff|admin|admins|supporter|teammitglied|teammitglieder)\b/i.test(text);
+  const accusation = /\b(scam|scammer|gescammt|scammen|betrug|betrogen|abgezogen|geklaut|gestohlen|beleidigt|bedroht|missbraucht|abuse|harassment)\b/i.test(text);
+  if (mentionsStaff && accusation) return true;
+
+  // Serious scam / theft reports should also go to human support instead of an AI verdict.
+  if (/\b(gescammt|scammer|betrug|betrogen|abgezogen|account geklaut|geld geklaut|gestohlen)\b/i.test(text)) return true;
+
+  return false;
 }
 
 async function localTicketSummary(channel, ticket) {
@@ -683,13 +697,26 @@ function extractInteractionSources(interaction) {
     if (step?.type !== "model_output") continue;
     for (const block of step.content || []) {
       for (const annotation of block.annotations || []) {
-        if (annotation?.type === "url_citation" && annotation.url) {
-          found.set(annotation.url, annotation.title || annotation.url);
-        }
+        const url = annotation?.uri || annotation?.url || annotation?.source;
+        if (url) found.set(url, annotation.title || url);
       }
     }
   }
   return [...found.entries()].slice(0, 5).map(([url, title]) => ({ url, title }));
+}
+
+async function withTimeout(promise, ms, label = "operation") {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label.toUpperCase()}_TIMEOUT`)), ms);
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function formatSupportAnswer(interaction) {
@@ -742,13 +769,13 @@ Answer in the same language as the user unless asked otherwise. Prefer clear ste
 
   let interaction;
   try {
-    interaction = await ai.interactions.create(request);
+    interaction = await withTimeout(ai.interactions.create(request), 60000, "ticket_ai");
   } catch (err) {
     if (ticket.previousInteractionId) {
       console.warn("Retrying ticket AI without previous_interaction_id:", err?.message || err);
       ticket.previousInteractionId = null;
       delete request.previous_interaction_id;
-      interaction = await ai.interactions.create(request);
+      interaction = await withTimeout(ai.interactions.create(request), 60000, "ticket_ai_retry");
     } else {
       throw err;
     }
@@ -768,8 +795,11 @@ async function runTicketAi(message) {
   saveDB();
 
   if (shouldAutoEscalate(ticket, message.content || "")) {
-    await message.reply({ content: "👤 This request needs a **human moderator**. The AI will not make moderation, ban, report, or staff-dispute decisions. I’m handing this ticket to the support team now.", allowedMentions: { repliedUser: false } }).catch(() => {});
-    await handoffToHuman(message.channel, ticket, message.author.id, "Automatic escalation: moderation/report/appeal decision requires human review");
+    await message.reply({
+      content: "👤 **Das gebe ich direkt an einen Menschen weiter.** Bei Scam-Vorwürfen, Meldungen gegen Mods/Staff, Bans oder anderen Moderationsfällen trifft die AI keine Schuld- oder Strafentscheidung. Das Support-Team übernimmt diesen Fall.",
+      allowedMentions: { repliedUser: false }
+    }).catch(() => {});
+    await handoffToHuman(message.channel, ticket, message.author.id, "Automatic escalation: scam/staff/moderation/report/appeal requires human review");
     return true;
   }
 
@@ -788,10 +818,13 @@ async function runTicketAi(message) {
     for (const chunk of chunks.slice(1)) await message.channel.send(chunk);
   } catch (err) {
     if (err?.message === "GEMINI_NOT_CONFIGURED") {
-      await message.reply({ content: "⚙️ AI support is not configured yet. The owner needs to add `GEMINI_API_KEY` to the environment variables. Your ticket remains open for human support.", allowedMentions: { repliedUser: false } });
+      await message.reply({ content: "⚙️ **AI ist noch nicht eingerichtet.** Der Owner muss `GEMINI_API_KEY` in Railway eintragen. Dein Ticket bleibt für menschlichen Support offen.", allowedMentions: { repliedUser: false } });
+    } else if (String(err?.message || "").includes("TIMEOUT")) {
+      console.error("Ticket AI timeout:", err?.message || err);
+      await message.reply({ content: "⏱️ **Die AI antwortet gerade zu langsam.** Ich habe die Anfrage abgebrochen, damit das Ticket nicht hängen bleibt. Bitte versuche es erneut oder nutze **Get Human Support**.", allowedMentions: { repliedUser: false } }).catch(() => {});
     } else {
       console.error("Ticket AI error:", err);
-      await message.reply({ content: "❌ The AI support had a technical problem. Your ticket stays open for human support.", allowedMentions: { repliedUser: false } });
+      await message.reply({ content: "❌ **Die AI hatte ein technisches Problem.** Dein Ticket bleibt offen. Bitte versuche es erneut oder nutze **Get Human Support**.", allowedMentions: { repliedUser: false } }).catch(() => {});
     }
   }
   return true;
@@ -1718,12 +1751,25 @@ client.on("interactionCreate", async interaction => {
         }
 
         if (id.startsWith("ticket_ai_yes:")) {
+          if (!GEMINI_API_KEY) {
+            ticket.aiEnabled = false;
+            ticket.previousInteractionId = null;
+            ticket.humanRequested = true;
+            saveDB();
+            await interaction.update({
+              content: "⚙️ **AI support ist noch nicht eingerichtet.** In Railway fehlt `GEMINI_API_KEY`. Das Ticket bleibt für menschlichen Support offen.",
+              components: []
+            });
+            await supportLog(interaction.guild, "⚠️ AI support unavailable", `${interaction.channel} • GEMINI_API_KEY missing`);
+            return;
+          }
+
           ticket.aiEnabled = true;
           ticket.previousInteractionId = null;
           ticket.lastActivityAt = Date.now();
           saveDB();
           await interaction.update({
-            content: "🤖 **AI support enabled.** Send your problem, question, screenshot or image here. The AI will automatically answer your messages and may use web research when useful.",
+            content: "🤖 **AI support enabled.** Schreib dein Problem, deine Frage oder sende einen Screenshot. Bei Scam-, Staff-, Ban- oder anderen Moderationsfällen wird automatisch ein menschlicher Supporter hinzugezogen.",
             components: []
           });
           await supportLog(interaction.guild, "🤖 AI support enabled", `${interaction.channel} • User: ${interaction.user}`);
