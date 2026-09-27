@@ -2321,28 +2321,94 @@ function setupChannelLabel(canonical) {
   return SETUP_CHANNEL_INFO[canonical]?.label || `#${canonical}`;
 }
 
-function setupCheckPayload(guild, smartSetup) {
+function rememberSetupAssignments(guild, smartSetup) {
+  const gd = guildData(guild.id);
+  const coreAliases = {
+    "announcements": "announcements",
+    "invite-log": "inviteLog",
+    "counting": "counting",
+    "teamsearch": "teamsearch",
+    "support": "support",
+    "support-logs": "supportLogs",
+    "ticket-transcripts": "ticketTranscripts"
+  };
+  for (const item of (smartSetup.selected || [])) {
+    gd.channels[item.canonical] = item.channelId;
+    const alias = coreAliases[item.canonical];
+    if (alias) gd.channels[alias] = item.channelId;
+  }
+
+  const support = gd.channels.support && guild.channels.cache.get(gd.channels.support);
+  if (support?.parentId) gd.channels.ticketCategory = support.parentId;
+  const teamsearch = gd.channels.teamsearch && guild.channels.cache.get(gd.channels.teamsearch);
+  if (teamsearch?.parentId) gd.channels.teamCategory = teamsearch.parentId;
+  gd.setup = true;
+  saveDB();
+  return gd;
+}
+
+async function configureFoundSetupChannels(guild, smartSetup) {
+  const gd = rememberSetupAssignments(guild, smartSetup);
+  const found = new Set((smartSetup.selected || []).map(x => x.canonical));
+
+  if (["support", "support-logs", "ticket-transcripts"].some(x => found.has(x))) {
+    const supportRole = await findOrCreateRole(guild, "Support Team").catch(() => null);
+    if (supportRole) gd.supportRoleId = supportRole.id;
+  }
+
+  const support = gd.channels.support ? guild.channels.cache.get(gd.channels.support) : null;
+  if (support && found.has("support")) {
+    const ticketEmbed = footer(new EmbedBuilder()
+      .setTitle("🎫 Support Ticket")
+      .setDescription(`Open a ticket for help. You will choose a **category** and **priority** before the private ticket is created.\n\nMaximum: **${MAX_OPEN_TICKETS_PER_USER} open tickets per user**.`));
+    const ticketRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("ticket_open").setLabel("Open ticket").setEmoji("🎫").setStyle(ButtonStyle.Primary)
+    );
+    await upsertSetupPanel(support, guild.id, "ticket_open", { embeds: [ticketEmbed], components: [ticketRow] }, "Support Ticket").catch(() => {});
+  }
+
+  const teamsearch = gd.channels.teamsearch ? guild.channels.cache.get(gd.channels.teamsearch) : null;
+  if (teamsearch && found.has("teamsearch")) {
+    const teamEmbed = footer(new EmbedBuilder()
+      .setTitle("🎮 Multi-Game Teamsearch")
+      .setDescription(`Nutze **/teamsearch**, um Mitspieler für **Fortnite, Roblox, Brawl Stars, GTA, Minecraft, VALORANT und viele weitere Games** zu finden.\n\nDu wählst Spiel, Modus, Plattform, Mikro und gesuchte Spielerzahl aus.`));
+    await upsertSetupPanel(teamsearch, guild.id, "teamsearch_info", { embeds: [teamEmbed] }, "Multi-Game Teamsearch").catch(() => {});
+  }
+
+  if (typeof community.setupExistingOnly === "function") {
+    await community.setupExistingOnly(guild).catch(err => console.warn("Community setup-existing failed:", err?.message || err));
+  }
+  if (typeof staff.setupExistingOnly === "function") {
+    await staff.setupExistingOnly(guild).catch(err => console.warn("Staff setup-existing failed:", err?.message || err));
+  }
+  await snapshotInvites(guild).catch(() => {});
+  saveDB();
+  return [...found];
+}
+
+function setupCheckPayload(guild, smartSetup, configured = []) {
   const found = new Map((smartSetup.selected || []).map(x => [x.canonical, x.channelId]));
   const required = SMART_SETUP_PURPOSES.map(p => p.canonical);
   const missing = required.filter(canonical => !found.has(canonical));
+  const configuredSet = new Set(configured || []);
   const foundLines = required.filter(canonical => found.has(canonical)).map(canonical => {
     const ch = guild.channels.cache.get(found.get(canonical));
-    return `✅ ${setupChannelLabel(canonical)} → ${ch || "gefunden"}`;
+    return `${configuredSet.has(canonical) ? "🛠️" : "✅"} ${setupChannelLabel(canonical)} → ${ch || "gefunden"}`;
   });
   const missingLines = missing.map(canonical => `${PRIVATE_SETUP_PURPOSES.has(canonical) ? "🔒" : "❌"} ${setupChannelLabel(canonical)}`);
 
   const embed = footer(new EmbedBuilder()
-    .setTitle("🧩 Setup-Check • fehlende Kanäle")
-    .setDescription(`Ich habe **${smartSetup.scanned}** lesbare Textkanäle geprüft – inklusive Fancy-Schriften und, wenn Gemini aktiv ist, Nachrichtenverlauf.\n\n**Wichtig:** \`/setup\` erstellt ab jetzt **keinen einzigen neuen Kanal und keine Kategorie**. Es zeigt nur, was bereits erkannt wurde und was noch fehlt.\n\n✅ Gefunden: **${found.size}/${required.length}**\n❌ Fehlend: **${missing.length}**`)
+    .setTitle("🧩 Smart Setup • prüfen & einrichten")
+    .setDescription(`Ich habe **${smartSetup.scanned}** lesbare Textkanäle geprüft – inklusive Fancy-Schriften und, wenn Gemini aktiv ist, Nachrichtenverlauf.\n\n**Wichtig:** \`/setup\` erstellt **keine neuen Kanäle oder Kategorien**. Bereits gefundene Kanäle werden aber sofort mit der passenden Bot-Funktion verbunden und eingerichtet.\n\n🛠️ Eingerichtet: **${configuredSet.size}**\n✅ Gefunden: **${found.size}/${required.length}**\n❌ Fehlend: **${missing.length}**`)
     .setColor(missing.length ? 0xFEE75C : 0x57F287));
 
   if (missingLines.length) embed.addFields({ name: "Fehlende Kanäle", value: missingLines.join("\n").slice(0, 1024) });
-  else embed.addFields({ name: "✅ Alles vorhanden", value: "Alle Bot-Kanäle wurden erkannt. Es wurde trotzdem nichts erstellt oder verschoben." });
+  else embed.addFields({ name: "✅ Alles vorhanden", value: "Alle Bot-Kanäle wurden erkannt und eingerichtet. Es wurde kein neuer Kanal erstellt." });
 
-  if (foundLines.length) embed.addFields({ name: "Erkannt", value: foundLines.slice(0, 12).join("\n").slice(0, 1024) });
+  if (foundLines.length) embed.addFields({ name: "Gefunden & eingerichtet", value: foundLines.slice(0, 12).join("\n").slice(0, 1024) });
 
   const components = [new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("setup_check_refresh").setLabel("Neu prüfen").setEmoji("🔄").setStyle(ButtonStyle.Primary)
+    new ButtonBuilder().setCustomId("setup_check_refresh").setLabel("Neu prüfen & einrichten").setEmoji("🔄").setStyle(ButtonStyle.Primary)
   )];
 
   if (missing.length) {
@@ -2370,12 +2436,16 @@ async function runSetup(interaction) {
   if (!interaction.deferred && !interaction.replied) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   }
-  await interaction.editReply({ content: "🔎 Ich prüfe nur die vorhandenen Kanäle. **Es wird nichts erstellt.**", embeds: [], components: [] });
+  await interaction.editReply({ content: "🔎 Ich prüfe vorhandene Kanäle. **Gefundene werden eingerichtet, fehlende nur angezeigt. Es wird kein Kanal erstellt.**", embeds: [], components: [] });
   const smartSetup = await prepareSmartSetup(interaction.guild).catch(err => {
     console.warn("Setup check failed:", err?.message || err);
     return { scanned: 0, reused: 0, selected: [], aiUsed: false };
   });
-  return interaction.editReply({ content: "", ...setupCheckPayload(interaction.guild, smartSetup) });
+  const configured = await configureFoundSetupChannels(interaction.guild, smartSetup).catch(err => {
+    console.warn("Setup auto-configure failed:", err?.message || err);
+    return [];
+  });
+  return interaction.editReply({ content: "", ...setupCheckPayload(interaction.guild, smartSetup, configured) });
 }
 
 async function runSetupInstall(interaction, options = {}) {
@@ -3067,7 +3137,11 @@ client.on("interactionCreate", async interaction => {
         console.warn("Setup refresh failed:", err?.message || err);
         return { scanned: 0, reused: 0, selected: [], aiUsed: false };
       });
-      return interaction.editReply(setupCheckPayload(interaction.guild, smartSetup));
+      const configured = await configureFoundSetupChannels(interaction.guild, smartSetup).catch(err => {
+        console.warn("Setup refresh auto-configure failed:", err?.message || err);
+        return [];
+      });
+      return interaction.editReply(setupCheckPayload(interaction.guild, smartSetup, configured));
     }
 
     if (interaction.isStringSelectMenu() && interaction.customId === "setup_missing_info") {
@@ -3078,7 +3152,7 @@ client.on("interactionCreate", async interaction => {
       const info = SETUP_CHANNEL_INFO[canonical];
       const aliases = setupPurposeByCanonical(canonical)?.aliases || [];
       return interaction.reply({
-        content: `📁 **${setupChannelLabel(canonical)}**\n${info?.purpose || "Dieser Kanal wird für eine Bot-Funktion gebraucht."}\n\nDer Kanal darf auch anders heißen – Fancy-Schriften und Namen wie **${aliases.slice(0, 5).join(", ") || canonical}** werden erkannt. Danach einfach **Neu prüfen** drücken.`,
+        content: `📁 **${setupChannelLabel(canonical)}**\n${info?.purpose || "Dieser Kanal wird für eine Bot-Funktion gebraucht."}\n\nDer Kanal darf auch anders heißen – Fancy-Schriften und Namen wie **${aliases.slice(0, 5).join(", ") || canonical}** werden erkannt. Danach einfach **Neu prüfen & einrichten** drücken.`,
         flags: MessageFlags.Ephemeral
       });
     }

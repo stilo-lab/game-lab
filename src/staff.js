@@ -212,6 +212,27 @@ function createStaffSystem(ctx) {
     return c;
   }
 
+  async function setupExistingOnly(guild) {
+    const s = ensureGuild(guild.id);
+    const gd = guildData(guild.id);
+    const map = {
+      "staff-audit": "audit",
+      "ai-staff-alerts": "alerts",
+      "mod-cases": "cases",
+      "staff-briefing": "briefing",
+      "staff-tasks": "tasks"
+    };
+    for (const [canonical, key] of Object.entries(map)) {
+      const id = gd.channels?.[canonical];
+      if (id && guild.channels.cache.get(id)) s.channels[key] = id;
+    }
+    saveDB();
+    if (s.channels.audit) {
+      await staffLog(guild, "🧠 Staff-System verbunden", "Gefundene Staff-Kanäle wurden mit dem Bot verbunden. Fehlende Staff-Kanäle wurden nicht erstellt.").catch(() => {});
+    }
+    return s;
+  }
+
   async function setup(guild) {
     const s = ensureGuild(guild.id);
     const roleId = guildData(guild.id).supportRoleId;
@@ -903,6 +924,7 @@ function createStaffSystem(ctx) {
 
   return {
     setup,
+    setupExistingOnly,
     onMessage,
     onMemberAdd,
     onMemberRemove,
