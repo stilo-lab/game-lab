@@ -1,16 +1,7 @@
-# Setup Fix v1.5.1
+# Stilo Bot Update – seit Setup Final Fix
 
-Ersetze in GitHub:
-- `src/index.js`
-- `src/community.js`
-- `src/staff.js`
-- `package.json`
+Für einen bestehenden Bot ab v1.5.1 oder neuer.
 
-Neues Verhalten von `/setup`:
-1. vorhandene Kanäle scannen (Fancy Fonts + optional AI/Nachrichtenverlauf),
-2. erkannte Kanäle sofort mit den passenden Bot-Funktionen verbinden,
-3. Panels in erkannten Kanälen erstellen/aktualisieren,
-4. fehlende Kanäle im privaten Setup-Fenster anzeigen,
-5. keine neuen Kanäle oder Kategorien erstellen.
+Ersetze in GitHub die Dateien aus diesem ZIP an denselben Pfaden. Danach Railway neu deployen lassen.
 
-`/serversetup` bleibt der Command, der eine komplette Server-Struktur erstellen darf.
+Enthält den endgültigen Setup-Fix v1.5.2 und External Ticket Support-AI v1.5.3.

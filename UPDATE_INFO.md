@@ -1,33 +1,18 @@
-# Update seit Suggestions-Menü → v1.5.0
+# Update ab dem endgültigen Setup-Fix
 
-Diese ZIP enthält alle Code-Dateien, die sich seit dem Suggestions-Menü (v1.3.3) bis v1.5.0 geändert haben.
+Dieses Paket enthält alle Code-Änderungen ab dem endgültigen Setup-Fix v1.5.2 bis v1.5.3.
 
-## In GitHub ersetzen / hinzufügen
+## Enthalten
+- v1.5.2: /setup richtet gefundene Kanäle wirklich ein und zeigt fehlende/fehlerhafte Kanäle korrekt an.
+- v1.5.3: Support-AI erkennt auch Tickets anderer Ticket-Bots und wartet, bis der Ticket-Ersteller wirklich schreibt.
 
-- `src/index.js` ersetzen
-- `src/community.js` ersetzen
-- `src/staff.js` ersetzen
-- `src/element_seas.js` neu hinzufügen
-- `package.json` ersetzen
+## In GitHub ersetzen
+- src/index.js
+- src/community.js
+- src/staff.js
+- package.json
 
-Optional kannst du auch die aktualisierten Anleitungen und `.env.example` übernehmen.
+## Nicht überschreiben
+Dieses Paket enthält absichtlich keine data/db.json. Deine bestehenden Coins, Cases, Learn-Einträge, Staff-Daten und sonstigen gespeicherten Daten bleiben dadurch erhalten.
 
-## WICHTIG
-
-`data/db.json` ist absichtlich **nicht** enthalten. Ersetze deine Datenbank nicht, sonst könnten bestehende Bot-Daten verloren gehen.
-
-Enthaltene Updates seit Suggestions:
-- Suggestions-Menü
-- Giveaway-Animation + Claim
-- Reaktions-Übersetzer
-- bessere `/ai`
-- AI Community Pulse
-- AI Smart Setup
-- `/verbesserung`
-- Community-Frage
-- verbessertes `/learn` mit `/ai` / Support AI / Beide
-- Server-Freigabe durch Owner
-- `/serversetup`
-- `/setup` als reiner Kanal-Check
-- Member Hub + Daily + Thanks/Reputation
-- Element Seas RPG
+Nach dem Commit Railway neu deployen lassen und /setup erneut testen.
