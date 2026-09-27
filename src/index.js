@@ -435,7 +435,17 @@ async function approveGuildById(guildId, approvedBy = OWNER_ID) {
   if (!guild) return { ok: false, message: "Der Bot ist aktuell nicht auf diesem Server." };
   setGuildApproval(guild.id, "approved", { approvedAt: Date.now(), approvedBy, rejectedAt: null });
   await snapshotInvites(guild).catch(() => {});
-  return { ok: true, guild, message: `✅ **${guild.name}** wurde freigegeben. Der Bot funktioniert dort jetzt.` };
+  // Nach der Freigabe Commands sofort auf diesem Server verfügbar machen.
+  try {
+    const applicationId = CLIENT_ID || client.application?.id || client.user?.id;
+    if (applicationId) {
+      const rest = new REST({ version: "10" }).setToken(TOKEN);
+      await rest.put(Routes.applicationGuildCommands(applicationId, guild.id), { body: commands });
+    }
+  } catch (err) {
+    console.warn(`Slash Commands konnten nach Server-Freigabe auf ${guild.id} nicht sofort synchronisiert werden:`, err?.message || err);
+  }
+  return { ok: true, guild, message: `✅ **${guild.name}** wurde freigegeben. Der Bot funktioniert dort jetzt und die Slash-Commands wurden synchronisiert.` };
 }
 
 async function rejectGuildById(guildId, rejectedBy = OWNER_ID) {
@@ -2145,6 +2155,9 @@ const commands = [
         { name: "Schnellfrage", value: "quiz" }
       )),
   new SlashCommandBuilder()
+    .setName("commandsync")
+    .setDescription("Bot-Owner: synchronisiert alle Slash-Commands sofort auf allen freigegebenen Servern."),
+  new SlashCommandBuilder()
     .setName("supportstats")
     .setDescription("Zeigt Support-Statistiken des Servers."),
   new SlashCommandBuilder()
@@ -2164,15 +2177,31 @@ async function registerCommands() {
   const applicationId = CLIENT_ID || client.application?.id || client.user?.id;
   if (!applicationId) throw new Error("Application-ID konnte nach dem Discord-Login nicht ermittelt werden.");
   const rest = new REST({ version: "10" }).setToken(TOKEN);
-  // Immer global registrieren, damit Commands auf jedem Server funktionieren.
-  await rest.put(Routes.applicationCommands(applicationId), { body: commands });
-  console.log("Globale Slash Commands registriert.");
 
-  // Optional zusätzlich auf dem Testserver registrieren, damit Änderungen dort sofort erscheinen.
-  if (DEV_GUILD_ID) {
-    await rest.put(Routes.applicationGuildCommands(applicationId, DEV_GUILD_ID), { body: commands });
-    console.log(`Slash Commands zusätzlich auf Testserver ${DEV_GUILD_ID} registriert.`);
+  // Global registrieren: damit die Commands langfristig auf jedem Server verfügbar sind.
+  await rest.put(Routes.applicationCommands(applicationId), { body: commands });
+  console.log(`Globale Slash Commands registriert (${commands.length}).`);
+
+  // Zusätzlich guild-spezifisch registrieren. Das macht neue/aktualisierte Commands
+  // sofort sichtbar, statt auf die globale Discord-Propagation warten zu müssen.
+  const guildIds = new Set();
+  for (const guild of client.guilds.cache.values()) {
+    if (isGuildApproved(guild.id)) guildIds.add(guild.id);
   }
+  if (DEV_GUILD_ID) guildIds.add(String(DEV_GUILD_ID));
+
+  let synced = 0;
+  for (const guildId of guildIds) {
+    try {
+      await rest.put(Routes.applicationGuildCommands(applicationId, guildId), { body: commands });
+      synced += 1;
+      console.log(`Slash Commands sofort auf Server ${guildId} synchronisiert.`);
+    } catch (err) {
+      console.warn(`Guild-Command-Sync für ${guildId} fehlgeschlagen:`, err?.message || err);
+    }
+  }
+  console.log(`Guild-Command-Sync abgeschlossen: ${synced}/${guildIds.size} Server.`);
+  return { global: true, guildsSynced: synced, guildsTotal: guildIds.size, commandCount: commands.length };
 }
 
 const client = new Client({
@@ -3693,6 +3722,19 @@ client.on("interactionCreate", async interaction => {
           const gameKey = interaction.options.getString("spiel");
           const type = interaction.options.getString("game");
           return interaction.reply(gameMinigame(gameKey, type));
+        }
+
+        case "commandsync": {
+          if (interaction.user.id !== OWNER_ID) {
+            return interaction.reply({ content: "❌ Dieser Command ist nur für den Bot-Owner.", flags: MessageFlags.Ephemeral });
+          }
+          await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+          try {
+            const result = await registerCommands();
+            return interaction.editReply(`✅ **Slash-Commands synchronisiert.**\nCommands: **${result.commandCount}**\nServer sofort synchronisiert: **${result.guildsSynced}/${result.guildsTotal}**\n\nSpotify sollte jetzt direkt als \`/spotify\` erscheinen.`);
+          } catch (err) {
+            return interaction.editReply(`❌ Command-Sync fehlgeschlagen: \`${String(err?.message || err).slice(0, 500)}\``);
+          }
         }
 
         case "supportstats": {
