@@ -6,7 +6,11 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  StringSelectMenuBuilder
+  StringSelectMenuBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  MessageFlags
 } = require("discord.js");
 const { GAME_CHOICES, GAME_ROLE_OPTIONS, GAME_ROLE_NAMES, GAME_ROLE_KEYS, gameName } = require("./games");
 
@@ -57,6 +61,8 @@ function buildCommunityCommands() {
       .addStringOption(o => o.setName("option4").setDescription("Option 4").setMaxLength(60)),
     new SlashCommandBuilder().setName("suggest").setDescription("Sendet einen Community-Vorschlag.")
       .addStringOption(o => o.setName("text").setDescription("Dein Vorschlag").setRequired(true).setMaxLength(1000)),
+    new SlashCommandBuilder().setName("suggestions").setDescription("Öffnet das Suggestions-Menü."),
+    new SlashCommandBuilder().setName("suggestionspanel").setDescription("Postet/aktualisiert das öffentliche Suggestions-Menü (Admin)."),
     new SlashCommandBuilder().setName("suggeststatus").setDescription("Ändert den Status eines Vorschlags.")
       .addStringOption(o => o.setName("message_id").setDescription("Discord Nachrichten-ID").setRequired(true))
       .addStringOption(o => o.setName("status").setDescription("Status").setRequired(true).addChoices(
@@ -251,6 +257,9 @@ function createCommunity(ctx) {
     const rolesCh = guild.channels.cache.get(c.channels.roles);
     await upsertPanel(rolesCh, c, "roles", { embeds: [footer(new EmbedBuilder().setTitle("🎭 Self Roles").setDescription("Nutze `/roles` und wähle deine Games, Plattform, Spielstil, Region und Benachrichtigungen."))] });
 
+    const suggestionsCh = guild.channels.cache.get(c.channels.suggestions);
+    await upsertPanel(suggestionsCh, c, "suggestionsMenu", suggestionsMenuPayload());
+
     const squadsCh = guild.channels.cache.get(c.channels.squads);
     await upsertPanel(squadsCh, c, "squads", { embeds: [footer(new EmbedBuilder().setTitle("🛡️ Squads / Clans").setDescription("Erstelle dein eigenes Squad mit `/squad create`. Lade Mitglieder ein, sammle Punkte durch Community-Erfolge und steige im Squad-Leaderboard."))] });
 
@@ -363,10 +372,10 @@ function createCommunity(ctx) {
   }
 
   async function claimQuest(interaction, qid) {
-    const q = questDefs.find(x => x.id === qid); if (!q) return interaction.reply({content:"Quest nicht gefunden.",ephemeral:true});
+    const q = questDefs.find(x => x.id === qid); if (!q) return interaction.reply({content:"Quest nicht gefunden.",flags:MessageFlags.Ephemeral});
     const c = resetDailyIfNeeded(interaction.guild.id, interaction.user.id);
-    if ((c.daily.progress[q.id] || 0) < q.target) return interaction.reply({content:"❌ Diese Quest ist noch nicht fertig.",ephemeral:true});
-    if (c.daily.claimed[q.id]) return interaction.reply({content:"✅ Schon abgeholt.",ephemeral:true});
+    if ((c.daily.progress[q.id] || 0) < q.target) return interaction.reply({content:"❌ Diese Quest ist noch nicht fertig.",flags:MessageFlags.Ephemeral});
+    if (c.daily.claimed[q.id]) return interaction.reply({content:"✅ Schon abgeholt.",flags:MessageFlags.Ephemeral});
     c.daily.claimed[q.id] = true; c.coins += q.coins; c.seasonXp += q.seasonXp; saveDB();
     await checkAchievements(interaction.guild, interaction.user.id, interaction.channel);
     return interaction.update({embeds:[questEmbed(interaction.guild.id,interaction.user.id)],components:questButtons(interaction.guild.id,interaction.user.id)});
@@ -392,18 +401,18 @@ function createCommunity(ctx) {
   }
 
   async function buyItem(interaction, id) {
-    const item = shopItems[id]; if (!item) return interaction.reply({content:"Item nicht gefunden.",ephemeral:true});
+    const item = shopItems[id]; if (!item) return interaction.reply({content:"Item nicht gefunden.",flags:MessageFlags.Ephemeral});
     const c = ensureUser(interaction.guild.id, interaction.user.id);
-    if (c.coins < item.price) return interaction.reply({content:`❌ Du brauchst ${item.price} Coins, hast aber ${c.coins}.`,ephemeral:true});
-    if (item.badge && c.badges.includes(item.badge)) return interaction.reply({content:"✅ Dieses Badge besitzt du schon.",ephemeral:true});
+    if (c.coins < item.price) return interaction.reply({content:`❌ Du brauchst ${item.price} Coins, hast aber ${c.coins}.`,flags:MessageFlags.Ephemeral});
+    if (item.badge && c.badges.includes(item.badge)) return interaction.reply({content:"✅ Dieses Badge besitzt du schon.",flags:MessageFlags.Ephemeral});
     if (item.role) {
       const rid = ensureGuild(interaction.guild.id).roles[item.role];
-      if (rid && interaction.member.roles.cache.has(rid)) return interaction.reply({content:"✅ Diese Rolle besitzt du schon.",ephemeral:true});
+      if (rid && interaction.member.roles.cache.has(rid)) return interaction.reply({content:"✅ Diese Rolle besitzt du schon.",flags:MessageFlags.Ephemeral});
       if (rid) await interaction.member.roles.add(rid).catch(() => {});
     }
     if (item.badge) c.badges.push(item.badge);
     c.coins -= item.price; saveDB();
-    return interaction.reply({content:`✅ Gekauft: **${item.name}**. Neuer Kontostand: **${c.coins} Coins**.`,ephemeral:true});
+    return interaction.reply({content:`✅ Gekauft: **${item.name}**. Neuer Kontostand: **${c.coins} Coins**.`,flags:MessageFlags.Ephemeral});
   }
 
   function squadOf(guildId,userId) { const c = ensureUser(guildId,userId); return c.squadId ? db.squads[c.squadId] : null; }
@@ -412,51 +421,51 @@ function createCommunity(ctx) {
   async function handleSquad(interaction) {
     const sub = interaction.options.getSubcommand(); const gid = interaction.guild.id; const uc = ensureUser(gid,interaction.user.id);
     if (sub === "create") {
-      if (uc.squadId && db.squads[uc.squadId]) return interaction.reply({content:"❌ Du bist bereits in einem Squad.",ephemeral:true});
+      if (uc.squadId && db.squads[uc.squadId]) return interaction.reply({content:"❌ Du bist bereits in einem Squad.",flags:MessageFlags.Ephemeral});
       const name = interaction.options.getString("name").trim();
-      if (Object.values(db.squads).some(s => s.guildId===gid && norm(s.name)===norm(name))) return interaction.reply({content:"❌ Dieser Squad-Name existiert schon.",ephemeral:true});
+      if (Object.values(db.squads).some(s => s.guildId===gid && norm(s.name)===norm(name))) return interaction.reply({content:"❌ Dieser Squad-Name existiert schon.",flags:MessageFlags.Ephemeral});
       const id = shortId("S"); const squad = {id,guildId:gid,name,ownerId:interaction.user.id,code:makeSquadCode(),members:[interaction.user.id],points:0,wins:0,createdAt:Date.now()};
       db.squads[id]=squad; uc.squadId=id; saveDB();
       return interaction.reply(`🛡️ Squad **${name}** erstellt. Join-Code: **${squad.code}**`);
     }
     const squad = squadOf(gid,interaction.user.id);
     if (sub === "join") {
-      if (squad) return interaction.reply({content:"❌ Verlasse zuerst dein aktuelles Squad.",ephemeral:true});
-      const target=squadByCode(gid,interaction.options.getString("code")); if(!target) return interaction.reply({content:"❌ Code nicht gefunden.",ephemeral:true});
-      if(target.members.length>=20) return interaction.reply({content:"❌ Squad ist voll.",ephemeral:true});
+      if (squad) return interaction.reply({content:"❌ Verlasse zuerst dein aktuelles Squad.",flags:MessageFlags.Ephemeral});
+      const target=squadByCode(gid,interaction.options.getString("code")); if(!target) return interaction.reply({content:"❌ Code nicht gefunden.",flags:MessageFlags.Ephemeral});
+      if(target.members.length>=20) return interaction.reply({content:"❌ Squad ist voll.",flags:MessageFlags.Ephemeral});
       target.members.push(interaction.user.id); uc.squadId=target.id; saveDB(); return interaction.reply(`✅ Du bist **${target.name}** beigetreten.`);
     }
     if (sub === "leaderboard") {
       const rows=Object.values(db.squads).filter(s=>s.guildId===gid).sort((a,b)=>b.points-a.points).slice(0,10).map((s,i)=>`${i+1}. **${s.name}** — ${s.points} Punkte • ${s.members.length} Member`).join("\n")||"Noch keine Squads.";
       return interaction.reply({embeds:[footer(new EmbedBuilder().setTitle("🛡️ Squad Leaderboard").setDescription(rows))]});
     }
-    if (!squad) return interaction.reply({content:"❌ Du bist in keinem Squad.",ephemeral:true});
+    if (!squad) return interaction.reply({content:"❌ Du bist in keinem Squad.",flags:MessageFlags.Ephemeral});
     if (sub === "invite") {
-      if(squad.ownerId!==interaction.user.id) return interaction.reply({content:"❌ Nur der Squad-Owner kann einladen.",ephemeral:true});
+      if(squad.ownerId!==interaction.user.id) return interaction.reply({content:"❌ Nur der Squad-Owner kann einladen.",flags:MessageFlags.Ephemeral});
       const user=interaction.options.getUser("user");
       await user.send(`🛡️ Du wurdest in **${squad.name}** auf **${interaction.guild.name}** eingeladen. Nutze \`/squad join code:${squad.code}\`.`).catch(()=>{});
-      return interaction.reply({content:`✅ Einladung an ${user} gesendet. Code: **${squad.code}**`,ephemeral:true});
+      return interaction.reply({content:`✅ Einladung an ${user} gesendet. Code: **${squad.code}**`,flags:MessageFlags.Ephemeral});
     }
     if (sub === "leave") {
       squad.members=squad.members.filter(id=>id!==interaction.user.id); uc.squadId=null;
       if(!squad.members.length) delete db.squads[squad.id]; else if(squad.ownerId===interaction.user.id) squad.ownerId=squad.members[0];
       saveDB(); return interaction.reply("↩️ Du hast dein Squad verlassen.");
     }
-    if (sub === "info") return interaction.reply({embeds:[footer(new EmbedBuilder().setTitle(`🛡️ ${squad.name}`).addFields({name:"Owner",value:`<@${squad.ownerId}>`,inline:true},{name:"Punkte",value:String(squad.points),inline:true},{name:"Wins",value:String(squad.wins),inline:true},{name:"Member",value:mentionList(squad.members)},{name:"Join-Code",value:squad.ownerId===interaction.user.id?`||${squad.code}||`:"Nur für Owner"}))],ephemeral:true});
+    if (sub === "info") return interaction.reply({embeds:[footer(new EmbedBuilder().setTitle(`🛡️ ${squad.name}`).addFields({name:"Owner",value:`<@${squad.ownerId}>`,inline:true},{name:"Punkte",value:String(squad.points),inline:true},{name:"Wins",value:String(squad.wins),inline:true},{name:"Member",value:mentionList(squad.members)},{name:"Join-Code",value:squad.ownerId===interaction.user.id?`||${squad.code}||`:"Nur für Owner"}))],flags:MessageFlags.Ephemeral});
   }
 
   function eventEmbed(e) { return footer(new EmbedBuilder().setTitle(`🎉 ${e.name}`).setDescription(`**Spiel:** ${e.game || "Community / Multi-Game"}\n**Typ:** ${e.type}\n**Start:** <t:${Math.floor(e.startAt/1000)}:F> (<t:${Math.floor(e.startAt/1000)}:R>)\n**Teilnehmer:** ${e.participants.length}\n**Event-ID:** \`${e.id}\``)); }
   function eventRows(e) { return [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`event_join:${e.id}`).setLabel("Join").setEmoji("✅").setStyle(ButtonStyle.Success),new ButtonBuilder().setCustomId(`event_leave:${e.id}`).setLabel("Leave").setStyle(ButtonStyle.Secondary),new ButtonBuilder().setCustomId(`event_remind:${e.id}`).setLabel("Remind me").setEmoji("⏰").setStyle(ButtonStyle.Primary))]; }
   async function handleEvent(interaction) {
     const sub=interaction.options.getSubcommand(); const gid=interaction.guild.id; const c=ensureGuild(gid);
-    if(!isManager(interaction.member)) return interaction.reply({content:"❌ Dafür brauchst du Server verwalten.",ephemeral:true});
+    if(!isManager(interaction.member)) return interaction.reply({content:"❌ Dafür brauchst du Server verwalten.",flags:MessageFlags.Ephemeral});
     if(sub==="create"){
       const id=shortId("E"); const gameKey=interaction.options.getString("spiel"); const e={id,guildId:gid,name:interaction.options.getString("name"),gameKey,game:gameName(gameKey),type:interaction.options.getString("typ"),startAt:Date.now()+interaction.options.getInteger("start_in")*60000,participants:[],rewarded:[],winners:[],reminders:[],reminded:false,started:false,ended:false,hostId:interaction.user.id}; db.events[id]=e; saveDB();
-      const ch=interaction.guild.channels.cache.get(c.channels.events)||interaction.channel; const m=await ch.send({embeds:[eventEmbed(e)],components:eventRows(e)}); e.messageId=m.id;e.channelId=ch.id;saveDB();return interaction.reply({content:`✅ Event **${e.name}** erstellt: ${ch}`,ephemeral:true});
+      const ch=interaction.guild.channels.cache.get(c.channels.events)||interaction.channel; const m=await ch.send({embeds:[eventEmbed(e)],components:eventRows(e)}); e.messageId=m.id;e.channelId=ch.id;saveDB();return interaction.reply({content:`✅ Event **${e.name}** erstellt: ${ch}`,flags:MessageFlags.Ephemeral});
     }
-    const id=interaction.options.getString("id"); const e=db.events[id]; if(!e||e.guildId!==gid) return interaction.reply({content:"❌ Event nicht gefunden.",ephemeral:true});
+    const id=interaction.options.getString("id"); const e=db.events[id]; if(!e||e.guildId!==gid) return interaction.reply({content:"❌ Event nicht gefunden.",flags:MessageFlags.Ephemeral});
     if(sub==="winner"){
-      const user=interaction.options.getUser("user"); e.winners=e.winners||[]; if(e.winners.includes(user.id)) return interaction.reply({content:"❌ Dieser Nutzer wurde für dieses Event bereits als Gewinner belohnt.",ephemeral:true}); e.winners.push(user.id); const uc=ensureUser(gid,user.id); uc.eventWins+=1; uc.coins+=200; uc.seasonXp+=300; const sq=squadOf(gid,user.id); if(sq){sq.points+=10;sq.wins+=1;} saveDB(); await awardBadge(gid,user.id,"Event Winner",interaction.channel); return interaction.reply(`🏆 ${user} gewinnt **${e.name}** und erhält **200 Coins + 300 Season XP**.`);
+      const user=interaction.options.getUser("user"); e.winners=e.winners||[]; if(e.winners.includes(user.id)) return interaction.reply({content:"❌ Dieser Nutzer wurde für dieses Event bereits als Gewinner belohnt.",flags:MessageFlags.Ephemeral}); e.winners.push(user.id); const uc=ensureUser(gid,user.id); uc.eventWins+=1; uc.coins+=200; uc.seasonXp+=300; const sq=squadOf(gid,user.id); if(sq){sq.points+=10;sq.wins+=1;} saveDB(); await awardBadge(gid,user.id,"Event Winner",interaction.channel); return interaction.reply(`🏆 ${user} gewinnt **${e.name}** und erhält **200 Coins + 300 Season XP**.`);
     }
     if(sub==="end"){e.ended=true;saveDB();return interaction.reply(`⛔ Event **${e.name}** beendet.`);}
   }
@@ -464,14 +473,86 @@ function createCommunity(ctx) {
   async function handlePoll(interaction){
     const opts=[1,2,3,4].map(i=>interaction.options.getString(`option${i}`)).filter(Boolean);const embed=footer(new EmbedBuilder().setTitle("📊 Community Poll").setDescription(`**${interaction.options.getString("frage")}**\n\n${opts.map((x,i)=>`${i+1}. ${x} — **0**`).join("\n")}`));
     const row=new ActionRowBuilder().addComponents(opts.map((x,i)=>new ButtonBuilder().setCustomId(`poll_vote:PENDING:${i}`).setLabel(String(i+1)).setStyle(ButtonStyle.Primary)));
-    const m=await interaction.channel.send({embeds:[embed],components:[row]});db.polls[m.id]={guildId:interaction.guild.id,channelId:m.channel.id,messageId:m.id,question:interaction.options.getString("frage"),options:opts,votes:{}};saveDB();const fixed=new ActionRowBuilder().addComponents(opts.map((x,i)=>new ButtonBuilder().setCustomId(`poll_vote:${m.id}:${i}`).setLabel(String(i+1)).setStyle(ButtonStyle.Primary)));await m.edit({components:[fixed]});return interaction.reply({content:"✅ Poll erstellt.",ephemeral:true});
+    const m=await interaction.channel.send({embeds:[embed],components:[row]});db.polls[m.id]={guildId:interaction.guild.id,channelId:m.channel.id,messageId:m.id,question:interaction.options.getString("frage"),options:opts,votes:{}};saveDB();const fixed=new ActionRowBuilder().addComponents(opts.map((x,i)=>new ButtonBuilder().setCustomId(`poll_vote:${m.id}:${i}`).setLabel(String(i+1)).setStyle(ButtonStyle.Primary)));await m.edit({components:[fixed]});return interaction.reply({content:"✅ Poll erstellt.",flags:MessageFlags.Ephemeral});
   }
-  async function updatePoll(interaction,id,index){const p=db.polls[id];if(!p)return interaction.reply({content:"Poll nicht gefunden.",ephemeral:true});p.votes[interaction.user.id]=Number(index);const counts=p.options.map((_,i)=>Object.values(p.votes).filter(v=>v===i).length);saveDB();const embed=footer(new EmbedBuilder().setTitle("📊 Community Poll").setDescription(`**${p.question}**\n\n${p.options.map((x,i)=>`${i+1}. ${x} — **${counts[i]}**`).join("\n")}\n\n${Object.keys(p.votes).length} Votes`));await interaction.message.edit({embeds:[embed]});return interaction.reply({content:`✅ Stimme für **${p.options[index]}** gespeichert.`,ephemeral:true});}
+  async function updatePoll(interaction,id,index){const p=db.polls[id];if(!p)return interaction.reply({content:"Poll nicht gefunden.",flags:MessageFlags.Ephemeral});p.votes[interaction.user.id]=Number(index);const counts=p.options.map((_,i)=>Object.values(p.votes).filter(v=>v===i).length);saveDB();const embed=footer(new EmbedBuilder().setTitle("📊 Community Poll").setDescription(`**${p.question}**\n\n${p.options.map((x,i)=>`${i+1}. ${x} — **${counts[i]}**`).join("\n")}\n\n${Object.keys(p.votes).length} Votes`));await interaction.message.edit({embeds:[embed]});return interaction.reply({content:`✅ Stimme für **${p.options[index]}** gespeichert.`,flags:MessageFlags.Ephemeral});}
 
-  async function handleSuggestion(interaction){const c=ensureGuild(interaction.guild.id),ch=interaction.guild.channels.cache.get(c.channels.suggestions)||interaction.channel;const s={guildId:interaction.guild.id,userId:interaction.user.id,text:interaction.options.getString("text"),up:[],down:[],status:"Under Review"};const embed=footer(new EmbedBuilder().setTitle("💡 Community Suggestion").setDescription(s.text).addFields({name:"Von",value:`${interaction.user}`,inline:true},{name:"Status",value:s.status,inline:true},{name:"Votes",value:"👍 0 • 👎 0",inline:true}));const m=await ch.send({embeds:[embed],components:[new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("sug_up:PENDING").setLabel("👍 0").setStyle(ButtonStyle.Success),new ButtonBuilder().setCustomId("sug_down:PENDING").setLabel("👎 0").setStyle(ButtonStyle.Danger))]});s.messageId=m.id;s.channelId=ch.id;db.suggestions[m.id]=s;saveDB();await m.edit({components:[new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`sug_up:${m.id}`).setLabel("👍 0").setStyle(ButtonStyle.Success),new ButtonBuilder().setCustomId(`sug_down:${m.id}`).setLabel("👎 0").setStyle(ButtonStyle.Danger))]});return interaction.reply({content:`✅ Vorschlag gepostet: ${m.url}`,ephemeral:true});}
-  async function refreshSuggestion(s,guild){const ch=guild.channels.cache.get(s.channelId),m=ch&&await ch.messages.fetch(s.messageId).catch(()=>null);if(!m)return;const embed=footer(new EmbedBuilder().setTitle("💡 Community Suggestion").setDescription(s.text).addFields({name:"Von",value:`<@${s.userId}>`,inline:true},{name:"Status",value:s.status,inline:true},{name:"Votes",value:`👍 ${s.up.length} • 👎 ${s.down.length}`,inline:true}));const row=new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`sug_up:${s.messageId}`).setLabel(`👍 ${s.up.length}`).setStyle(ButtonStyle.Success),new ButtonBuilder().setCustomId(`sug_down:${s.messageId}`).setLabel(`👎 ${s.down.length}`).setStyle(ButtonStyle.Danger));await m.edit({embeds:[embed],components:[row]});}
+  function suggestionsMenuPayload(){
+    return {
+      embeds:[footer(new EmbedBuilder()
+        .setTitle("💡 Suggestions")
+        .setDescription("Hast du eine Idee für den Server? Erstelle hier einen Vorschlag. Andere Mitglieder können dafür oder dagegen stimmen.\n\n**So funktioniert's:**\n• **Vorschlag erstellen** → Formular öffnet sich\n• **Meine Vorschläge** → deine letzten Vorschläge\n• **Top Vorschläge** → aktuell bestbewertete Ideen"))],
+      components:[new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("suggestion_new").setLabel("Vorschlag erstellen").setEmoji("💡").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId("suggestion_mine").setLabel("Meine Vorschläge").setEmoji("📋").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("suggestion_top").setLabel("Top Vorschläge").setEmoji("🔥").setStyle(ButtonStyle.Success)
+      )]
+    };
+  }
 
-  async function handleClip(interaction){const c=ensureGuild(interaction.guild.id),ch=interaction.guild.channels.cache.get(c.channels.clips)||interaction.channel;const clip={guildId:interaction.guild.id,userId:interaction.user.id,url:interaction.options.getString("url"),description:interaction.options.getString("beschreibung")||"",votes:[],week:weekKey(),createdAt:Date.now()};const m=await ch.send({embeds:[footer(new EmbedBuilder().setTitle("🎬 Clip of the Week Entry").setDescription(`${clip.description||"Community Clip"}\n\n${clip.url}`).addFields({name:"Von",value:`${interaction.user}`,inline:true},{name:"Votes",value:"0",inline:true}))],components:[new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("clip_vote:PENDING").setLabel("Vote").setEmoji("🔥").setStyle(ButtonStyle.Primary))]});clip.messageId=m.id;clip.channelId=ch.id;db.clips[m.id]=clip;saveDB();await m.edit({components:[new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`clip_vote:${m.id}`).setLabel("Vote • 0").setEmoji("🔥").setStyle(ButtonStyle.Primary))]});return interaction.reply({content:`✅ Clip eingereicht: ${m.url}`,ephemeral:true});}
+  function suggestionModal(){
+    const modal=new ModalBuilder().setCustomId("suggestion_modal").setTitle("Neuen Vorschlag erstellen");
+    const title=new TextInputBuilder().setCustomId("suggestion_title").setLabel("Kurzer Titel").setStyle(TextInputStyle.Short).setRequired(true).setMinLength(3).setMaxLength(100).setPlaceholder("z. B. Neuer Roblox-Event-Abend");
+    const text=new TextInputBuilder().setCustomId("suggestion_text").setLabel("Beschreibe deinen Vorschlag").setStyle(TextInputStyle.Paragraph).setRequired(true).setMinLength(5).setMaxLength(1000).setPlaceholder("Was soll geändert oder hinzugefügt werden?");
+    modal.addComponents(new ActionRowBuilder().addComponents(title),new ActionRowBuilder().addComponents(text));
+    return modal;
+  }
+
+  function suggestionEmbed(s){
+    return footer(new EmbedBuilder()
+      .setTitle(`💡 ${s.title || "Community Suggestion"}`)
+      .setDescription(s.text)
+      .addFields(
+        {name:"Von",value:`<@${s.userId}>`,inline:true},
+        {name:"Status",value:s.status || "Under Review",inline:true},
+        {name:"Votes",value:`👍 ${(s.up||[]).length} • 👎 ${(s.down||[]).length}`,inline:true}
+      ));
+  }
+
+  function suggestionVoteRow(s){
+    return new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`sug_up:${s.messageId}`).setLabel(`👍 ${(s.up||[]).length}`).setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`sug_down:${s.messageId}`).setLabel(`👎 ${(s.down||[]).length}`).setStyle(ButtonStyle.Danger)
+    );
+  }
+
+  async function postSuggestion(guild,user,title,text){
+    const c=ensureGuild(guild.id),ch=guild.channels.cache.get(c.channels.suggestions);
+    if(!ch) throw new Error("Suggestions-Channel fehlt. Bitte `/setup` ausführen.");
+    const s={guildId:guild.id,userId:user.id,title:(title||"Community Suggestion").trim(),text:text.trim(),up:[],down:[],status:"Under Review",createdAt:Date.now()};
+    const pending=new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("sug_up:PENDING").setLabel("👍 0").setStyle(ButtonStyle.Success).setDisabled(true),
+      new ButtonBuilder().setCustomId("sug_down:PENDING").setLabel("👎 0").setStyle(ButtonStyle.Danger).setDisabled(true)
+    );
+    const m=await ch.send({embeds:[suggestionEmbed(s)],components:[pending]});
+    s.messageId=m.id;s.channelId=ch.id;db.suggestions[m.id]=s;saveDB();
+    await m.edit({embeds:[suggestionEmbed(s)],components:[suggestionVoteRow(s)]});
+    return m;
+  }
+
+  async function handleSuggestion(interaction){
+    const text=interaction.options.getString("text");
+    const title=text.length>80?`${text.slice(0,77)}...`:text;
+    const m=await postSuggestion(interaction.guild,interaction.user,title,text);
+    return interaction.reply({content:`✅ Vorschlag gepostet: ${m.url}`,flags:MessageFlags.Ephemeral});
+  }
+
+  async function refreshSuggestion(s,guild){const ch=guild.channels.cache.get(s.channelId),m=ch&&await ch.messages.fetch(s.messageId).catch(()=>null);if(!m)return;await m.edit({embeds:[suggestionEmbed(s)],components:[suggestionVoteRow(s)]});}
+
+  function suggestionList(guildId,userId=null,top=false){
+    let items=Object.values(db.suggestions).filter(s=>s.guildId===guildId);
+    if(userId) items=items.filter(s=>s.userId===userId);
+    if(top) items=items.filter(s=>s.status!=="Denied").sort((a,b)=>((b.up||[]).length-(b.down||[]).length)-((a.up||[]).length-(a.down||[]).length));
+    else items=items.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+    return items.slice(0,8);
+  }
+
+  function suggestionListText(items,guildId){
+    if(!items.length)return "Noch keine Vorschläge vorhanden.";
+    return items.map((s,i)=>{const score=(s.up||[]).length-(s.down||[]).length;const url=`https://discord.com/channels/${guildId}/${s.channelId}/${s.messageId}`;return `**${i+1}. ${s.title||"Vorschlag"}** — ${s.status||"Under Review"} • 👍 ${(s.up||[]).length} / 👎 ${(s.down||[]).length} • Score **${score}**\n[Ansehen](${url})`;}).join("\n\n").slice(0,3900);
+  }
+
+  async function handleClip(interaction){const c=ensureGuild(interaction.guild.id),ch=interaction.guild.channels.cache.get(c.channels.clips)||interaction.channel;const clip={guildId:interaction.guild.id,userId:interaction.user.id,url:interaction.options.getString("url"),description:interaction.options.getString("beschreibung")||"",votes:[],week:weekKey(),createdAt:Date.now()};const m=await ch.send({embeds:[footer(new EmbedBuilder().setTitle("🎬 Clip of the Week Entry").setDescription(`${clip.description||"Community Clip"}\n\n${clip.url}`).addFields({name:"Von",value:`${interaction.user}`,inline:true},{name:"Votes",value:"0",inline:true}))],components:[new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("clip_vote:PENDING").setLabel("Vote").setEmoji("🔥").setStyle(ButtonStyle.Primary))]});clip.messageId=m.id;clip.channelId=ch.id;db.clips[m.id]=clip;saveDB();await m.edit({components:[new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`clip_vote:${m.id}`).setLabel("Vote • 0").setEmoji("🔥").setStyle(ButtonStyle.Primary))]});return interaction.reply({content:`✅ Clip eingereicht: ${m.url}`,flags:MessageFlags.Ephemeral});}
 
   function selfRoleRows(guildId){ensureGuild(guildId);return [
     new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId("roles_games").setPlaceholder("Deine Games").setMinValues(1).setMaxValues(Math.min(10,GAME_ROLE_OPTIONS.length)).addOptions(GAME_ROLE_OPTIONS)),
@@ -480,11 +561,11 @@ function createCommunity(ctx) {
     new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId("roles_region").setPlaceholder("Region").addOptions([{label:"EU",value:"eu"},{label:"NA East",value:"nae"},{label:"NA Central",value:"nac"},{label:"NA West",value:"naw"},{label:"OCE",value:"oce"},{label:"Asia",value:"asia"},{label:"Middle East",value:"middleeast"},{label:"Brazil",value:"brazil"}])),
     new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId("roles_pings").setPlaceholder("Benachrichtigungen").setMinValues(1).setMaxValues(3).addOptions([{label:"No Pings",value:"none"},{label:"Event Pings",value:"eventPing"},{label:"Fortnite News",value:"newsPing"},{label:"Fortnite Item Shop",value:"shopPing"}]))
   ];}
-  async function applyRoles(interaction,group,values){const c=ensureGuild(interaction.guild.id);const groups={games:GAME_ROLE_KEYS,platform:["pc","playstation","xbox","switch","mobile"],mode:["build","zeroBuild","casual","competitive","ranked","chill","roleplay","creative"],region:["eu","nae","nac","naw","oce","asia","middleeast","brazil"],pings:["eventPing","newsPing","shopPing"]};const keys=groups[group]||[];const remove=keys.map(k=>c.roles[k]).filter(Boolean);if(remove.length)await interaction.member.roles.remove(remove).catch(()=>{});const add=values.map(k=>c.roles[k]).filter(Boolean);if(add.length)await interaction.member.roles.add(add).catch(()=>{});return interaction.reply({content:"✅ Rollen aktualisiert.",ephemeral:true});}
+  async function applyRoles(interaction,group,values){const c=ensureGuild(interaction.guild.id);const groups={games:GAME_ROLE_KEYS,platform:["pc","playstation","xbox","switch","mobile"],mode:["build","zeroBuild","casual","competitive","ranked","chill","roleplay","creative"],region:["eu","nae","nac","naw","oce","asia","middleeast","brazil"],pings:["eventPing","newsPing","shopPing"]};const keys=groups[group]||[];const remove=keys.map(k=>c.roles[k]).filter(Boolean);if(remove.length)await interaction.member.roles.remove(remove).catch(()=>{});const add=values.map(k=>c.roles[k]).filter(Boolean);if(add.length)await interaction.member.roles.add(add).catch(()=>{});return interaction.reply({content:"✅ Rollen aktualisiert.",flags:MessageFlags.Ephemeral});}
 
   function leaderboardRows(guildId,type){const items=Object.entries(db.users).filter(([k])=>k.startsWith(`${guildId}:`)).map(([k,u])=>({id:k.split(":")[1],u,c:ensureUser(guildId,k.split(":")[1])}));const val=x=>({coins:x.c.coins,level:x.u.level||0,season:x.c.seasonXp,invites:x.u.invites||0,eventwins:x.c.eventWins})[type]||0;return items.sort((a,b)=>val(b)-val(a)).slice(0,10).map((x,i)=>`${i+1}. <@${x.id}> — **${val(x)}**`).join("\n")||"Noch keine Daten.";}
 
-  async function handleBirthday(interaction){const sub=interaction.options.getSubcommand(),c=ensureUser(interaction.guild.id,interaction.user.id);if(sub==="remove"){c.birthday=null;saveDB();return interaction.reply({content:"✅ Geburtstag entfernt.",ephemeral:true});}const month=interaction.options.getInteger("monat"),day=interaction.options.getInteger("tag");const test=new Date(2024,month-1,day);if(test.getMonth()!==month-1||test.getDate()!==day)return interaction.reply({content:"❌ Dieses Datum gibt es nicht.",ephemeral:true});c.birthday={month,day};saveDB();return interaction.reply({content:`🎂 Gespeichert: **${day}.${month}.** (ohne Geburtsjahr).`,ephemeral:true});}
+  async function handleBirthday(interaction){const sub=interaction.options.getSubcommand(),c=ensureUser(interaction.guild.id,interaction.user.id);if(sub==="remove"){c.birthday=null;saveDB();return interaction.reply({content:"✅ Geburtstag entfernt.",flags:MessageFlags.Ephemeral});}const month=interaction.options.getInteger("monat"),day=interaction.options.getInteger("tag");const test=new Date(2024,month-1,day);if(test.getMonth()!==month-1||test.getDate()!==day)return interaction.reply({content:"❌ Dieses Datum gibt es nicht.",flags:MessageFlags.Ephemeral});c.birthday={month,day};saveDB();return interaction.reply({content:`🎂 Gespeichert: **${day}.${month}.** (ohne Geburtsjahr).`,flags:MessageFlags.Ephemeral});}
 
   async function processBirthdays(guild){const c=ensureGuild(guild.id),today=dateKey();if(c.lastBirthdayDate===today)return;c.lastBirthdayDate=today;const roleId=c.roles.birthday;try{if(roleId){await guild.members.fetch();for(const m of guild.members.cache.values())if(m.roles.cache.has(roleId))await m.roles.remove(roleId).catch(()=>{});}}catch{}const p=dateParts();const ids=Object.keys(db.users).filter(k=>k.startsWith(`${guild.id}:`)).map(k=>k.split(":")[1]).filter(id=>{const b=ensureUser(guild.id,id).birthday;return b&&b.month===p.month&&b.day===p.day;});const ch=guild.channels.cache.get(c.channels.birthdays);for(const id of ids){const m=await guild.members.fetch(id).catch(()=>null);if(m&&roleId)await m.roles.add(roleId).catch(()=>{});if(ch)await ch.send(`🎂 Happy Birthday <@${id}>! Die Community wünscht dir einen richtig guten Tag! 🥳`).catch(()=>{});}saveDB();}
 
@@ -515,28 +596,40 @@ function createCommunity(ctx) {
   async function onTeamsearchCreated(interaction){const c=ensureUser(interaction.guild.id,interaction.user.id);c.teamsearchCount+=1;c.coins+=5;c.seasonXp+=10;c.weeklyActivity+=3;questProgress(interaction.guild.id,interaction.user.id,"teamsearch",1);await checkAchievements(interaction.guild,interaction.user.id,interaction.channel);saveDB();}
   async function onTeamMemberJoined(guild,userId){const c=ensureUser(guild.id,userId);c.weeklyActivity+=1;c.coins+=2;saveDB();}
   async function onTeamFull(team,ch,guild){team.readyIds=[];saveDB();await ch.send({content:`✅ Team voll. Ready-Check für ${mentionList(team.members)}`,components:[new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`teamready_ready:${ch.id}`).setLabel("Ready").setEmoji("✅").setStyle(ButtonStyle.Success),new ButtonBuilder().setCustomId(`teamready_not:${ch.id}`).setLabel("Not Ready").setEmoji("❌").setStyle(ButtonStyle.Danger))]});}
-  async function teamReady(interaction,ready){const team=db.teams[interaction.channel.id]||db.teams[interaction.customId.split(":")[1]];if(!team||!team.members.includes(interaction.user.id))return interaction.reply({content:"❌ Du bist nicht in diesem Team.",ephemeral:true});team.readyIds=team.readyIds||[];team.readyIds=team.readyIds.filter(id=>id!==interaction.user.id);if(ready)team.readyIds.push(interaction.user.id);saveDB();if(!ready)return interaction.reply({content:"❌ Als **Not Ready** markiert.",ephemeral:true});await interaction.reply({content:`✅ Ready (${team.readyIds.length}/${team.members.length})`,ephemeral:true});if(team.readyIds.length===team.members.length&&!team.voiceId){const c=ensureGuild(interaction.guild.id),parent=interaction.guild.channels.cache.get(c.channels.voiceCategory);const voice=await interaction.guild.channels.create({name:`🎧 Ready Squad`,type:ChannelType.GuildVoice,parent:parent?.id,permissionOverwrites:[{id:interaction.guild.roles.everyone.id,deny:[PermissionsBitField.Flags.Connect,PermissionsBitField.Flags.ViewChannel]},...team.members.map(id=>({id,allow:[PermissionsBitField.Flags.Connect,PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.Speak]})),{id:interaction.guild.members.me.id,allow:[PermissionsBitField.Flags.Connect,PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.ManageChannels]}]});team.voiceId=voice.id;c.tempVoices.push(voice.id);saveDB();await interaction.channel.send(`🎧 Alle sind ready! Privater Voice: ${voice}`);}}
+  async function teamReady(interaction,ready){const team=db.teams[interaction.channel.id]||db.teams[interaction.customId.split(":")[1]];if(!team||!team.members.includes(interaction.user.id))return interaction.reply({content:"❌ Du bist nicht in diesem Team.",flags:MessageFlags.Ephemeral});team.readyIds=team.readyIds||[];team.readyIds=team.readyIds.filter(id=>id!==interaction.user.id);if(ready)team.readyIds.push(interaction.user.id);saveDB();if(!ready)return interaction.reply({content:"❌ Als **Not Ready** markiert.",flags:MessageFlags.Ephemeral});await interaction.reply({content:`✅ Ready (${team.readyIds.length}/${team.members.length})`,flags:MessageFlags.Ephemeral});if(team.readyIds.length===team.members.length&&!team.voiceId){const c=ensureGuild(interaction.guild.id),parent=interaction.guild.channels.cache.get(c.channels.voiceCategory);const voice=await interaction.guild.channels.create({name:`🎧 Ready Squad`,type:ChannelType.GuildVoice,parent:parent?.id,permissionOverwrites:[{id:interaction.guild.roles.everyone.id,deny:[PermissionsBitField.Flags.Connect,PermissionsBitField.Flags.ViewChannel]},...team.members.map(id=>({id,allow:[PermissionsBitField.Flags.Connect,PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.Speak]})),{id:interaction.guild.members.me.id,allow:[PermissionsBitField.Flags.Connect,PermissionsBitField.Flags.ViewChannel,PermissionsBitField.Flags.ManageChannels]}]});team.voiceId=voice.id;c.tempVoices.push(voice.id);saveDB();await interaction.channel.send(`🎧 Alle sind ready! Privater Voice: ${voice}`);}}
 
   async function handleInteraction(interaction){
     if(interaction.isChatInputCommand()){
       const n=interaction.commandName;
       if(n==="profile"){const user=interaction.options.getUser("user")||interaction.user;const member=await interaction.guild.members.fetch(user.id).catch(()=>null);if(member&&Date.now()-member.joinedTimestamp>180*DAY_MS)await awardBadge(interaction.guild.id,user.id,"OG Member");await interaction.reply({embeds:[profileEmbed(interaction.guild,user)]});return true;}
       if(n==="balance"){const c=ensureUser(interaction.guild.id,interaction.user.id);await interaction.reply(`🪙 ${interaction.user}: **${c.coins} Community Coins**`);return true;}
-      if(n==="coinshop"){await interaction.reply({embeds:[coinShopEmbed()],components:coinShopRows(),ephemeral:true});return true;}
-      if(n==="quests"){await interaction.reply({embeds:[questEmbed(interaction.guild.id,interaction.user.id)],components:questButtons(interaction.guild.id,interaction.user.id),ephemeral:true});return true;}
+      if(n==="coinshop"){await interaction.reply({embeds:[coinShopEmbed()],components:coinShopRows(),flags:MessageFlags.Ephemeral});return true;}
+      if(n==="quests"){await interaction.reply({embeds:[questEmbed(interaction.guild.id,interaction.user.id)],components:questButtons(interaction.guild.id,interaction.user.id),flags:MessageFlags.Ephemeral});return true;}
       if(n==="leaderboard"){const type=interaction.options.getString("typ");await interaction.reply({embeds:[footer(new EmbedBuilder().setTitle(`🏆 Leaderboard • ${type}`).setDescription(leaderboardRows(interaction.guild.id,type)))]});return true;}
       if(n==="squad"){await handleSquad(interaction);return true;}
       if(n==="event"){await handleEvent(interaction);return true;}
       if(n==="events"){const rows=Object.values(db.events).filter(e=>e.guildId===interaction.guild.id&&!e.ended&&e.startAt>Date.now()-6*60*60*1000).sort((a,b)=>a.startAt-b.startAt).slice(0,10).map(e=>`• **${e.name}** [${e.game || "Multi-Game"}] (${e.type}) — <t:${Math.floor(e.startAt/1000)}:F> • \`${e.id}\``).join("\n")||"Keine kommenden Events.";await interaction.reply({embeds:[footer(new EmbedBuilder().setTitle("📅 Event Calendar").setDescription(rows))]});return true;}
       if(n==="poll"){await handlePoll(interaction);return true;}
       if(n==="suggest"){await handleSuggestion(interaction);return true;}
-      if(n==="suggeststatus"){if(!isManager(interaction.member)){await interaction.reply({content:"❌ Dafür brauchst du Server verwalten.",ephemeral:true});return true;}const id=interaction.options.getString("message_id"),s=db.suggestions[id];if(!s){await interaction.reply({content:"❌ Vorschlag nicht gefunden.",ephemeral:true});return true;}s.status=interaction.options.getString("status");saveDB();await refreshSuggestion(s,interaction.guild);await interaction.reply({content:`✅ Status: **${s.status}**`,ephemeral:true});return true;}
+      if(n==="suggestions"){await interaction.reply({...suggestionsMenuPayload(),flags:MessageFlags.Ephemeral});return true;}
+      if(n==="suggestionspanel"){if(!isManager(interaction.member)){await interaction.reply({content:"❌ Dafür brauchst du Server verwalten.",flags:MessageFlags.Ephemeral});return true;}const c=ensureGuild(interaction.guild.id),ch=interaction.guild.channels.cache.get(c.channels.suggestions)||interaction.channel;const m=await upsertPanel(ch,c,"suggestionsMenu",suggestionsMenuPayload());await interaction.reply({content:`✅ Suggestions-Menü aktualisiert: ${m.url}`,flags:MessageFlags.Ephemeral});return true;}
+      if(n==="suggeststatus"){if(!isManager(interaction.member)){await interaction.reply({content:"❌ Dafür brauchst du Server verwalten.",flags:MessageFlags.Ephemeral});return true;}const id=interaction.options.getString("message_id"),s=db.suggestions[id];if(!s){await interaction.reply({content:"❌ Vorschlag nicht gefunden.",flags:MessageFlags.Ephemeral});return true;}s.status=interaction.options.getString("status");saveDB();await refreshSuggestion(s,interaction.guild);await interaction.reply({content:`✅ Status: **${s.status}**`,flags:MessageFlags.Ephemeral});return true;}
       if(n==="clip"){await handleClip(interaction);return true;}
       if(n==="birthday"){await handleBirthday(interaction);return true;}
-      if(n==="roles"){await interaction.reply({content:"🎭 Wähle deine Rollen:",components:selfRoleRows(interaction.guild.id),ephemeral:true});return true;}
+      if(n==="roles"){await interaction.reply({content:"🎭 Wähle deine Rollen:",components:selfRoleRows(interaction.guild.id),flags:MessageFlags.Ephemeral});return true;}
       if(n==="season"){const s=ensureGuild(interaction.guild.id).season;const uc=ensureUser(interaction.guild.id,interaction.user.id);await interaction.reply({embeds:[footer(new EmbedBuilder().setTitle(`🌟 ${s.name}`).setDescription(`Season **#${s.number}**\nEnde: <t:${Math.floor(s.endsAt/1000)}:R>\nDeine Season XP: **${uc.seasonXp}**`))]});return true;}
-      if(n==="seasonstart"){if(!isManager(interaction.member)){await interaction.reply({content:"❌ Dafür brauchst du Server verwalten.",ephemeral:true});return true;}const c=ensureGuild(interaction.guild.id),old=c.season;c.seasonHistory.push({...old,endedAt:Date.now()});c.season={number:(old.number||0)+1,name:interaction.options.getString("name"),startedAt:Date.now(),endsAt:Date.now()+interaction.options.getInteger("tage")*DAY_MS};for(const [k] of Object.entries(db.users).filter(([k])=>k.startsWith(`${interaction.guild.id}:`)))ensureUser(interaction.guild.id,k.split(":")[1]).seasonXp=0;saveDB();await interaction.reply(`🌟 Neue Season gestartet: **${c.season.name}** (${interaction.options.getInteger("tage")} Tage).`);return true;}
-      if(n==="fortnite"){const sub=interaction.options.getSubcommand();if(sub==="news"){await interaction.deferReply();try{const x=await currentNews();const text=x.items.slice(0,5).map(i=>`**${i.title||"News"}**\n${(i.body||"").slice(0,500)}`).join("\n\n")||"Keine News gefunden.";await interaction.editReply({embeds:[footer(new EmbedBuilder().setTitle("📰 Fortnite News").setDescription(text.slice(0,4000)))]});}catch(e){await interaction.editReply(`❌ Fortnite-News konnten nicht geladen werden: ${e.message}`);}return true;}if(sub==="shop"){await interaction.deferReply();try{const x=await currentShop();await interaction.editReply({embeds:[footer(new EmbedBuilder().setTitle("🛒 Fortnite Item Shop").setDescription(x.items.slice(0,30).map(i=>`• ${i.name}`).join("\n")||"Keine Items gefunden."))]});}catch(e){await interaction.editReply(`❌ Shop konnte nicht geladen werden: ${e.message}`);}return true;}const uc=ensureUser(interaction.guild.id,interaction.user.id);if(sub==="favorites"){await interaction.reply({content:uc.favorites.length?`🛒 Favoriten:\n${uc.favorites.map(x=>`• ${x}`).join("\n")}`:"Du hast noch keine Favoriten.",ephemeral:true});return true;}const name=interaction.options.getString("name").trim();if(sub==="favorite-add"){if(!uc.favorites.some(x=>norm(x)===norm(name)))uc.favorites.push(name);saveDB();await interaction.reply({content:`✅ **${name}** wird beobachtet. Bei einem Shop-Treffer versucht der Bot dir eine DM zu senden.`,ephemeral:true});return true;}uc.favorites=uc.favorites.filter(x=>norm(x)!==norm(name));saveDB();await interaction.reply({content:`✅ **${name}** entfernt.`,ephemeral:true});return true;}
+      if(n==="seasonstart"){if(!isManager(interaction.member)){await interaction.reply({content:"❌ Dafür brauchst du Server verwalten.",flags:MessageFlags.Ephemeral});return true;}const c=ensureGuild(interaction.guild.id),old=c.season;c.seasonHistory.push({...old,endedAt:Date.now()});c.season={number:(old.number||0)+1,name:interaction.options.getString("name"),startedAt:Date.now(),endsAt:Date.now()+interaction.options.getInteger("tage")*DAY_MS};for(const [k] of Object.entries(db.users).filter(([k])=>k.startsWith(`${interaction.guild.id}:`)))ensureUser(interaction.guild.id,k.split(":")[1]).seasonXp=0;saveDB();await interaction.reply(`🌟 Neue Season gestartet: **${c.season.name}** (${interaction.options.getInteger("tage")} Tage).`);return true;}
+      if(n==="fortnite"){const sub=interaction.options.getSubcommand();if(sub==="news"){await interaction.deferReply();try{const x=await currentNews();const text=x.items.slice(0,5).map(i=>`**${i.title||"News"}**\n${(i.body||"").slice(0,500)}`).join("\n\n")||"Keine News gefunden.";await interaction.editReply({embeds:[footer(new EmbedBuilder().setTitle("📰 Fortnite News").setDescription(text.slice(0,4000)))]});}catch(e){await interaction.editReply(`❌ Fortnite-News konnten nicht geladen werden: ${e.message}`);}return true;}if(sub==="shop"){await interaction.deferReply();try{const x=await currentShop();await interaction.editReply({embeds:[footer(new EmbedBuilder().setTitle("🛒 Fortnite Item Shop").setDescription(x.items.slice(0,30).map(i=>`• ${i.name}`).join("\n")||"Keine Items gefunden."))]});}catch(e){await interaction.editReply(`❌ Shop konnte nicht geladen werden: ${e.message}`);}return true;}const uc=ensureUser(interaction.guild.id,interaction.user.id);if(sub==="favorites"){await interaction.reply({content:uc.favorites.length?`🛒 Favoriten:\n${uc.favorites.map(x=>`• ${x}`).join("\n")}`:"Du hast noch keine Favoriten.",flags:MessageFlags.Ephemeral});return true;}const name=interaction.options.getString("name").trim();if(sub==="favorite-add"){if(!uc.favorites.some(x=>norm(x)===norm(name)))uc.favorites.push(name);saveDB();await interaction.reply({content:`✅ **${name}** wird beobachtet. Bei einem Shop-Treffer versucht der Bot dir eine DM zu senden.`,flags:MessageFlags.Ephemeral});return true;}uc.favorites=uc.favorites.filter(x=>norm(x)!==norm(name));saveDB();await interaction.reply({content:`✅ **${name}** entfernt.`,flags:MessageFlags.Ephemeral});return true;}
+    }
+
+    if(interaction.isModalSubmit()){
+      if(interaction.customId==="suggestion_modal"){
+        const title=interaction.fields.getTextInputValue("suggestion_title").trim();
+        const text=interaction.fields.getTextInputValue("suggestion_text").trim();
+        try{const m=await postSuggestion(interaction.guild,interaction.user,title,text);await interaction.reply({content:`✅ Dein Vorschlag wurde gepostet: ${m.url}`,flags:MessageFlags.Ephemeral});}
+        catch(err){await interaction.reply({content:`❌ Vorschlag konnte nicht erstellt werden: ${err.message}`,flags:MessageFlags.Ephemeral});}
+        return true;
+      }
     }
 
     if(interaction.isStringSelectMenu()){
@@ -548,15 +641,18 @@ function createCommunity(ctx) {
       if(id.startsWith("quest_self:")){const qid=id.split(":")[1],c=resetDailyIfNeeded(interaction.guild.id,interaction.user.id);c.daily.progress[qid]=1;saveDB();await interaction.update({embeds:[questEmbed(interaction.guild.id,interaction.user.id)],components:questButtons(interaction.guild.id,interaction.user.id)});return true;}
       if(id.startsWith("quest_claim:")){await claimQuest(interaction,id.split(":")[1]);return true;}
       if(id.startsWith("coinbuy:")){await buyItem(interaction,id.split(":")[1]);return true;}
-      if(id.startsWith("event_join:")||id.startsWith("event_leave:")||id.startsWith("event_remind:")){const [act,eid]=id.split(":");const e=db.events[eid];if(!e||e.ended){await interaction.reply({content:"Event nicht verfügbar.",ephemeral:true});return true;}if(act==="event_join"){let rewarded=false;if(!e.participants.includes(interaction.user.id)){e.participants.push(interaction.user.id);e.rewarded=e.rewarded||[];if(!e.rewarded.includes(interaction.user.id)){e.rewarded.push(interaction.user.id);const uc=ensureUser(interaction.guild.id,interaction.user.id);uc.coins+=5;uc.weeklyActivity+=2;rewarded=true;}}saveDB();await interaction.message.edit({embeds:[eventEmbed(e)],components:eventRows(e)}).catch(()=>{});await interaction.reply({content:rewarded?"✅ Event beigetreten. +5 Coins":"✅ Event beigetreten.",ephemeral:true});return true;}if(act==="event_leave"){e.participants=e.participants.filter(x=>x!==interaction.user.id);saveDB();await interaction.message.edit({embeds:[eventEmbed(e)],components:eventRows(e)}).catch(()=>{});await interaction.reply({content:"↩️ Event verlassen.",ephemeral:true});return true;}if(!e.reminders.includes(interaction.user.id))e.reminders.push(interaction.user.id);saveDB();await interaction.reply({content:"⏰ Reminder aktiviert. Der Bot versucht dir 30 Minuten vorher eine DM zu senden.",ephemeral:true});return true;}
+      if(id.startsWith("event_join:")||id.startsWith("event_leave:")||id.startsWith("event_remind:")){const [act,eid]=id.split(":");const e=db.events[eid];if(!e||e.ended){await interaction.reply({content:"Event nicht verfügbar.",flags:MessageFlags.Ephemeral});return true;}if(act==="event_join"){let rewarded=false;if(!e.participants.includes(interaction.user.id)){e.participants.push(interaction.user.id);e.rewarded=e.rewarded||[];if(!e.rewarded.includes(interaction.user.id)){e.rewarded.push(interaction.user.id);const uc=ensureUser(interaction.guild.id,interaction.user.id);uc.coins+=5;uc.weeklyActivity+=2;rewarded=true;}}saveDB();await interaction.message.edit({embeds:[eventEmbed(e)],components:eventRows(e)}).catch(()=>{});await interaction.reply({content:rewarded?"✅ Event beigetreten. +5 Coins":"✅ Event beigetreten.",flags:MessageFlags.Ephemeral});return true;}if(act==="event_leave"){e.participants=e.participants.filter(x=>x!==interaction.user.id);saveDB();await interaction.message.edit({embeds:[eventEmbed(e)],components:eventRows(e)}).catch(()=>{});await interaction.reply({content:"↩️ Event verlassen.",flags:MessageFlags.Ephemeral});return true;}if(!e.reminders.includes(interaction.user.id))e.reminders.push(interaction.user.id);saveDB();await interaction.reply({content:"⏰ Reminder aktiviert. Der Bot versucht dir 30 Minuten vorher eine DM zu senden.",flags:MessageFlags.Ephemeral});return true;}
       if(id.startsWith("poll_vote:")){const [,pid,idx]=id.split(":");await updatePoll(interaction,pid,Number(idx));return true;}
-      if(id.startsWith("sug_up:")||id.startsWith("sug_down:")){const [act,sid]=id.split(":"),s=db.suggestions[sid];if(!s){await interaction.reply({content:"Vorschlag nicht verfügbar.",ephemeral:true});return true;}s.up=s.up.filter(x=>x!==interaction.user.id);s.down=s.down.filter(x=>x!==interaction.user.id);(act==="sug_up"?s.up:s.down).push(interaction.user.id);saveDB();await refreshSuggestion(s,interaction.guild);await interaction.reply({content:"✅ Vote gespeichert.",ephemeral:true});return true;}
-      if(id.startsWith("clip_vote:")){const cid=id.split(":")[1],clip=db.clips[cid];if(!clip){await interaction.reply({content:"Clip nicht verfügbar.",ephemeral:true});return true;}if(clip.userId===interaction.user.id){await interaction.reply({content:"❌ Du kannst nicht für deinen eigenen Clip voten.",ephemeral:true});return true;}if(!clip.votes.includes(interaction.user.id))clip.votes.push(interaction.user.id);saveDB();await interaction.message.edit({components:[new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`clip_vote:${cid}`).setLabel(`Vote • ${clip.votes.length}`).setEmoji("🔥").setStyle(ButtonStyle.Primary))]}).catch(()=>{});await interaction.reply({content:"🔥 Vote gespeichert.",ephemeral:true});return true;}
+      if(id==="suggestion_new"){await interaction.showModal(suggestionModal());return true;}
+      if(id==="suggestion_mine"){const items=suggestionList(interaction.guild.id,interaction.user.id,false);await interaction.reply({embeds:[footer(new EmbedBuilder().setTitle("📋 Meine Vorschläge").setDescription(suggestionListText(items,interaction.guild.id)))],flags:MessageFlags.Ephemeral});return true;}
+      if(id==="suggestion_top"){const items=suggestionList(interaction.guild.id,null,true);await interaction.reply({embeds:[footer(new EmbedBuilder().setTitle("🔥 Top Vorschläge").setDescription(suggestionListText(items,interaction.guild.id)))],flags:MessageFlags.Ephemeral});return true;}
+      if(id.startsWith("sug_up:")||id.startsWith("sug_down:")){const [act,sid]=id.split(":"),s=db.suggestions[sid];if(!s){await interaction.reply({content:"Vorschlag nicht verfügbar.",flags:MessageFlags.Ephemeral});return true;}s.up=Array.isArray(s.up)?s.up:[];s.down=Array.isArray(s.down)?s.down:[];s.up=s.up.filter(x=>x!==interaction.user.id);s.down=s.down.filter(x=>x!==interaction.user.id);(act==="sug_up"?s.up:s.down).push(interaction.user.id);saveDB();await refreshSuggestion(s,interaction.guild);await interaction.reply({content:"✅ Vote gespeichert.",flags:MessageFlags.Ephemeral});return true;}
+      if(id.startsWith("clip_vote:")){const cid=id.split(":")[1],clip=db.clips[cid];if(!clip){await interaction.reply({content:"Clip nicht verfügbar.",flags:MessageFlags.Ephemeral});return true;}if(clip.userId===interaction.user.id){await interaction.reply({content:"❌ Du kannst nicht für deinen eigenen Clip voten.",flags:MessageFlags.Ephemeral});return true;}if(!clip.votes.includes(interaction.user.id))clip.votes.push(interaction.user.id);saveDB();await interaction.message.edit({components:[new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`clip_vote:${cid}`).setLabel(`Vote • ${clip.votes.length}`).setEmoji("🔥").setStyle(ButtonStyle.Primary))]}).catch(()=>{});await interaction.reply({content:"🔥 Vote gespeichert.",flags:MessageFlags.Ephemeral});return true;}
       if(id.startsWith("teamready_ready:")){await teamReady(interaction,true);return true;}
       if(id.startsWith("teamready_not:")){await teamReady(interaction,false);return true;}
-      if(id==="welcome_roles"){await interaction.reply({content:"🎭 Wähle deine Rollen:",components:selfRoleRows(interaction.guild.id),ephemeral:true});return true;}
-      if(id==="welcome_quests"){await interaction.reply({embeds:[questEmbed(interaction.guild.id,interaction.user.id)],components:questButtons(interaction.guild.id,interaction.user.id),ephemeral:true});return true;}
-      if(id==="welcome_support"){const ch=interaction.guild.channels.cache.get(guildData(interaction.guild.id).channels.support);await interaction.reply({content:ch?`🎫 Support findest du hier: ${ch}`:"🎫 Nutze den Support-Kanal des Servers.",ephemeral:true});return true;}
+      if(id==="welcome_roles"){await interaction.reply({content:"🎭 Wähle deine Rollen:",components:selfRoleRows(interaction.guild.id),flags:MessageFlags.Ephemeral});return true;}
+      if(id==="welcome_quests"){await interaction.reply({embeds:[questEmbed(interaction.guild.id,interaction.user.id)],components:questButtons(interaction.guild.id,interaction.user.id),flags:MessageFlags.Ephemeral});return true;}
+      if(id==="welcome_support"){const ch=interaction.guild.channels.cache.get(guildData(interaction.guild.id).channels.support);await interaction.reply({content:ch?`🎫 Support findest du hier: ${ch}`:"🎫 Nutze den Support-Kanal des Servers.",flags:MessageFlags.Ephemeral});return true;}
     }
     return false;
   }

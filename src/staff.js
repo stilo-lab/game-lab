@@ -5,7 +5,8 @@ const {
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle
+  ButtonStyle,
+  MessageFlags
 } = require("discord.js");
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -54,7 +55,8 @@ function buildStaffCommands() {
 function createStaffSystem(ctx) {
   const {
     client, db, saveDB, guildData, footer, findOrCreateCategory, findOrCreateText,
-    OWNER_ID, BOT_NAME, getGeminiClient, GEMINI_MODEL, ownerNotify
+    OWNER_ID, BOT_NAME, getGeminiClient, generateGeminiContent, GEMINI_MODEL, ownerNotify,
+    getGuildKnowledgeText
   } = ctx;
 
   const timezone = process.env.COMMUNITY_TIMEZONE || "Europe/Berlin";
@@ -69,6 +71,7 @@ function createStaffSystem(ctx) {
   const joinSignals = new Map();
   const duplicateSignals = new Map();
   const recentModeratorPunishments = new Map();
+  const moderationClassifyCooldowns = new Map();
 
   function nowDay(ts = Date.now()) {
     return new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ts));
@@ -263,9 +266,10 @@ function createStaffSystem(ctx) {
     const ai = await getGeminiClient();
     if (!ai) return null;
     const context = await recentContext(message.channel, 12);
-    const response = await ai.models.generateContent({
+    const learned = typeof getGuildKnowledgeText === "function" ? getGuildKnowledgeText(message.guild.id, 3500) : "";
+    const response = await generateGeminiContent({
       model: GEMINI_MODEL,
-      contents: `Analyze this Discord conversation for moderation. The newest message is ${message.id} by user ${message.author.id}.\n\n${JSON.stringify(context)}`,
+      contents: `Analyze this Discord conversation for moderation. The newest message is ${message.id} by user ${message.author.id}.\n\nConversation:\n${JSON.stringify(context)}${learned ? `\n\nServer-specific admin-taught context:\n${learned}` : ""}`,
       config: {
         systemInstruction: `You are a conservative Discord moderation classifier. Return ONLY valid JSON with keys: insult:boolean, severity:0|1|2|3, targetUserId:string|null, mutualConflict:boolean, counterpartUserId:string|null, scam:boolean, threat:boolean, confidence:number from 0 to 1, reason:string.\nDo not punish or decide guilt. Distinguish joking/friendly banter from targeted abuse. A mutualConflict means both sides are actively escalating, not merely one victim replying defensively. Use exact user IDs from the provided context. Be conservative when context is ambiguous.`,
         temperature: 0,
@@ -388,9 +392,10 @@ function createStaffSystem(ctx) {
     }
     const history = (dispute.history || []).slice(-14).map(h => `${h.userId}: ${h.text}`).join("\n");
     const imageParts = await imagePartsForGemini(message);
-    const response = await ai.models.generateContent({
+    const learned = typeof getGuildKnowledgeText === "function" ? getGuildKnowledgeText(message.guild.id, 4500) : "";
+    const response = await generateGeminiContent({
       model: GEMINI_MODEL,
-      contents: [{ role: "user", parts: [{ text: `Dispute ${dispute.id}. Participant ${message.author.id} says: ${message.content || "[image/evidence attached]"}\n\nRecent mediation history:\n${history}` }, ...imageParts] }],
+      contents: [{ role: "user", parts: [{ text: `Dispute ${dispute.id}. Participant ${message.author.id} says: ${message.content || "[image/evidence attached]"}\n\nRecent mediation history:\n${history}${learned ? `\n\nServer-specific admin-taught context:\n${learned}` : ""}` }, ...imageParts] }],
       config: {
         systemInstruction: `You are a neutral Discord dispute mediator for ${BOT_NAME}. Only the two participants are in this private process. Respond in the language they use. Help de-escalate, summarize each side accurately, ask one useful follow-up at a time, and propose concrete fair next steps such as apology, repayment evidence, stopping contact, clarifying a misunderstanding, or handing unresolved fraud/threat claims to human staff. If images are provided, describe only what is clearly visible and do not invent details. Never decide guilt, never threaten users, never reveal secrets, and never tell them to retaliate. If someone reports scamming, threats, doxxing, sexual exploitation, or serious safety issues, say human staff should review the evidence. Keep responses under about 1200 characters.`,
         maxOutputTokens: 700
@@ -417,6 +422,14 @@ function createStaffSystem(ctx) {
     if (!message.guild || message.author.bot || !message.member) return;
     if (isStaff(message.member)) return;
     if (!suspiciousLocally(message)) return;
+
+    // Verhindert, dass Spam direkt mehrere Gemini-Anfragen gleichzeitig auslöst.
+    // Die AI schaut weiterhin Kontext an, aber pro User höchstens etwa alle 8 Sekunden.
+    const classifyKey = `${message.guild.id}:${message.author.id}`;
+    const lastClassify = moderationClassifyCooldowns.get(classifyKey) || 0;
+    if (Date.now() - lastClassify < 8000) return;
+    moderationClassifyCooldowns.set(classifyKey, Date.now());
+
     let result;
     try { result = await classifyModeration(message); } catch { return; }
     if (!result || Number(result.confidence || 0) < 0.72) return;
@@ -555,7 +568,7 @@ function createStaffSystem(ctx) {
     try {
       const ai = await getGeminiClient();
       if (ai) {
-        const r = await ai.models.generateContent({
+        const r = await generateGeminiContent({
           model: GEMINI_MODEL,
           contents: JSON.stringify(base),
           config: {
@@ -620,9 +633,10 @@ function createStaffSystem(ctx) {
     const openCases = Object.values(s.cases).filter(c => c.status !== "closed").slice(-20).map(c => ({ id: c.id, userId: c.userId, type: c.type, summary: c.summary, status: c.status }));
     let knowledge = [];
     try { knowledge = JSON.parse(require("fs").readFileSync(require("path").join(__dirname, "..", "data", "staff_knowledge.json"), "utf8")); } catch {}
-    const response = await ai.models.generateContent({
+    const learned = typeof getGuildKnowledgeText === "function" ? getGuildKnowledgeText(guild.id, 6000) : "";
+    const response = await generateGeminiContent({
       model: GEMINI_MODEL,
-      contents: `${question}\n\nServer staff knowledge base:\n${JSON.stringify(knowledge).slice(0, 8000)}\n\nOpen case context:\n${JSON.stringify(openCases)}`,
+      contents: `${question}\n\nServer staff knowledge base:\n${JSON.stringify(knowledge).slice(0, 8000)}${learned ? `\n\nServer-specific knowledge taught by administrators with /learn:\n${learned}` : ""}\n\nOpen case context:\n${JSON.stringify(openCases)}`,
       config: {
         systemInstruction: `You are the internal staff assistant for ${BOT_NAME}. Answer practical questions about Discord moderation workflow, support consistency, cases and server operations. You may summarize evidence and suggest what a moderator should check next, but do not independently decide guilt, bans, appeals, or staff discipline. Be concise, neutral and in the user's language. Never reveal tokens or secrets.`,
         maxOutputTokens: 1200
@@ -640,11 +654,11 @@ function createStaffSystem(ctx) {
       const s = ensureGuild(interaction.guild.id);
       const dispute = s.disputes[disputeId];
       if (!dispute || !dispute.participants.includes(interaction.user.id)) {
-        await interaction.reply({ content: "❌ Dieser Schlichtungsfall gehört nicht zu dir.", ephemeral: true }).catch(() => {});
+        await interaction.reply({ content: "❌ Dieser Schlichtungsfall gehört nicht zu dir.", flags: MessageFlags.Ephemeral }).catch(() => {});
         return true;
       }
       if (dispute.status === "closed") {
-        await interaction.reply({ content: "ℹ️ Dieser Schlichtungsfall ist bereits beendet.", ephemeral: true }).catch(() => {});
+        await interaction.reply({ content: "ℹ️ Dieser Schlichtungsfall ist bereits beendet.", flags: MessageFlags.Ephemeral }).catch(() => {});
         return true;
       }
       if (action === "yes" || action === "no") {
@@ -652,18 +666,18 @@ function createStaffSystem(ctx) {
         saveDB();
         if (action === "yes") {
           await createMediationChannel(interaction.guild, dispute);
-          await interaction.reply({ content: `✅ Private AI-Schlichtung gestartet: <#${dispute.channelId}>`, ephemeral: true });
+          await interaction.reply({ content: `✅ Private AI-Schlichtung gestartet: <#${dispute.channelId}>`, flags: MessageFlags.Ephemeral });
           return true;
         }
         const votes = dispute.participants.map(uid => dispute.votes[uid]);
         if (votes.every(v => v === "no")) {
           dispute.status = "closed"; dispute.closedAt = Date.now(); dispute.outcome = "both-declined";
           saveDB();
-          await interaction.reply({ content: `⚠️ Beide haben die Schlichtung abgelehnt. Nach der Regel dieses Bots folgt für beide ein **${disputeDeclineTimeoutMin}-Minuten-Timeout**.`, ephemeral: true });
+          await interaction.reply({ content: `⚠️ Beide haben die Schlichtung abgelehnt. Nach der Regel dieses Bots folgt für beide ein **${disputeDeclineTimeoutMin}-Minuten-Timeout**.`, flags: MessageFlags.Ephemeral });
           await timeoutBothForDispute(interaction.guild, dispute, disputeDeclineTimeoutMin, "AI mediation declined by both sides after detected mutual escalation");
           return true;
         }
-        await interaction.reply({ content: "ℹ️ Deine Antwort wurde gespeichert. Wenn die andere Person **Ja** wählt, startet trotzdem die private Schlichtung.", ephemeral: true });
+        await interaction.reply({ content: "ℹ️ Deine Antwort wurde gespeichert. Wenn die andere Person **Ja** wählt, startet trotzdem die private Schlichtung.", flags: MessageFlags.Ephemeral });
         return true;
       }
       if (action === "resolved") {
@@ -672,12 +686,12 @@ function createStaffSystem(ctx) {
         saveDB();
         const all = dispute.participants.every(uid => dispute.resolutionVotes[uid]);
         if (!all) {
-          await interaction.reply({ content: "✅ Du hast 'Streit gelöst' gewählt. Die andere Person muss ebenfalls bestätigen.", ephemeral: true });
+          await interaction.reply({ content: "✅ Du hast 'Streit gelöst' gewählt. Die andere Person muss ebenfalls bestätigen.", flags: MessageFlags.Ephemeral });
           return true;
         }
         dispute.status = "closed"; dispute.closedAt = Date.now(); dispute.outcome = "resolved";
         saveDB();
-        await interaction.reply({ content: `✅ Beide bestätigen die Lösung. Wie festgelegt bekommen beide jetzt **${disputeResolvedTimeoutMin} Minuten Cooldown-Timeout**.`, ephemeral: true });
+        await interaction.reply({ content: `✅ Beide bestätigen die Lösung. Wie festgelegt bekommen beide jetzt **${disputeResolvedTimeoutMin} Minuten Cooldown-Timeout**.`, flags: MessageFlags.Ephemeral });
         await timeoutBothForDispute(interaction.guild, dispute, disputeResolvedTimeoutMin, "Dispute resolved – cooling-off timeout");
         setTimeout(() => interaction.channel.delete("Resolved AI mediation").catch(() => {}), 5000);
         return true;
@@ -688,12 +702,12 @@ function createStaffSystem(ctx) {
         saveDB();
         const all = dispute.participants.every(uid => dispute.closeVotes[uid]);
         if (!all) {
-          await interaction.reply({ content: "❌ Du hast 'Close – ungelöst' gewählt. Die andere Person muss ebenfalls bestätigen.", ephemeral: true });
+          await interaction.reply({ content: "❌ Du hast 'Close – ungelöst' gewählt. Die andere Person muss ebenfalls bestätigen.", flags: MessageFlags.Ephemeral });
           return true;
         }
         dispute.status = "closed"; dispute.closedAt = Date.now(); dispute.outcome = "failed";
         saveDB();
-        await interaction.reply({ content: `❌ Beide schließen den Streit als ungelöst. Beide bekommen **${disputeFailedTimeoutMin} Minuten Timeout**.`, ephemeral: true });
+        await interaction.reply({ content: `❌ Beide schließen den Streit als ungelöst. Beide bekommen **${disputeFailedTimeoutMin} Minuten Timeout**.`, flags: MessageFlags.Ephemeral });
         await timeoutBothForDispute(interaction.guild, dispute, disputeFailedTimeoutMin, "AI mediation closed unresolved by both sides");
         setTimeout(() => interaction.channel.delete("Unresolved AI mediation closed").catch(() => {}), 5000);
         return true;
@@ -705,7 +719,7 @@ function createStaffSystem(ctx) {
     const managed = ["staffstats", "staffleaderboard", "case", "serverhealth", "staffai", "punishmenthistory", "shift", "stafftask", "staffapplication", "staffbrief", "modassist"];
     if (!managed.includes(interaction.commandName)) return false;
     if (!isStaff(interaction.member)) {
-      await interaction.reply({ content: "❌ Nur für Staff/Moderation.", ephemeral: true });
+      await interaction.reply({ content: "❌ Nur für Staff/Moderation.", flags: MessageFlags.Ephemeral });
       return true;
     }
 
@@ -722,7 +736,7 @@ function createStaffSystem(ctx) {
         { name: "Aktivität", value: `Aktive Tage: **${st.activeDays}**\nTasks erledigt: **${st.tasks}**`, inline: true },
         { name: "Ø Ticket-Reaktion", value: st.avgResponseMs == null ? "—" : `**${Math.round(st.avgResponseMs / 60000)} min**`, inline: true }
       ));
-      await interaction.reply({ embeds: [embed], ephemeral: true });
+      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       return true;
     }
 
@@ -730,7 +744,7 @@ function createStaffSystem(ctx) {
       const days = interaction.options.getInteger("tage") || 30;
       const rows = Object.keys(s.activity).map(uid => ({ uid, st: statsFor(guild.id, uid, days) })).filter(x => x.st.actions > 0).sort((a,b) => staffScore(b.st) - staffScore(a.st)).slice(0, 15);
       const text = rows.length ? rows.map((x, i) => `${i + 1}. <@${x.uid}> — **${x.st.actions} Staff-Aktionen**, ${x.st.activeDays} aktive Tage, ${x.st.ticketsClosed} Tickets geschlossen`).join("\n") : "Noch keine Staff-Aktivität erfasst.";
-      await interaction.reply({ embeds: [footer(new EmbedBuilder().setTitle("📈 Staff Activity Overview").setDescription(text + "\n\n*Die Sortierung ist nur nach protokollierter Arbeit, nicht nach persönlicher Qualität.*"))], ephemeral: true });
+      await interaction.reply({ embeds: [footer(new EmbedBuilder().setTitle("📈 Staff Activity Overview").setDescription(text + "\n\n*Die Sortierung ist nur nach protokollierter Arbeit, nicht nach persönlicher Qualität.*"))], flags: MessageFlags.Ephemeral });
       return true;
     }
 
@@ -738,47 +752,47 @@ function createStaffSystem(ctx) {
       const sub = interaction.options.getSubcommand();
       if (sub === "view") {
         const id = interaction.options.getString("id").toUpperCase(); const c = s.cases[id];
-        if (!c) { await interaction.reply({ content: "❌ Fall nicht gefunden.", ephemeral: true }); return true; }
+        if (!c) { await interaction.reply({ content: "❌ Fall nicht gefunden.", flags: MessageFlags.Ephemeral }); return true; }
         const notes = (c.notes || []).slice(-8).map(n => `• <@${n.by}>: ${n.text}`).join("\n") || "—";
         await interaction.reply({ embeds: [footer(new EmbedBuilder().setTitle(`📁 ${id}`).setDescription(c.summary || "Moderationsfall").addFields(
           { name: "User", value: c.userId ? `<@${c.userId}>` : "—", inline: true }, { name: "Status", value: c.status || "open", inline: true }, { name: "Type", value: c.type || "case", inline: true }, { name: "Notizen", value: notes.slice(0, 1024) }
-        ))], ephemeral: true });
+        ))], flags: MessageFlags.Ephemeral });
         return true;
       }
       if (sub === "user") {
         const user = interaction.options.getUser("user");
         const rows = Object.values(s.cases).filter(c => c.userId === user.id).slice(-20).reverse();
-        await interaction.reply({ content: rows.length ? rows.map(c => `**${c.id}** • ${c.status} • ${c.summary || c.type}`).join("\n") : "Keine gespeicherten Fälle.", ephemeral: true });
+        await interaction.reply({ content: rows.length ? rows.map(c => `**${c.id}** • ${c.status} • ${c.summary || c.type}`).join("\n") : "Keine gespeicherten Fälle.", flags: MessageFlags.Ephemeral });
         return true;
       }
       if (sub === "note") {
         const id = interaction.options.getString("id").toUpperCase(); const c = s.cases[id];
-        if (!c) { await interaction.reply({ content: "❌ Fall nicht gefunden.", ephemeral: true }); return true; }
+        if (!c) { await interaction.reply({ content: "❌ Fall nicht gefunden.", flags: MessageFlags.Ephemeral }); return true; }
         c.notes.push({ at: Date.now(), by: interaction.user.id, text: interaction.options.getString("text") });
         recordAction(guild.id, interaction.user.id, "case", { caseId: id, action: "note" });
         saveDB();
-        await interaction.reply({ content: `✅ Notiz zu **${id}** gespeichert.`, ephemeral: true });
+        await interaction.reply({ content: `✅ Notiz zu **${id}** gespeichert.`, flags: MessageFlags.Ephemeral });
         return true;
       }
       if (sub === "summarize") {
         const id = interaction.options.getString("id").toUpperCase(); const c = s.cases[id];
-        if (!c) { await interaction.reply({ content: "❌ Fall nicht gefunden.", ephemeral: true }); return true; }
-        await interaction.deferReply({ ephemeral: true });
+        if (!c) { await interaction.reply({ content: "❌ Fall nicht gefunden.", flags: MessageFlags.Ephemeral }); return true; }
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         try {
           const ai = await getGeminiClient(); if (!ai) throw new Error("GEMINI_NOT_CONFIGURED");
           const dispute = c.disputeId ? s.disputes[c.disputeId] : null;
           const material = { case: c, disputeHistory: dispute?.history?.slice(-30) || [] };
-          const r = await ai.models.generateContent({ model: GEMINI_MODEL, contents: JSON.stringify(material), config: { systemInstruction: "Summarize this Discord moderation case for human staff in German. Include what happened, claims from each side, available evidence, actions already taken, unresolved questions, and what staff should verify next. Do not decide guilt or recommend an automatic punishment.", maxOutputTokens: 1200 } });
+          const r = await generateGeminiContent({ model: GEMINI_MODEL, contents: JSON.stringify(material), config: { systemInstruction: "Summarize this Discord moderation case for human staff in German. Include what happened, claims from each side, available evidence, actions already taken, unresolved questions, and what staff should verify next. Do not decide guilt or recommend an automatic punishment.", maxOutputTokens: 1200 } });
           await interaction.editReply(String(r.text || "Keine Zusammenfassung.").slice(0, 1900));
         } catch(e) { await interaction.editReply(e?.message === "GEMINI_NOT_CONFIGURED" ? "⚙️ `GEMINI_API_KEY` fehlt." : "❌ AI-Zusammenfassung fehlgeschlagen."); }
         return true;
       }
       if (sub === "close") {
         const id = interaction.options.getString("id").toUpperCase(); const c = s.cases[id];
-        if (!c) { await interaction.reply({ content: "❌ Fall nicht gefunden.", ephemeral: true }); return true; }
+        if (!c) { await interaction.reply({ content: "❌ Fall nicht gefunden.", flags: MessageFlags.Ephemeral }); return true; }
         c.status = "closed"; c.closedAt = Date.now(); c.closedBy = interaction.user.id;
         recordAction(guild.id, interaction.user.id, "case", { caseId: id, action: "close" }); saveDB();
-        await interaction.reply({ content: `✅ **${id}** geschlossen.`, ephemeral: true });
+        await interaction.reply({ content: `✅ **${id}** geschlossen.`, flags: MessageFlags.Ephemeral });
         return true;
       }
     }
@@ -793,12 +807,12 @@ function createStaffSystem(ctx) {
         { name: "Community", value: `Messages: **${totals.messages}**\nAktive User: **${totals.active.size}**\nJoins/Leaves: **${totals.joins}/${totals.leaves}**`, inline: true },
         { name: "Moderation", value: `Punishments: **${totals.punishments}**\nAI-Streitfälle: **${totals.disputes}**\nOpen cases: **${openCases}**`, inline: true },
         { name: "Operations", value: `Open tasks: **${openTasks}**\nTracked staff: **${Object.keys(s.activity).length}**`, inline: true }
-      ))], ephemeral: true });
+      ))], flags: MessageFlags.Ephemeral });
       return true;
     }
 
     if (interaction.commandName === "staffai") {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       try { await interaction.editReply((await askStaffAI(guild, interaction.options.getString("frage"))).slice(0, 1900)); }
       catch (e) { await interaction.editReply(e?.message === "GEMINI_NOT_CONFIGURED" ? "⚙️ `GEMINI_API_KEY` fehlt." : "❌ Staff-AI konnte gerade nicht antworten."); }
       return true;
@@ -808,71 +822,71 @@ function createStaffSystem(ctx) {
       const user = interaction.options.getUser("user");
       const rows = s.punishments.filter(p => p.userId === user.id).slice(-15).reverse();
       const text = rows.length ? rows.map(p => `<t:${Math.floor(p.at/1000)}:R> • **${p.type}** ${p.durationMs ? `(${Math.round(p.durationMs/60000)}m)` : ""} • ${p.reason}`).join("\n") : "Keine gespeicherten Strafen durch diesen Bot.";
-      await interaction.reply({ embeds: [footer(new EmbedBuilder().setTitle(`⚖️ Punishment History • ${user.username}`).setDescription(text))], ephemeral: true });
+      await interaction.reply({ embeds: [footer(new EmbedBuilder().setTitle(`⚖️ Punishment History • ${user.username}`).setDescription(text))], flags: MessageFlags.Ephemeral });
       return true;
     }
 
     if (interaction.commandName === "shift") {
       const sub = interaction.options.getSubcommand(); const current = s.shifts[interaction.user.id];
       if (sub === "start") {
-        if (current?.active) { await interaction.reply({ content: "ℹ️ Deine Schicht läuft bereits.", ephemeral: true }); return true; }
+        if (current?.active) { await interaction.reply({ content: "ℹ️ Deine Schicht läuft bereits.", flags: MessageFlags.Ephemeral }); return true; }
         s.shifts[interaction.user.id] = { active: true, startedAt: Date.now(), actions: 0 }; saveDB();
-        await interaction.reply({ content: "🟢 Staff-Schicht gestartet.", ephemeral: true }); return true;
+        await interaction.reply({ content: "🟢 Staff-Schicht gestartet.", flags: MessageFlags.Ephemeral }); return true;
       }
       if (sub === "status") {
-        if (!current?.active) { await interaction.reply({ content: "⚪ Keine aktive Schicht.", ephemeral: true }); return true; }
-        await interaction.reply({ content: `🟢 Aktiv seit <t:${Math.floor(current.startedAt/1000)}:R> • **${current.actions || 0}** Staff-Aktionen.`, ephemeral: true }); return true;
+        if (!current?.active) { await interaction.reply({ content: "⚪ Keine aktive Schicht.", flags: MessageFlags.Ephemeral }); return true; }
+        await interaction.reply({ content: `🟢 Aktiv seit <t:${Math.floor(current.startedAt/1000)}:R> • **${current.actions || 0}** Staff-Aktionen.`, flags: MessageFlags.Ephemeral }); return true;
       }
       if (sub === "end") {
-        if (!current?.active) { await interaction.reply({ content: "⚪ Keine aktive Schicht.", ephemeral: true }); return true; }
+        if (!current?.active) { await interaction.reply({ content: "⚪ Keine aktive Schicht.", flags: MessageFlags.Ephemeral }); return true; }
         const duration = Date.now() - current.startedAt; current.active = false; current.endedAt = Date.now();
         ensureActivity(guild.id, interaction.user.id).shifts.push({ startedAt: current.startedAt, endedAt: current.endedAt, actions: current.actions || 0 }); saveDB();
-        await interaction.reply({ content: `🔴 Schicht beendet • **${Math.round(duration/60000)} min** • **${current.actions || 0} Staff-Aktionen**.`, ephemeral: true }); return true;
+        await interaction.reply({ content: `🔴 Schicht beendet • **${Math.round(duration/60000)} min** • **${current.actions || 0} Staff-Aktionen**.`, flags: MessageFlags.Ephemeral }); return true;
       }
     }
 
     if (interaction.commandName === "stafftask") {
       const sub = interaction.options.getSubcommand();
       if (sub === "create") {
-        if (!(interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild) || interaction.user.id === OWNER_ID)) { await interaction.reply({ content: "❌ Nur Admin/Owner kann Tasks erstellen.", ephemeral: true }); return true; }
+        if (!(interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild) || interaction.user.id === OWNER_ID)) { await interaction.reply({ content: "❌ Nur Admin/Owner kann Tasks erstellen.", flags: MessageFlags.Ephemeral }); return true; }
         s.taskCounter += 1; const id = `TASK-${String(s.taskCounter).padStart(4,"0")}`; const dur = parseDuration(interaction.options.getString("deadline"));
         s.tasks[id] = { id, text: interaction.options.getString("aufgabe"), assigneeId: interaction.options.getUser("user").id, createdBy: interaction.user.id, createdAt: Date.now(), dueAt: dur ? Date.now()+dur : null, done: false, reminded: false }; saveDB();
         const ch = guild.channels.cache.get(s.channels.tasks); if (ch) await ch.send(`📋 **${id}** • <@${s.tasks[id].assigneeId}>\n${s.tasks[id].text}${s.tasks[id].dueAt ? `\nDeadline: <t:${Math.floor(s.tasks[id].dueAt/1000)}:R>` : ""}`).catch(() => {});
-        await interaction.reply({ content: `✅ ${id} erstellt.`, ephemeral: true }); return true;
+        await interaction.reply({ content: `✅ ${id} erstellt.`, flags: MessageFlags.Ephemeral }); return true;
       }
       if (sub === "list") {
         const rows = Object.values(s.tasks).filter(t => !t.done).slice(-25);
-        await interaction.reply({ content: rows.length ? rows.map(t => `**${t.id}** • <@${t.assigneeId}> • ${t.text}${t.dueAt ? ` • <t:${Math.floor(t.dueAt/1000)}:R>` : ""}`).join("\n") : "Keine offenen Staff-Tasks.", ephemeral: true }); return true;
+        await interaction.reply({ content: rows.length ? rows.map(t => `**${t.id}** • <@${t.assigneeId}> • ${t.text}${t.dueAt ? ` • <t:${Math.floor(t.dueAt/1000)}:R>` : ""}`).join("\n") : "Keine offenen Staff-Tasks.", flags: MessageFlags.Ephemeral }); return true;
       }
       if (sub === "done") {
         const id = interaction.options.getString("id").toUpperCase(); const t = s.tasks[id];
-        if (!t) { await interaction.reply({ content: "❌ Task nicht gefunden.", ephemeral: true }); return true; }
-        if (t.assigneeId !== interaction.user.id && !(interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild) || interaction.user.id === OWNER_ID)) { await interaction.reply({ content: "❌ Nicht dein Task.", ephemeral: true }); return true; }
+        if (!t) { await interaction.reply({ content: "❌ Task nicht gefunden.", flags: MessageFlags.Ephemeral }); return true; }
+        if (t.assigneeId !== interaction.user.id && !(interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild) || interaction.user.id === OWNER_ID)) { await interaction.reply({ content: "❌ Nicht dein Task.", flags: MessageFlags.Ephemeral }); return true; }
         t.done = true; t.doneAt = Date.now(); t.doneBy = interaction.user.id; recordAction(guild.id, interaction.user.id, "task_done", { taskId:id }); saveDB();
-        await interaction.reply({ content: `✅ ${id} erledigt.`, ephemeral: true }); return true;
+        await interaction.reply({ content: `✅ ${id} erledigt.`, flags: MessageFlags.Ephemeral }); return true;
       }
     }
 
     if (interaction.commandName === "staffapplication") {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const text = interaction.options.getString("text");
       try {
         const ai = await getGeminiClient(); if (!ai) throw new Error("GEMINI_NOT_CONFIGURED");
-        const r = await ai.models.generateContent({ model:GEMINI_MODEL, contents:text, config:{ systemInstruction:"Review this Discord staff application neutrally. Do NOT accept/reject, rank, score, or infer personality. Summarize relevant experience, identify missing/unclear information, flag obvious contradictions or copied/generic phrasing only when supported by the text, and propose 5 interview questions. Answer in German.", maxOutputTokens:1200 } });
+        const r = await generateGeminiContent({ model:GEMINI_MODEL, contents:text, config:{ systemInstruction:"Review this Discord staff application neutrally. Do NOT accept/reject, rank, score, or infer personality. Summarize relevant experience, identify missing/unclear information, flag obvious contradictions or copied/generic phrasing only when supported by the text, and propose 5 interview questions. Answer in German.", maxOutputTokens:1200 } });
         await interaction.editReply(String(r.text || "Keine Analyse.").slice(0,1900));
       } catch(e) { await interaction.editReply(e?.message === "GEMINI_NOT_CONFIGURED" ? "⚙️ `GEMINI_API_KEY` fehlt." : "❌ Review fehlgeschlagen."); }
       return true;
     }
 
     if (interaction.commandName === "staffbrief") {
-      await interaction.reply({ embeds: [await generateBrief(guild, 1, "On-demand Staff Brief")], ephemeral: true }); return true;
+      await interaction.reply({ embeds: [await generateBrief(guild, 1, "On-demand Staff Brief")], flags: MessageFlags.Ephemeral }); return true;
     }
 
     if (interaction.commandName === "modassist") {
       const id = interaction.options.getString("message_id");
       const msg = await interaction.channel.messages.fetch(id).catch(() => null);
-      if (!msg) { await interaction.reply({ content:"❌ Nachricht nicht gefunden.", ephemeral:true }); return true; }
-      await interaction.deferReply({ ephemeral:true });
+      if (!msg) { await interaction.reply({ content:"❌ Nachricht nicht gefunden.", flags:MessageFlags.Ephemeral }); return true; }
+      await interaction.deferReply({ flags:MessageFlags.Ephemeral });
       try {
         const result = await classifyModeration(msg);
         await interaction.editReply(result ? `🧠 **AI Moderation Assistant**\n\n${JSON.stringify(result, null, 2).slice(0,1700)}\n\n*Das ist eine Empfehlung/Analyse, keine automatische Schuld- oder Strafentscheidung.*` : "Keine AI-Analyse verfügbar.");
