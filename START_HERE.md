@@ -1,4 +1,17 @@
-# START_HERE – Stilo Multi-Game Bot v1.4.4
+# START_HERE – Stilo Multi-Game Bot v1.5.4
+
+## Neu in v1.5.4: Spotify Listening Party
+
+Für `/spotify start` zusätzlich in Railway setzen:
+
+```env
+SPOTIFY_CLIENT_ID=deine_spotify_app_client_id
+SPOTIFY_CLIENT_SECRET=dein_spotify_app_client_secret
+SPOTIFY_MARKET=DE
+SPOTIFY_PLAYLIST_URL=https://open.spotify.com/playlist/3oVDosIUz6bQpEJIgIsEzK
+```
+
+Der Bot joint den Voice-Channel und zeigt ein Spotify-artiges Party-Panel mit Trackliste, Cover, Queue, Play/Pause, Next, Shuffle, Repeat und Spotify-Links. Spotify-Audio selbst wird nicht durch den Bot in Discord rebroadcastet; jeder hoert ueber Spotify.
 
 ## Neu in v1.4.4: Member Hub
 
@@ -188,3 +201,8 @@ Wenn jemand deinen Bot auf einen weiteren Discord-Server hinzufügt, bekommst du
 
 ## Element Seas testen
 Nach dem Deployment werden die neuen Commands global registriert. Teste zuerst `/elementseas`. Für PvP kannst du `/seaduel @user` verwenden.
+
+
+## v1.5.2 – Smart Setup Verhalten
+
+`/setup` erstellt **keine neuen Kanäle oder Kategorien**. Der Bot scannt vorhandene Kanäle (inkl. Fancy-Schriften und optional Nachrichtenverlauf), richtet alle erkannten passenden Kanäle sofort ein und zeigt anschließend nur die noch fehlenden Kanäle an. Über **Neu prüfen & einrichten** können später manuell angelegte Kanäle erkannt und verbunden werden. Für eine komplett automatisch erzeugte Server-Struktur bleibt `/serversetup` zuständig.

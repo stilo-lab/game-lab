@@ -1,7 +1,17 @@
-# Stilo Bot Update – seit Setup Final Fix
+# Spotify Listening Party Update v1.5.4
 
-Für einen bestehenden Bot ab v1.5.1 oder neuer.
+Ausgehend von Bot v1.5.3.
 
-Ersetze in GitHub die Dateien aus diesem ZIP an denselben Pfaden. Danach Railway neu deployen lassen.
+In GitHub ersetzen/hinzufuegen:
+- `src/index.js` ersetzen
+- `src/spotify_party.js` neu hinzufuegen
+- `package.json` ersetzen
+- `.env.example` optional ersetzen
 
-Enthält den endgültigen Setup-Fix v1.5.2 und External Ticket Support-AI v1.5.3.
+Railway Variablen hinzufuegen:
+- `SPOTIFY_CLIENT_ID`
+- `SPOTIFY_CLIENT_SECRET`
+- optional `SPOTIFY_MARKET=DE`
+- optional `SPOTIFY_PLAYLIST_URL=https://open.spotify.com/playlist/3oVDosIUz6bQpEJIgIsEzK`
+
+Danach neu deployen und `/spotify start` in einem Textchannel ausfuehren, waehrend du in einem Voice-Channel bist.
