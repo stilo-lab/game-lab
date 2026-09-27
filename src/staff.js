@@ -59,6 +59,7 @@ function createStaffSystem(ctx) {
     getGuildKnowledgeText
   } = ctx;
 
+  const isGuildApproved = typeof ctx.isGuildApproved === "function" ? ctx.isGuildApproved : (() => true);
   const timezone = process.env.COMMUNITY_TIMEZONE || "Europe/Berlin";
   const insultTimeoutMin = Math.max(1, Number(process.env.AI_INSULT_TIMEOUT_MIN || 20));
   const disputeDeclineTimeoutMin = Math.max(1, Number(process.env.DISPUTE_DECLINE_TIMEOUT_MIN || 30));
@@ -266,10 +267,9 @@ function createStaffSystem(ctx) {
     const ai = await getGeminiClient();
     if (!ai) return null;
     const context = await recentContext(message.channel, 12);
-    const learned = typeof getGuildKnowledgeText === "function" ? getGuildKnowledgeText(message.guild.id, 3500) : "";
     const response = await generateGeminiContent({
       model: GEMINI_MODEL,
-      contents: `Analyze this Discord conversation for moderation. The newest message is ${message.id} by user ${message.author.id}.\n\nConversation:\n${JSON.stringify(context)}${learned ? `\n\nServer-specific admin-taught context:\n${learned}` : ""}`,
+      contents: `Analyze this Discord conversation for moderation. The newest message is ${message.id} by user ${message.author.id}.\n\nConversation:\n${JSON.stringify(context)}`,
       config: {
         systemInstruction: `You are a conservative Discord moderation classifier. Return ONLY valid JSON with keys: insult:boolean, severity:0|1|2|3, targetUserId:string|null, mutualConflict:boolean, counterpartUserId:string|null, scam:boolean, threat:boolean, confidence:number from 0 to 1, reason:string.\nDo not punish or decide guilt. Distinguish joking/friendly banter from targeted abuse. A mutualConflict means both sides are actively escalating, not merely one victim replying defensively. Use exact user IDs from the provided context. Be conservative when context is ambiguous.`,
         temperature: 0,
@@ -392,10 +392,9 @@ function createStaffSystem(ctx) {
     }
     const history = (dispute.history || []).slice(-14).map(h => `${h.userId}: ${h.text}`).join("\n");
     const imageParts = await imagePartsForGemini(message);
-    const learned = typeof getGuildKnowledgeText === "function" ? getGuildKnowledgeText(message.guild.id, 4500) : "";
     const response = await generateGeminiContent({
       model: GEMINI_MODEL,
-      contents: [{ role: "user", parts: [{ text: `Dispute ${dispute.id}. Participant ${message.author.id} says: ${message.content || "[image/evidence attached]"}\n\nRecent mediation history:\n${history}${learned ? `\n\nServer-specific admin-taught context:\n${learned}` : ""}` }, ...imageParts] }],
+      contents: [{ role: "user", parts: [{ text: `Dispute ${dispute.id}. Participant ${message.author.id} says: ${message.content || "[image/evidence attached]"}\n\nRecent mediation history:\n${history}` }, ...imageParts] }],
       config: {
         systemInstruction: `You are a neutral Discord dispute mediator for ${BOT_NAME}. Only the two participants are in this private process. Respond in the language they use. Help de-escalate, summarize each side accurately, ask one useful follow-up at a time, and propose concrete fair next steps such as apology, repayment evidence, stopping contact, clarifying a misunderstanding, or handing unresolved fraud/threat claims to human staff. If images are provided, describe only what is clearly visible and do not invent details. Never decide guilt, never threaten users, never reveal secrets, and never tell them to retaliate. If someone reports scamming, threats, doxxing, sexual exploitation, or serious safety issues, say human staff should review the evidence. Keep responses under about 1200 characters.`,
         maxOutputTokens: 700
@@ -584,6 +583,7 @@ function createStaffSystem(ctx) {
 
   async function scheduledTick() {
     for (const guild of client.guilds.cache.values()) {
+      if (!isGuildApproved(guild.id)) continue;
       const s = ensureGuild(guild.id);
       const p = localParts();
       if (p.hour >= 9 && s.scheduled.dailyBriefKey !== p.dayKey) {
@@ -633,10 +633,9 @@ function createStaffSystem(ctx) {
     const openCases = Object.values(s.cases).filter(c => c.status !== "closed").slice(-20).map(c => ({ id: c.id, userId: c.userId, type: c.type, summary: c.summary, status: c.status }));
     let knowledge = [];
     try { knowledge = JSON.parse(require("fs").readFileSync(require("path").join(__dirname, "..", "data", "staff_knowledge.json"), "utf8")); } catch {}
-    const learned = typeof getGuildKnowledgeText === "function" ? getGuildKnowledgeText(guild.id, 6000) : "";
     const response = await generateGeminiContent({
       model: GEMINI_MODEL,
-      contents: `${question}\n\nServer staff knowledge base:\n${JSON.stringify(knowledge).slice(0, 8000)}${learned ? `\n\nServer-specific knowledge taught by administrators with /learn:\n${learned}` : ""}\n\nOpen case context:\n${JSON.stringify(openCases)}`,
+      contents: `${question}\n\nServer staff knowledge base:\n${JSON.stringify(knowledge).slice(0, 8000)}\n\nOpen case context:\n${JSON.stringify(openCases)}`,
       config: {
         systemInstruction: `You are the internal staff assistant for ${BOT_NAME}. Answer practical questions about Discord moderation workflow, support consistency, cases and server operations. You may summarize evidence and suggest what a moderator should check next, but do not independently decide guilt, bans, appeals, or staff discipline. Be concise, neutral and in the user's language. Never reveal tokens or secrets.`,
         maxOutputTokens: 1200
