@@ -72,6 +72,7 @@ if (!db.guildApprovals || typeof db.guildApprovals !== "object") db.guildApprova
 if (!db.guildApprovals.guilds || typeof db.guildApprovals.guilds !== "object") db.guildApprovals.guilds = {};
 if (typeof db.guildApprovals.initialized !== "boolean") db.guildApprovals.initialized = false;
 if (typeof db.maintenance !== "boolean") db.maintenance = false;
+if (!db.ownerInviteLinks || typeof db.ownerInviteLinks !== "object") db.ownerInviteLinks = {};
 
 function saveDB() {
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
@@ -118,7 +119,7 @@ const SMART_SETUP_PURPOSES = Object.freeze([
   { canonical: "daily-quests", aliases: ["daily-quests", "quests", "aufgaben", "daily"] },
   { canonical: "coin-shop", aliases: ["coin-shop", "shop", "coins", "community-shop"] },
   { canonical: "choose-roles", aliases: ["choose-roles", "roles", "rollen", "self-roles", "selfroles"] },
-  { canonical: "suggestions", aliases: ["suggestions", "suggestion", "vorschlage", "vorschlaege", "ideen", "feedback"] },
+  { canonical: "suggestions", aliases: ["suggestions", "suggestion", "vorschlag", "vorschlage", "vorschlaege", "ideen", "idee", "feedback", "einsenden", "einreichen", "submit", "submissions", "suggestion-box", "ideen-einsenden", "wuensche", "wunsche"] },
   { canonical: "best-moments", aliases: ["best-moments", "starboard", "hall-of-fame", "highlights"] },
   { canonical: "clip-of-the-week", aliases: ["clip-of-the-week", "clips", "clip", "best-clips"] },
   { canonical: "birthdays", aliases: ["birthdays", "birthday", "geburtstage", "geburtstag"] },
@@ -286,10 +287,32 @@ async function prepareSmartSetup(guild) {
     selected.push(item);
   }
 
+  // Suggestions are special: a server can have MORE THAN ONE channel where ideas are submitted.
+  // Keep all confident suggestion/input channels instead of only the single primary setup match.
+  const suggestionsPurpose = setupPurposeByCanonical("suggestions");
+  const suggestionChannelIds = new Set();
+  if (suggestionsPurpose) {
+    for (const snap of snapshots) {
+      const score = setupHeuristicScore(snap, suggestionsPurpose);
+      if (score >= 10) suggestionChannelIds.add(snap.id);
+    }
+    for (const item of ai) {
+      if (item.canonical === "suggestions" && item.score >= 55) suggestionChannelIds.add(item.channelId);
+    }
+  }
+  const primarySuggestion = selected.find(x => x.canonical === "suggestions");
+  if (primarySuggestion) suggestionChannelIds.add(primarySuggestion.channelId);
+
   const hints = new Map();
   for (const item of selected) hints.set(cleanName(item.canonical), item.channelId);
   smartSetupHints.set(guild.id, hints);
-  return { scanned: snapshots.length, reused: selected.length, selected, aiUsed: Boolean(GEMINI_API_KEY) };
+  return {
+    scanned: snapshots.length,
+    reused: selected.length,
+    selected,
+    aiUsed: Boolean(GEMINI_API_KEY),
+    suggestionChannelIds: [...suggestionChannelIds]
+  };
 }
 
 function looksLikeLearnInstruction(text, topic = "") {
@@ -2158,6 +2181,9 @@ const commands = [
     .setName("commandsync")
     .setDescription("Bot-Owner: synchronisiert alle Slash-Commands sofort auf allen freigegebenen Servern."),
   new SlashCommandBuilder()
+    .setName("links")
+    .setDescription("Bot-Owner: zeigt Einladungslinks zu allen Servern, auf denen der Bot ist."),
+  new SlashCommandBuilder()
     .setName("supportstats")
     .setDescription("Zeigt Support-Statistiken des Servers."),
   new SlashCommandBuilder()
@@ -2374,9 +2400,38 @@ client.on("channelCreate", async channel => {
   );
 });
 
+async function reactToSuggestionSubmission(message) {
+  if (!message?.guild || !message.channel?.isTextBased?.()) return false;
+  if (message.author?.id === client.user?.id) return false;
+  const gd = guildData(message.guild.id);
+  const ids = new Set([
+    ...(Array.isArray(gd.suggestionChannelIds) ? gd.suggestionChannelIds : []),
+    ...(gd.channels?.suggestions ? [gd.channels.suggestions] : [])
+  ]);
+  if (!ids.has(message.channel.id)) return false;
+
+  // Ignore Discord system messages and completely empty posts. Other bots are allowed,
+  // because many suggestion bots publish the actual submission as an embed.
+  if (message.system) return false;
+  const embedText = (message.embeds || []).map(e => `${e.title || ""} ${e.description || ""}`).join(" ").trim();
+  if (!String(message.content || "").trim() && !embedText && !(message.attachments?.size > 0)) return false;
+
+  for (const emoji of ["💡", "👍", "👎"]) {
+    await message.react(emoji).catch(() => {});
+  }
+  return true;
+}
+
 client.on("messageCreate", async message => {
-  if (!message.guild || message.author.bot) return;
+  if (!message.guild) return;
   if (!isGuildApproved(message.guild.id)) return;
+
+  // React to every new submission in channels detected by /setup, including embeds
+  // posted by other suggestion bots. Never react to our own messages.
+  await reactToSuggestionSubmission(message).catch(err => console.warn("Suggestion auto-reaction failed:", err?.message || err));
+
+  // Other bot messages should not run moderation/levels/AI after the suggestion reaction.
+  if (message.author.bot) return;
   const gd = guildData(message.guild.id);
 
   // One-click translation: the bot offers a globe reaction on normal text messages.
@@ -2580,6 +2635,12 @@ function rememberSetupAssignments(guild, smartSetup) {
     const alias = coreAliases[item.canonical];
     if (alias) gd.channels[alias] = item.channelId;
   }
+  // Save every detected suggestions / feedback / submission channel.
+  gd.suggestionChannelIds = Array.from(new Set([
+    ...(Array.isArray(gd.suggestionChannelIds) ? gd.suggestionChannelIds : []),
+    ...(smartSetup.suggestionChannelIds || []),
+    ...(gd.channels.suggestions ? [gd.channels.suggestions] : [])
+  ])).filter(id => guild.channels.cache.has(id));
 
   const support = gd.channels.support && guild.channels.cache.get(gd.channels.support);
   if (support?.parentId) gd.channels.ticketCategory = support.parentId;
@@ -2707,7 +2768,7 @@ function setupCheckPayload(guild, smartSetup, setupResult = {}) {
 
   const embed = footer(new EmbedBuilder()
     .setTitle("🧩 Smart Setup • prüfen & einrichten")
-    .setDescription(`Ich habe **${smartSetup.scanned}** lesbare Textkanäle geprüft.\n\n🛠️ Panel/Setup wirklich gesendet: **${configuredSet.size}**\n🔗 Nur verbunden: **${connectedSet.size}**\n⚠️ Fehler: **${failed.length}**\n❌ Fehlend: **${missing.length}**\n\n**/setup erstellt keine neuen Kanäle oder Kategorien.**`)
+    .setDescription(`Ich habe **${smartSetup.scanned}** lesbare Textkanäle geprüft.\n\n🛠️ Panel/Setup wirklich gesendet: **${configuredSet.size}**\n🔗 Nur verbunden: **${connectedSet.size}**\n💡 Vorschlags-/Einsende-Kanäle: **${(smartSetup.suggestionChannelIds || []).length}**\n⚠️ Fehler: **${failed.length}**\n❌ Fehlend: **${missing.length}**\n\n**/setup erstellt keine neuen Kanäle oder Kategorien.**`)
     .setColor(failed.length ? 0xED4245 : (missing.length ? 0xFEE75C : 0x57F287)));
 
   if (failed.length) {
@@ -3399,6 +3460,90 @@ function fortniteMinigame(type) {
   return gameMinigame("fortnite", type);
 }
 
+
+async function getOrCreateOwnerInvite(guild) {
+  const cached = db.ownerInviteLinks?.[guild.id];
+  if (cached?.code) {
+    const valid = await client.fetchInvite(cached.code).catch(() => null);
+    if (valid?.guild?.id === guild.id) {
+      return { ok: true, url: `https://discord.gg/${cached.code}`, channelId: cached.channelId || valid.channelId || null, cached: true };
+    }
+    delete db.ownerInviteLinks[guild.id];
+    saveDB();
+  }
+
+  const me = guild.members.me || await guild.members.fetchMe().catch(() => null);
+  if (!me) return { ok: false, reason: "Bot-Mitglied konnte nicht geladen werden." };
+
+  const candidates = [...guild.channels.cache.values()]
+    .filter(ch => ch && !ch.isThread?.() && [ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildVoice, ChannelType.GuildStageVoice].includes(ch.type))
+    .filter(ch => {
+      const perms = ch.permissionsFor(me);
+      return perms?.has(PermissionsBitField.Flags.ViewChannel) && perms?.has(PermissionsBitField.Flags.CreateInstantInvite);
+    })
+    .sort((a, b) => {
+      if (guild.systemChannelId === a.id) return -1;
+      if (guild.systemChannelId === b.id) return 1;
+      return (a.rawPosition ?? 9999) - (b.rawPosition ?? 9999);
+    });
+
+  const channel = candidates[0];
+  if (!channel?.createInvite) {
+    return { ok: false, reason: "Keine Berechtigung `Einladung erstellen` in einem nutzbaren Kanal." };
+  }
+
+  try {
+    const invite = await channel.createInvite({
+      maxAge: 0,
+      maxUses: 0,
+      unique: true,
+      reason: `Owner-Linkliste von ${BOT_NAME}`
+    });
+    if (!db.ownerInviteLinks) db.ownerInviteLinks = {};
+    db.ownerInviteLinks[guild.id] = {
+      code: invite.code,
+      channelId: channel.id,
+      createdAt: Date.now()
+    };
+    saveDB();
+    return { ok: true, url: invite.url || `https://discord.gg/${invite.code}`, channelId: channel.id, cached: false };
+  } catch (err) {
+    return { ok: false, reason: String(err?.message || err).slice(0, 180) };
+  }
+}
+
+async function buildOwnerServerLinkLines() {
+  const guilds = [...client.guilds.cache.values()].sort((a, b) => a.name.localeCompare(b.name, "de"));
+  const lines = [];
+  for (const guild of guilds) {
+    const approved = isGuildApproved(guild.id);
+    const result = await getOrCreateOwnerInvite(guild);
+    const approvalLabel = approved ? "✅" : "🔐";
+    if (result.ok) {
+      lines.push(`${approvalLabel} **${guild.name}** (${guild.id})\n${result.url}`);
+    } else {
+      lines.push(`${approvalLabel} **${guild.name}** (${guild.id})\n⚠️ Kein Invite möglich: ${result.reason}`);
+    }
+  }
+  return { guildCount: guilds.length, lines };
+}
+
+function splitOwnerLinkList(header, lines, maxLen = 1900) {
+  const chunks = [];
+  let current = header;
+  for (const line of lines) {
+    const addition = `\n\n${line}`;
+    if ((current + addition).length > maxLen && current !== header) {
+      chunks.push(current);
+      current = `**Fortsetzung**${addition}`;
+    } else {
+      current += addition;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
 client.on("interactionCreate", async interaction => {
   try {
     // Owner approval buttons work in DMs and must be handled before guild gating.
@@ -3416,6 +3561,21 @@ client.on("interactionCreate", async interaction => {
         .setColor(result.ok ? (action === "guild_approve" ? 0x57F287 : 0xED4245) : 0xFEE75C)
         .setTimestamp();
       return interaction.editReply({ embeds: [embed], components: [] }).catch(() => {});
+    }
+
+    // Owner-only server invite overview. Works before guild approval gating.
+    if (interaction.isChatInputCommand() && interaction.commandName === "links") {
+      if (interaction.user.id !== OWNER_ID) {
+        return interaction.reply({ content: "❌ Dieser Command ist nur für den Bot-Owner.", flags: MessageFlags.Ephemeral });
+      }
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      const result = await buildOwnerServerLinkLines();
+      const chunks = splitOwnerLinkList(`🔗 **Server-Links (${result.guildCount})**\n✅ = freigegeben • 🔐 = noch nicht freigegeben`, result.lines);
+      await interaction.editReply(chunks[0] || "Der Bot ist aktuell auf keinem Server.");
+      for (const chunk of chunks.slice(1)) {
+        await interaction.followUp({ content: chunk, flags: MessageFlags.Ephemeral });
+      }
+      return;
     }
 
     // Fallback management command in case the DM was missed.
