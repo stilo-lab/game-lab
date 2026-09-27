@@ -5,6 +5,7 @@ const path = require("path");
 const { buildCommunityCommands, createCommunity } = require("./community");
 const { buildStaffCommands, createStaffSystem } = require("./staff");
 const { buildElementSeasCommands, createElementSeas } = require("./element_seas");
+const { buildSpotifyPartyCommands, createSpotifyParty } = require("./spotify_party");
 const { GAME_CHOICES, gameName, gameListText, randomGamePrompt } = require("./games");
 const {
   Client,
@@ -2155,7 +2156,8 @@ const commands = [
     .addStringOption(o => o.setName("text").setDescription("Ankündigung").setRequired(true)),
   ...buildCommunityCommands(),
   ...buildStaffCommands(),
-  ...buildElementSeasCommands()
+  ...buildElementSeasCommands(),
+  ...buildSpotifyPartyCommands()
 ].map(c => c.toJSON());
 
 async function registerCommands() {
@@ -2233,6 +2235,12 @@ const elementSeas = createElementSeas({
   db,
   saveDB,
   footer
+});
+
+const spotifyParty = createSpotifyParty({
+  client,
+  footer,
+  isGuildApproved
 });
 
 async function snapshotInvites(guild) {
@@ -2313,6 +2321,7 @@ client.on("messageDelete", message => {
 });
 
 client.on("voiceStateUpdate", (oldState, newState) => {
+  spotifyParty.handleVoiceState(oldState, newState).catch(err => console.warn("Spotify voice-state handler failed:", err?.message || err));
   const guildId = newState.guild?.id || oldState.guild?.id;
   if (!isGuildApproved(guildId)) return;
   community.onVoiceStateUpdate(oldState, newState).catch(() => {});
@@ -2902,6 +2911,7 @@ async function runServerSetup(interaction) {
   track("voiceGaming1", await findOrCreateVoice(guild, "🎮 Gaming 1", voiceCat));
   track("voiceGaming2", await findOrCreateVoice(guild, "🎮 Gaming 2", voiceCat));
   track("voiceChill", await findOrCreateVoice(guild, "😌 Chill", voiceCat));
+  track("voiceSpotify", await findOrCreateVoice(guild, "🎧 Spotify Party", voiceCat));
   track("voiceAfk", await findOrCreateVoice(guild, "😴 AFK", voiceCat));
 
   // PRIVATE STAFF
@@ -3435,6 +3445,7 @@ client.on("interactionCreate", async interaction => {
       });
     }
 
+    if (await spotifyParty.handleInteraction(interaction)) return;
     if (await elementSeas.handleInteraction(interaction)) return;
     if (await staff.handleInteraction(interaction)) return;
     if (await community.handleInteraction(interaction)) return;
