@@ -1,18 +1,29 @@
-# Update ab dem endgültigen Setup-Fix
+# Update v1.5.8
 
-Dieses Paket enthält alle Code-Änderungen ab dem endgültigen Setup-Fix v1.5.2 bis v1.5.3.
+Dieses Update enthält genau die zwei gewünschten Bereiche:
 
-## Enthalten
-- v1.5.2: /setup richtet gefundene Kanäle wirklich ein und zeigt fehlende/fehlerhafte Kanäle korrekt an.
-- v1.5.3: Support-AI erkennt auch Tickets anderer Ticket-Bots und wartet, bis der Ticket-Ersteller wirklich schreibt.
+1. **Suggestions / Einsende-Kanäle**
+   - `/setup` erkennt mehrere Ideen-/Feedback-/Vorschlags-/Einsende-Kanäle.
+   - Fancy-Schriften werden normalisiert.
+   - Auf jede neue Einsendung reagiert der Bot mit 💡 👍 👎.
+   - Funktioniert auch bei Embed-Einsendungen anderer Bots.
 
-## In GitHub ersetzen
-- src/index.js
-- src/community.js
-- src/staff.js
-- package.json
+2. **Spotify Connect**
+   - `/spotify connect`, `/spotify status`, `/spotify disconnect`
+   - `/spotify start` startet die feste Playlist wirklich auf dem verbundenen Spotify-Gerät.
+   - Play/Pause, Next, Previous, Shuffle, Repeat und `/spotify play nummer:1-45` steuern Spotify.
+   - Musik läuft auf dem Spotify-Gerät; Spotify-Audio wird nicht in Discord rebroadcastet.
 
-## Nicht überschreiben
-Dieses Paket enthält absichtlich keine data/db.json. Deine bestehenden Coins, Cases, Learn-Einträge, Staff-Daten und sonstigen gespeicherten Daten bleiben dadurch erhalten.
+## Dateien ersetzen
+- `src/index.js`
+- `src/spotify_party.js`
+- `package.json`
+- `.env.example` (nur Vorlage; NICHT deine echte `.env` überschreiben)
+- `.gitignore`
 
-Nach dem Commit Railway neu deployen lassen und /setup erneut testen.
+## Spotify OAuth zusätzlich
+Aktiviere in Railway eine Public Domain und setze in Railway:
+`SPOTIFY_REDIRECT_URI=https://DEINE-DOMAIN/spotify/callback`
+
+Exakt dieselbe URL muss im Spotify Developer Dashboard unter Redirect URIs stehen.
+Danach neu deployen und `/spotify connect` ausführen.
