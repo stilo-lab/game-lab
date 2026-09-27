@@ -260,6 +260,8 @@ function createCommunity(ctx) {
   async function setupExistingOnly(guild) {
     const gd = guildData(guild.id);
     const c = ensureGuild(guild.id);
+    const configured = [];
+    const failed = [];
     const map = {
       "welcome": "welcome",
       "daily-quests": "quests",
@@ -280,8 +282,32 @@ function createCommunity(ctx) {
       if (id && guild.channels.cache.get(id)) c.channels[key] = id;
     }
 
-    // If a roles/welcome channel exists, make sure the role menus can actually work.
-    // This creates roles only, never channels/categories.
+    function missingPostPermissions(channel) {
+      const perms = channel?.permissionsFor?.(guild.members.me);
+      if (!perms) return ["Berechtigungen konnten nicht gelesen werden"];
+      const missing = [];
+      if (!perms.has(PermissionsBitField.Flags.ViewChannel)) missing.push("Kanal ansehen");
+      if (!perms.has(PermissionsBitField.Flags.SendMessages)) missing.push("Nachrichten senden");
+      if (!perms.has(PermissionsBitField.Flags.EmbedLinks)) missing.push("Links einbetten");
+      return missing;
+    }
+
+    async function safePanel(canonical, channel, key, payload) {
+      if (!channel) return;
+      const missing = missingPostPermissions(channel);
+      if (missing.length) {
+        failed.push({ canonical, channelId: channel.id, error: `Fehlende Bot-Rechte: ${missing.join(", ")}` });
+        return;
+      }
+      try {
+        await upsertPanel(channel, c, key, payload);
+        configured.push(canonical);
+      } catch (err) {
+        failed.push({ canonical, channelId: channel.id, error: String(err?.message || err).slice(0, 300) });
+      }
+    }
+
+    // Rollen duerfen erstellt werden, aber ein Rollenfehler darf NIE das restliche Setup abbrechen.
     if (c.channels.roles || c.channels.welcome) {
       const roleNames = {
         ...GAME_ROLE_NAMES,
@@ -292,33 +318,64 @@ function createCommunity(ctx) {
         memberWeek: "Member of the Week", vip: "Community VIP"
       };
       for (const [key, name] of Object.entries(roleNames)) {
-        const r = await findOrCreateRole(guild, name); if (r) c.roles[key] = r.id;
+        try {
+          const r = await findOrCreateRole(guild, name);
+          if (r) c.roles[key] = r.id;
+        } catch (err) {
+          console.warn(`Setup role '${name}' failed:`, err?.message || err);
+        }
       }
     }
 
+    const welcomeCh = guild.channels.cache.get(c.channels.welcome);
+    if (welcomeCh) {
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("welcome_roles").setLabel("Choose Roles").setEmoji("🎭").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId("welcome_quests").setLabel("Daily Quests").setEmoji("🎯").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId("welcome_support").setLabel("Support").setEmoji("🎫").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("welcome_member").setLabel("Member Hub").setEmoji("✨").setStyle(ButtonStyle.Secondary)
+      );
+      await safePanel("welcome", welcomeCh, "welcomeSetup", { embeds: [footer(new EmbedBuilder().setTitle("👋 Willkommen").setDescription("Willkommen auf dem Server!\n\n🎮 Mitspieler: `/teamsearch`\n🎯 Quests: `/quests`\n✨ Member Hub: `/member`\n🎭 Rollen: `/roles`\n🎫 Hilfe: im Support-Kanal"))], components: [row] });
+    }
+
     const questsCh = guild.channels.cache.get(c.channels.quests);
-    if (questsCh) await upsertPanel(questsCh, c, "quests", { embeds: [footer(new EmbedBuilder().setTitle("🎯 Daily Quests").setDescription("Verdiene **Community Coins** und **Season XP**. Nutze `/quests`, um deinen Fortschritt und Claim-Buttons zu sehen.\n\n• 5 sinnvolle Nachrichten\n• 1 Multi-Game-Teamsearch erstellen\n• 1 Runde/Match mit einem Community-Mitglied (Selbstbestätigung)"))] });
+    if (questsCh) await safePanel("daily-quests", questsCh, "quests", { embeds: [footer(new EmbedBuilder().setTitle("🎯 Daily Quests").setDescription("Verdiene **Community Coins** und **Season XP**. Nutze `/quests`, um deinen Fortschritt und Claim-Buttons zu sehen.\n\n• 5 sinnvolle Nachrichten\n• 1 Multi-Game-Teamsearch erstellen\n• 1 Runde/Match mit einem Community-Mitglied (Selbstbestätigung)"))] });
 
     const shopCh = guild.channels.cache.get(c.channels.coinShop);
-    if (shopCh) await upsertPanel(shopCh, c, "coinShop", { embeds: [footer(new EmbedBuilder().setTitle("🪙 Community Coin Shop").setDescription("Coins bekommst du durch Aktivität, Quests, Teamsearch und Events. Nutze `/coinshop` zum Kaufen.\n\nBelohnungen sind kosmetisch und geben keine Moderationsrechte oder Spielvorteile."))] });
+    if (shopCh) await safePanel("coin-shop", shopCh, "coinShop", { embeds: [footer(new EmbedBuilder().setTitle("🪙 Community Coin Shop").setDescription("Coins bekommst du durch Aktivität, Quests, Teamsearch und Events. Nutze `/coinshop` zum Kaufen.\n\nBelohnungen sind kosmetisch und geben keine Moderationsrechte oder Spielvorteile."))] });
 
     const rolesCh = guild.channels.cache.get(c.channels.roles);
-    if (rolesCh) await upsertPanel(rolesCh, c, "roles", { embeds: [footer(new EmbedBuilder().setTitle("🎭 Self Roles").setDescription("Nutze `/roles` und wähle deine Games, Plattform, Spielstil, Region und Benachrichtigungen."))] });
+    if (rolesCh) await safePanel("choose-roles", rolesCh, "roles", { embeds: [footer(new EmbedBuilder().setTitle("🎭 Self Roles").setDescription("Nutze `/roles` und wähle deine Games, Plattform, Spielstil, Region und Benachrichtigungen."))] });
 
     const suggestionsCh = guild.channels.cache.get(c.channels.suggestions);
-    if (suggestionsCh) await upsertPanel(suggestionsCh, c, "suggestionsMenu", suggestionsMenuPayload());
+    if (suggestionsCh) await safePanel("suggestions", suggestionsCh, "suggestionsMenu", suggestionsMenuPayload());
+
+    const starboardCh = guild.channels.cache.get(c.channels.starboard);
+    if (starboardCh) await safePanel("best-moments", starboardCh, "starboardInfo", { embeds: [footer(new EmbedBuilder().setTitle("⭐ Best Moments").setDescription("Nachrichten mit genug ⭐-Reaktionen landen automatisch hier. So sammelt die Community ihre besten Momente."))] });
+
+    const clipsCh = guild.channels.cache.get(c.channels.clips);
+    if (clipsCh) await safePanel("clip-of-the-week", clipsCh, "clipsInfo", { embeds: [footer(new EmbedBuilder().setTitle("🎬 Clip of the Week").setDescription("Reiche mit `/clip` deinen Clip ein. Die Community kann abstimmen und der beliebteste Clip wird hervorgehoben."))] });
+
+    const birthdaysCh = guild.channels.cache.get(c.channels.birthdays);
+    if (birthdaysCh) await safePanel("birthdays", birthdaysCh, "birthdaysInfo", { embeds: [footer(new EmbedBuilder().setTitle("🎂 Geburtstage").setDescription("Speichere deinen Geburtstag mit `/birthday set`. Es wird nur Tag + Monat gespeichert, kein Geburtsjahr."))] });
 
     const communityQuestionCh = guild.channels.cache.get(c.channels.communityQuestion);
-    if (communityQuestionCh) await upsertPanel(communityQuestionCh, c, "communityQuestionInfo", { embeds: [footer(new EmbedBuilder().setTitle("💬 Community-Frage des Tages").setDescription("Hier landet eine lockere Frage für alle. Ein Admin startet sie mit `/communityfrage neu`.\n\nMit **💬 Antworten** öffnet sich ein Formular; die Antworten landen sauber in einem Thread. Die Community bekommt für die erste Antwort **10 Coins + 5 Season XP**."))] });
+    if (communityQuestionCh) await safePanel("community-fragen", communityQuestionCh, "communityQuestionInfo", { embeds: [footer(new EmbedBuilder().setTitle("💬 Community-Frage des Tages").setDescription("Hier landet eine lockere Frage für alle. Ein Admin startet sie mit `/communityfrage neu`.\n\nMit **💬 Antworten** öffnet sich ein Formular; die Antworten landen sauber in einem Thread. Die Community bekommt für die erste Antwort **10 Coins + 5 Season XP**."))] });
+
+    const newsCh = guild.channels.cache.get(c.channels.news);
+    if (newsCh) await safePanel("fortnite-news", newsCh, "fortniteNewsInfo", { embeds: [footer(new EmbedBuilder().setTitle("📰 Fortnite News").setDescription("Hier kann der Bot Fortnite-News anzeigen. Nutze `/fortnite news`."))] });
+
+    const itemShopCh = guild.channels.cache.get(c.channels.itemShop);
+    if (itemShopCh) await safePanel("item-shop", itemShopCh, "itemShopInfo", { embeds: [footer(new EmbedBuilder().setTitle("🛒 Fortnite Item Shop").setDescription("Nutze `/fortnite shop` für die aktuelle Shop-Zusammenfassung und `/fortnite favorite-add` für Favoriten."))] });
 
     const squadsCh = guild.channels.cache.get(c.channels.squads);
-    if (squadsCh) await upsertPanel(squadsCh, c, "squads", { embeds: [footer(new EmbedBuilder().setTitle("🛡️ Squads / Clans").setDescription("Erstelle dein eigenes Squad mit `/squad create`. Lade Mitglieder ein, sammle Punkte durch Community-Erfolge und steige im Squad-Leaderboard."))] });
+    if (squadsCh) await safePanel("squad-hub", squadsCh, "squads", { embeds: [footer(new EmbedBuilder().setTitle("🛡️ Squads / Clans").setDescription("Erstelle dein eigenes Squad mit `/squad create`. Lade Mitglieder ein, sammle Punkte durch Community-Erfolge und steige im Squad-Leaderboard."))] });
 
     const eventsCh = guild.channels.cache.get(c.channels.events);
-    if (eventsCh) await upsertPanel(eventsCh, c, "events", { embeds: [footer(new EmbedBuilder().setTitle("📅 Community Events").setDescription("Game Nights, Roblox-/Brawl-/GTA-/Fortnite-Events und andere Challenges erscheinen hier. Nutze `/events` für den Kalender."))] });
+    if (eventsCh) await safePanel("events", eventsCh, "events", { embeds: [footer(new EmbedBuilder().setTitle("📅 Community Events").setDescription("Game Nights, Roblox-/Brawl-/GTA-/Fortnite-Events und andere Challenges erscheinen hier. Nutze `/events` für den Kalender."))] });
 
     saveDB();
-    return c;
+    return { state: c, configured: [...new Set(configured)], failed };
   }
 
   async function setup(guild) {

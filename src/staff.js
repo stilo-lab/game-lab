@@ -215,6 +215,8 @@ function createStaffSystem(ctx) {
   async function setupExistingOnly(guild) {
     const s = ensureGuild(guild.id);
     const gd = guildData(guild.id);
+    const configured = [];
+    const failed = [];
     const map = {
       "staff-audit": "audit",
       "ai-staff-alerts": "alerts",
@@ -226,11 +228,46 @@ function createStaffSystem(ctx) {
       const id = gd.channels?.[canonical];
       if (id && guild.channels.cache.get(id)) s.channels[key] = id;
     }
-    saveDB();
-    if (s.channels.audit) {
-      await staffLog(guild, "🧠 Staff-System verbunden", "Gefundene Staff-Kanäle wurden mit dem Bot verbunden. Fehlende Staff-Kanäle wurden nicht erstellt.").catch(() => {});
+    if (!gd.setupPanels) gd.setupPanels = {};
+
+    async function staffReadyPanel(canonical, key, title, description) {
+      const channel = guild.channels.cache.get(s.channels[key]);
+      if (!channel) return;
+      const perms = channel.permissionsFor(guild.members.me);
+      const missing = [];
+      if (!perms?.has(PermissionsBitField.Flags.ViewChannel)) missing.push("Kanal ansehen");
+      if (!perms?.has(PermissionsBitField.Flags.SendMessages)) missing.push("Nachrichten senden");
+      if (!perms?.has(PermissionsBitField.Flags.EmbedLinks)) missing.push("Links einbetten");
+      if (missing.length) {
+        failed.push({ canonical, channelId: channel.id, error: `Fehlende Bot-Rechte: ${missing.join(", ")}` });
+        return;
+      }
+      try {
+        const panelKey = `staff_setup_${canonical}`;
+        let msg = gd.setupPanels[panelKey] ? await channel.messages.fetch(gd.setupPanels[panelKey]).catch(() => null) : null;
+        const payload = { embeds: [footer(new EmbedBuilder().setTitle(title).setDescription(description))] };
+        if (msg) await msg.edit(payload);
+        else {
+          const recent = await channel.messages.fetch({ limit: 30 }).catch(() => null);
+          msg = recent?.find(m => m.author?.id === client.user?.id && m.embeds?.some(e => e.title === title)) || null;
+          if (msg) await msg.edit(payload);
+          else msg = await channel.send(payload);
+        }
+        gd.setupPanels[panelKey] = msg.id;
+        configured.push(canonical);
+      } catch (err) {
+        failed.push({ canonical, channelId: channel.id, error: String(err?.message || err).slice(0, 300) });
+      }
     }
-    return s;
+
+    await staffReadyPanel("staff-audit", "audit", "🧾 Staff Audit verbunden", "Moderations- und Staff-Aktionen werden hier protokolliert.");
+    await staffReadyPanel("ai-staff-alerts", "alerts", "🤖 AI Staff Alerts verbunden", "AI-/Raid-/Scam- und ungewöhnliche Staff-Aktivitätswarnungen erscheinen hier.");
+    await staffReadyPanel("mod-cases", "cases", "📁 Moderationsfälle verbunden", "Cases, Strafen und Fallinformationen werden hier protokolliert.");
+    await staffReadyPanel("staff-briefing", "briefing", "📊 Staff Briefing verbunden", "Daily/Weekly Staff-Briefings und Server-Health-Zusammenfassungen können hier erscheinen.");
+    await staffReadyPanel("staff-tasks", "tasks", "📋 Staff Tasks verbunden", "Staff-Aufgaben und Erinnerungen werden hier verwaltet.");
+
+    saveDB();
+    return { state: s, configured: [...new Set(configured)], failed };
   }
 
   async function setup(guild) {

@@ -915,15 +915,19 @@ async function checkTicketInactivity() {
       continue;
     }
 
-    const inactiveFor = now - (ticket.lastActivityAt || ticket.createdAt || now);
+    // Never manage the lifecycle of tickets created by another bot.
+    // Also do not punish/close a ticket just because its creator has not written the first message yet.
+    if (ticket.external || ticket.awaitingFirstUserMessage || !ticket.firstUserMessageAt) continue;
+
+    const inactiveFor = now - (ticket.lastActivityAt || ticket.firstUserMessageAt || ticket.createdAt || now);
     if (inactiveFor >= TICKET_AUTOCLOSE_AFTER_MS) {
-      await finalizeCloseTicket(channel, ticket, "Automatically closed after 48 hours of inactivity.", null, true);
+      await finalizeCloseTicket(channel, ticket, "Automatically closed after 48 hours of inactivity after the first user message.", null, true);
       continue;
     }
     if (inactiveFor >= TICKET_WARNING_AFTER_MS && !ticket.inactivityWarnedAt) {
       ticket.inactivityWarnedAt = now;
       saveDB();
-      await channel.send("⏰ **Inactivity warning:** This ticket has been quiet for 36 hours. It will automatically close at 48 hours of inactivity unless someone replies.").catch(() => {});
+      await channel.send("⏰ **Inactivity warning:** This ticket has been quiet for 36 hours since the user last wrote. It will automatically close at 48 hours unless someone replies.").catch(() => {});
     }
   }
 }
@@ -968,6 +972,9 @@ async function createSupportTicket(interaction, category, priority) {
     createdAt: now,
     lastActivityAt: now,
     inactivityWarnedAt: null,
+    firstUserMessageAt: null,
+    awaitingFirstUserMessage: true,
+    external: false,
     rating: null,
     everClosed: false
   };
@@ -1461,8 +1468,177 @@ function ticketOwnerId(channel) {
   return topic.slice("ticket-owner:".length);
 }
 
+
+function isSupportedTicketChannelType(channel) {
+  return Boolean(channel && [ChannelType.GuildText, ChannelType.PublicThread, ChannelType.PrivateThread].includes(channel.type));
+}
+
+function looksLikeExternalTicketChannel(channel) {
+  if (!channel?.guild || !isSupportedTicketChannelType(channel)) return false;
+  const gd = guildData(channel.guild.id);
+  const protectedIds = new Set([
+    gd.channels?.support,
+    gd.channels?.supportLogs,
+    gd.channels?.ticketTranscripts,
+    gd.channels?.staffAudit,
+    gd.channels?.modCases
+  ].filter(Boolean));
+  if (protectedIds.has(channel.id)) return false;
+  if (String(channel.topic || '').startsWith('ticket-owner:')) return false;
+
+  const haystack = cleanName([
+    channel.name || '',
+    channel.topic || '',
+    channel.parent?.name || ''
+  ].join(' '));
+  const hasTicketHint = /(^|-)(ticket|tickets|support|hilfe|help|case|claim|appeal|report)(-|$)/i.test(haystack)
+    || /ticket|support|hilfe|helpdesk|claim|appeal|report/i.test(haystack);
+  if (!hasTicketHint) return false;
+
+  if (channel.isThread?.()) return true;
+  const everyone = channel.guild.roles.everyone;
+  const perms = channel.permissionsFor(everyone);
+  const overwrite = channel.permissionOverwrites?.cache?.get(everyone.id);
+  const explicitlyPrivate = Boolean(overwrite?.deny?.has(PermissionsBitField.Flags.ViewChannel));
+  const effectivelyPrivate = perms ? !perms.has(PermissionsBitField.Flags.ViewChannel) : false;
+  return explicitlyPrivate || effectivelyPrivate;
+}
+
+async function inferExternalTicketOwner(channel, preferredUserId = null) {
+  const guild = channel?.guild;
+  if (!guild) return null;
+
+  async function validUser(userId) {
+    if (!userId || userId === client.user?.id) return null;
+    const member = guild.members.cache.get(userId) || await guild.members.fetch(userId).catch(() => null);
+    if (!member || member.user?.bot || isSupportMember(member, guild.id)) return null;
+    return member.id;
+  }
+
+  const preferred = await validUser(preferredUserId);
+  if (preferred) return preferred;
+
+  const topic = String(channel.topic || '');
+  const topicIds = [...topic.matchAll(/\b(\d{17,20})\b/g)].map(m => m[1]);
+  for (const id of topicIds) {
+    const owner = await validUser(id);
+    if (owner) return owner;
+  }
+
+  if (channel.permissionOverwrites?.cache) {
+    const candidates = [];
+    for (const overwrite of channel.permissionOverwrites.cache.values()) {
+      if (overwrite.id === guild.roles.everyone.id) continue;
+      if (!overwrite.allow?.has(PermissionsBitField.Flags.ViewChannel)) continue;
+      const owner = await validUser(overwrite.id);
+      if (owner) candidates.push(owner);
+    }
+    const unique = [...new Set(candidates)];
+    if (unique.length === 1) return unique[0];
+  }
+
+  const recent = await channel.messages?.fetch?.({ limit: 30 }).catch(() => null);
+  if (recent?.size) {
+    const ordered = [...recent.values()].sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+    for (const msg of ordered) {
+      if (msg.author?.bot) continue;
+      const owner = await validUser(msg.author.id);
+      if (owner) return owner;
+    }
+  }
+  return null;
+}
+
+function externalTicketAiRow(channelId) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`ticket_ai_yes:${channelId}`).setLabel('AI Support starten').setEmoji('🤖').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`ticket_ai_no:${channelId}`).setLabel('Nur menschlicher Support').setEmoji('👤').setStyle(ButtonStyle.Secondary)
+  );
+}
+
+async function ensureExternalTicketRecord(channel, preferredUserId = null, options = {}) {
+  if (!looksLikeExternalTicketChannel(channel)) return null;
+  let ticket = db.tickets[channel.id];
+  if (!ticket) {
+    const ownerId = await inferExternalTicketOwner(channel, preferredUserId);
+    const now = Date.now();
+    ticket = db.tickets[channel.id] = {
+      guildId: channel.guild.id,
+      ownerId: ownerId || null,
+      category: 'other',
+      priority: 'normal',
+      status: 'open',
+      aiEnabled: false,
+      previousInteractionId: null,
+      claimedBy: null,
+      humanRequested: false,
+      createdAt: channel.createdTimestamp || now,
+      lastActivityAt: now,
+      inactivityWarnedAt: null,
+      firstUserMessageAt: null,
+      awaitingFirstUserMessage: true,
+      external: true,
+      externalSource: 'other-ticket-bot',
+      supportPromptSent: false,
+      rating: null,
+      everClosed: false
+    };
+    saveDB();
+  } else {
+    ticket.external = true;
+    ticket.externalSource = ticket.externalSource || 'other-ticket-bot';
+    if (!ticket.ownerId) ticket.ownerId = await inferExternalTicketOwner(channel, preferredUserId);
+    if (typeof ticket.awaitingFirstUserMessage !== 'boolean') ticket.awaitingFirstUserMessage = !ticket.firstUserMessageAt;
+    saveDB();
+  }
+
+  if (options.announce !== false && !ticket.supportPromptSent) {
+    const me = channel.guild.members.me;
+    const canSend = channel.permissionsFor?.(me)?.has(PermissionsBitField.Flags.SendMessages);
+    if (canSend) {
+      const who = ticket.ownerId ? `<@${ticket.ownerId}>` : 'Der Ticket-Ersteller';
+      await channel.send({
+        content: `🤖 **Support-AI erkannt**\n${who}: Dieses Ticket wurde von einem anderen Ticket-Bot erstellt. Wenn du möchtest, kann meine Support-AI hier trotzdem helfen. Sie wartet auf deine erste echte Nachricht und gibt nicht auf, nur weil noch nichts geschrieben wurde.`,
+        components: [externalTicketAiRow(channel.id)],
+        allowedMentions: ticket.ownerId ? { users: [ticket.ownerId] } : { parse: [] }
+      }).then(() => {
+        ticket.supportPromptSent = true;
+        saveDB();
+      }).catch(err => console.warn('External ticket AI prompt failed:', err?.message || err));
+    }
+  }
+  return ticket;
+}
+
+
+async function scanExistingExternalTickets(guild) {
+  if (!guild || !isGuildApproved(guild.id)) return { scanned: 0, detected: 0 };
+  let scanned = 0;
+  let detected = 0;
+  for (const channel of guild.channels.cache.values()) {
+    if (!isSupportedTicketChannelType(channel)) continue;
+    scanned += 1;
+    if (!looksLikeExternalTicketChannel(channel)) continue;
+    const record = await ensureExternalTicketRecord(channel, null, { announce: true }).catch(err => {
+      console.warn(`External ticket startup scan failed in #${channel.name}:`, err?.message || err);
+      return null;
+    });
+    if (record) detected += 1;
+  }
+  return { scanned, detected };
+}
+
 function getTicketRecord(channel) {
   if (!channel?.id) return null;
+  if (db.tickets[channel.id]) {
+    const existing = db.tickets[channel.id];
+    if (!existing.category) existing.category = "other";
+    if (!existing.priority) existing.priority = "normal";
+    if (!existing.status) existing.status = "open";
+    if (!existing.lastActivityAt) existing.lastActivityAt = existing.createdAt || Date.now();
+    if (typeof existing.awaitingFirstUserMessage !== "boolean") existing.awaitingFirstUserMessage = !existing.firstUserMessageAt;
+    return existing;
+  }
   const ownerId = ticketOwnerId(channel);
   if (!ownerId) return null;
   if (!db.tickets[channel.id]) {
@@ -1479,6 +1655,9 @@ function getTicketRecord(channel) {
       createdAt: Date.now(),
       lastActivityAt: Date.now(),
       inactivityWarnedAt: null,
+      firstUserMessageAt: null,
+      awaitingFirstUserMessage: true,
+      external: false,
       rating: null,
       everClosed: false
     };
@@ -1765,10 +1944,14 @@ Answer in the same language as the user unless asked otherwise. Prefer clear ste
 
 async function runTicketAi(message) {
   const ticket = getTicketRecord(message.channel);
-  if (!ticket?.aiEnabled || ticket.ownerId !== message.author.id || ticket.status === "closed") return false;
+  if (!ticket?.aiEnabled || ticket.status === "closed") return false;
+  if (!ticket.ownerId && ticket.external && !isSupportMember(message.member, message.guild.id)) ticket.ownerId = message.author.id;
+  if (ticket.ownerId !== message.author.id) return false;
 
   ticket.lastActivityAt = Date.now();
   ticket.inactivityWarnedAt = null;
+  if (!ticket.firstUserMessageAt) ticket.firstUserMessageAt = Date.now();
+  ticket.awaitingFirstUserMessage = false;
   saveDB();
 
   if (shouldAutoEscalate(ticket, message.content || "")) {
@@ -2072,7 +2255,10 @@ client.once("clientReady", async () => {
   }
   try { client.user.setActivity("Multi-Game Community"); } catch (err) { console.warn("Activity konnte nicht gesetzt werden:", err?.message || err); }
   for (const guild of client.guilds.cache.values()) {
-    if (isGuildApproved(guild.id)) await snapshotInvites(guild).catch(() => {});
+    if (!isGuildApproved(guild.id)) continue;
+    await snapshotInvites(guild).catch(() => {});
+    const externalScan = await scanExistingExternalTickets(guild).catch(() => null);
+    if (externalScan?.detected) console.log(`External Ticket AI: ${externalScan.detected} Ticket-Kanal/Kanäle auf ${guild.name} erkannt.`);
   }
   await processGiveaways().catch(err => console.error("Giveaway startup check failed:", err?.message || err));
   await checkTicketInactivity().catch(err => console.error("Ticket inactivity startup check failed:", err?.message || err));
@@ -2140,6 +2326,16 @@ client.on("messageReactionAdd", async (reaction, user) => {
 
 const spamMap = new Map();
 
+client.on("channelCreate", async channel => {
+  const guildId = channel.guild?.id;
+  if (!guildId || !isGuildApproved(guildId)) return;
+  // Give the external ticket bot a moment to finish setting topic/category/permissions.
+  await new Promise(resolve => setTimeout(resolve, 2500));
+  await ensureExternalTicketRecord(channel, null, { announce: true }).catch(err =>
+    console.warn("External ticket detection failed:", err?.message || err)
+  );
+});
+
 client.on("messageCreate", async message => {
   if (!message.guild || message.author.bot) return;
   if (!isGuildApproved(message.guild.id)) return;
@@ -2151,15 +2347,24 @@ client.on("messageCreate", async message => {
     message.react(TRANSLATE_EMOJI).catch(() => {});
   }
 
-  // Ticket activity + optional AI support.
-  const ticket = getTicketRecord(message.channel);
+  // Ticket activity + optional AI support. This also adopts private ticket channels
+  // created by other ticket bots, without taking over their close/delete lifecycle.
+  let ticket = getTicketRecord(message.channel);
+  if (!ticket) ticket = await ensureExternalTicketRecord(message.channel, message.author.id, { announce: true });
   if (ticket && ticket.status !== "closed") {
-    ticket.lastActivityAt = Date.now();
-    ticket.inactivityWarnedAt = null;
-    saveDB();
-    if (ticket.aiEnabled && ticket.ownerId === message.author.id) {
-      await enqueueTicketAi(message);
-      return;
+    if (!ticket.ownerId && ticket.external && !isSupportMember(message.member, message.guild.id)) {
+      ticket.ownerId = message.author.id;
+    }
+    if (ticket.ownerId === message.author.id) {
+      ticket.lastActivityAt = Date.now();
+      ticket.inactivityWarnedAt = null;
+      if (!ticket.firstUserMessageAt) ticket.firstUserMessageAt = Date.now();
+      ticket.awaitingFirstUserMessage = false;
+      saveDB();
+      if (ticket.aiEnabled) {
+        await enqueueTicketAi(message);
+        return;
+      }
     }
   }
 
@@ -2350,62 +2555,135 @@ function rememberSetupAssignments(guild, smartSetup) {
 async function configureFoundSetupChannels(guild, smartSetup) {
   const gd = rememberSetupAssignments(guild, smartSetup);
   const found = new Set((smartSetup.selected || []).map(x => x.canonical));
+  const configured = new Set();
+  const connected = new Set();
+  const failed = [];
+
+  function setupFailure(canonical, channel, err) {
+    const text = String(err?.message || err || "Unbekannter Fehler").slice(0, 300);
+    failed.push({ canonical, channelId: channel?.id || gd.channels?.[canonical] || null, error: text });
+    console.warn(`[setup] ${canonical} failed:`, text);
+  }
+
+  function missingPostPermissions(channel) {
+    const perms = channel?.permissionsFor?.(guild.members.me);
+    if (!perms) return ["Berechtigungen konnten nicht gelesen werden"];
+    const missing = [];
+    if (!perms.has(PermissionsBitField.Flags.ViewChannel)) missing.push("Kanal ansehen");
+    if (!perms.has(PermissionsBitField.Flags.SendMessages)) missing.push("Nachrichten senden");
+    if (!perms.has(PermissionsBitField.Flags.EmbedLinks)) missing.push("Links einbetten");
+    return missing;
+  }
+
+  async function installCorePanel(canonical, key, payload, titleHint) {
+    if (!found.has(canonical)) return;
+    const channel = gd.channels?.[canonical] ? guild.channels.cache.get(gd.channels[canonical]) : null;
+    if (!channel) return setupFailure(canonical, null, "Erkannter Kanal ist nicht mehr im Cache/verfügbar.");
+    const missing = missingPostPermissions(channel);
+    if (missing.length) return setupFailure(canonical, channel, `Fehlende Bot-Rechte: ${missing.join(", ")}`);
+    try {
+      await upsertSetupPanel(channel, guild.id, key, payload, titleHint);
+      configured.add(canonical);
+    } catch (err) {
+      setupFailure(canonical, channel, err);
+    }
+  }
 
   if (["support", "support-logs", "ticket-transcripts"].some(x => found.has(x))) {
-    const supportRole = await findOrCreateRole(guild, "Support Team").catch(() => null);
-    if (supportRole) gd.supportRoleId = supportRole.id;
+    try {
+      const supportRole = await findOrCreateRole(guild, "Support Team");
+      if (supportRole) gd.supportRoleId = supportRole.id;
+    } catch (err) {
+      console.warn("[setup] Support-Team role could not be created/used:", err?.message || err);
+    }
   }
 
-  const support = gd.channels.support ? guild.channels.cache.get(gd.channels.support) : null;
-  if (support && found.has("support")) {
-    const ticketEmbed = footer(new EmbedBuilder()
-      .setTitle("🎫 Support Ticket")
-      .setDescription(`Open a ticket for help. You will choose a **category** and **priority** before the private ticket is created.\n\nMaximum: **${MAX_OPEN_TICKETS_PER_USER} open tickets per user**.`));
-    const ticketRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("ticket_open").setLabel("Open ticket").setEmoji("🎫").setStyle(ButtonStyle.Primary)
-    );
-    await upsertSetupPanel(support, guild.id, "ticket_open", { embeds: [ticketEmbed], components: [ticketRow] }, "Support Ticket").catch(() => {});
-  }
+  const ticketEmbed = footer(new EmbedBuilder()
+    .setTitle("🎫 Support Ticket")
+    .setDescription(`Open a ticket for help. You will choose a **category** and **priority** before the private ticket is created.\n\nMaximum: **${MAX_OPEN_TICKETS_PER_USER} open tickets per user**.`));
+  const ticketRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("ticket_open").setLabel("Open ticket").setEmoji("🎫").setStyle(ButtonStyle.Primary)
+  );
+  await installCorePanel("support", "ticket_open", { embeds: [ticketEmbed], components: [ticketRow] }, "Support Ticket");
 
-  const teamsearch = gd.channels.teamsearch ? guild.channels.cache.get(gd.channels.teamsearch) : null;
-  if (teamsearch && found.has("teamsearch")) {
-    const teamEmbed = footer(new EmbedBuilder()
-      .setTitle("🎮 Multi-Game Teamsearch")
-      .setDescription(`Nutze **/teamsearch**, um Mitspieler für **Fortnite, Roblox, Brawl Stars, GTA, Minecraft, VALORANT und viele weitere Games** zu finden.\n\nDu wählst Spiel, Modus, Plattform, Mikro und gesuchte Spielerzahl aus.`));
-    await upsertSetupPanel(teamsearch, guild.id, "teamsearch_info", { embeds: [teamEmbed] }, "Multi-Game Teamsearch").catch(() => {});
-  }
+  const teamEmbed = footer(new EmbedBuilder()
+    .setTitle("🎮 Multi-Game Teamsearch")
+    .setDescription("Nutze **/teamsearch**, um Mitspieler für **Fortnite, Roblox, Brawl Stars, GTA, Minecraft, VALORANT und viele weitere Games** zu finden.\n\nDu wählst Spiel, Modus, Plattform, Mikro und gesuchte Spielerzahl aus."));
+  await installCorePanel("teamsearch", "teamsearch_info", { embeds: [teamEmbed] }, "Multi-Game Teamsearch");
+
+  await installCorePanel("announcements", "announcements_info", { embeds: [footer(new EmbedBuilder().setTitle("📢 Announcements verbunden").setDescription("Dieser Kanal wurde als Announcement-Kanal erkannt. Owner/Admins können mit `/announce` Bot-Ankündigungen hier posten."))] }, "Announcements verbunden");
+  await installCorePanel("invite-log", "invite_log_info", { embeds: [footer(new EmbedBuilder().setTitle("📨 Invite-Log aktiv").setDescription("Dieser Kanal wurde mit dem Invite-Tracking verbunden. Join-/Invite-Informationen können hier protokolliert werden."))] }, "Invite-Log aktiv");
+  await installCorePanel("counting", "counting_info", { embeds: [footer(new EmbedBuilder().setTitle("🔢 Counting aktiv").setDescription("Counting ist in diesem Kanal aktiviert. Startet bei **1** und zählt abwechselnd weiter. Zwei Zahlen hintereinander vom selben User sind nicht erlaubt."))] }, "Counting aktiv");
+  await installCorePanel("support-logs", "support_logs_info", { embeds: [footer(new EmbedBuilder().setTitle("🧾 Support-Logs verbunden").setDescription("Ticket- und Support-Aktionen werden mit diesem privaten Log-Kanal verbunden."))] }, "Support-Logs verbunden");
+  await installCorePanel("ticket-transcripts", "ticket_transcripts_info", { embeds: [footer(new EmbedBuilder().setTitle("📄 Ticket-Transcripts verbunden").setDescription("Geschlossene Ticket-Transcripts werden mit diesem privaten Kanal verbunden."))] }, "Ticket-Transcripts verbunden");
 
   if (typeof community.setupExistingOnly === "function") {
-    await community.setupExistingOnly(guild).catch(err => console.warn("Community setup-existing failed:", err?.message || err));
+    try {
+      const result = await community.setupExistingOnly(guild);
+      for (const canonical of (result?.configured || [])) configured.add(canonical);
+      for (const item of (result?.failed || [])) failed.push(item);
+    } catch (err) {
+      console.warn("Community setup-existing failed:", err?.message || err);
+      failed.push({ canonical: "community", channelId: null, error: String(err?.message || err).slice(0, 300) });
+    }
   }
+
   if (typeof staff.setupExistingOnly === "function") {
-    await staff.setupExistingOnly(guild).catch(err => console.warn("Staff setup-existing failed:", err?.message || err));
+    try {
+      const result = await staff.setupExistingOnly(guild);
+      for (const canonical of (result?.configured || [])) configured.add(canonical);
+      for (const item of (result?.failed || [])) failed.push(item);
+    } catch (err) {
+      console.warn("Staff setup-existing failed:", err?.message || err);
+      failed.push({ canonical: "staff", channelId: null, error: String(err?.message || err).slice(0, 300) });
+    }
   }
-  await snapshotInvites(guild).catch(() => {});
+
+  // Passive connections that do not need a visible panel are still considered connected.
+  for (const canonical of found) {
+    if (!configured.has(canonical) && !failed.some(x => x.canonical === canonical)) connected.add(canonical);
+  }
+
+  await snapshotInvites(guild).catch(err => console.warn("[setup] Invite snapshot failed:", err?.message || err));
   saveDB();
-  return [...found];
+  return { configured: [...configured], connected: [...connected], failed };
 }
 
-function setupCheckPayload(guild, smartSetup, configured = []) {
+function setupCheckPayload(guild, smartSetup, setupResult = {}) {
   const found = new Map((smartSetup.selected || []).map(x => [x.canonical, x.channelId]));
   const required = SMART_SETUP_PURPOSES.map(p => p.canonical);
   const missing = required.filter(canonical => !found.has(canonical));
-  const configuredSet = new Set(configured || []);
+  const configuredSet = new Set(setupResult?.configured || []);
+  const connectedSet = new Set(setupResult?.connected || []);
+  const failed = Array.isArray(setupResult?.failed) ? setupResult.failed : [];
+  const failedMap = new Map(failed.map(x => [x.canonical, x]));
+
   const foundLines = required.filter(canonical => found.has(canonical)).map(canonical => {
     const ch = guild.channels.cache.get(found.get(canonical));
-    return `${configuredSet.has(canonical) ? "🛠️" : "✅"} ${setupChannelLabel(canonical)} → ${ch || "gefunden"}`;
+    if (failedMap.has(canonical)) return `⚠️ ${setupChannelLabel(canonical)} → ${ch || "gefunden"}`;
+    if (configuredSet.has(canonical)) return `🛠️ ${setupChannelLabel(canonical)} → ${ch || "gefunden"}`;
+    if (connectedSet.has(canonical)) return `🔗 ${setupChannelLabel(canonical)} → ${ch || "gefunden"}`;
+    return `✅ ${setupChannelLabel(canonical)} → ${ch || "gefunden"}`;
   });
   const missingLines = missing.map(canonical => `${PRIVATE_SETUP_PURPOSES.has(canonical) ? "🔒" : "❌"} ${setupChannelLabel(canonical)}`);
 
   const embed = footer(new EmbedBuilder()
     .setTitle("🧩 Smart Setup • prüfen & einrichten")
-    .setDescription(`Ich habe **${smartSetup.scanned}** lesbare Textkanäle geprüft – inklusive Fancy-Schriften und, wenn Gemini aktiv ist, Nachrichtenverlauf.\n\n**Wichtig:** \`/setup\` erstellt **keine neuen Kanäle oder Kategorien**. Bereits gefundene Kanäle werden aber sofort mit der passenden Bot-Funktion verbunden und eingerichtet.\n\n🛠️ Eingerichtet: **${configuredSet.size}**\n✅ Gefunden: **${found.size}/${required.length}**\n❌ Fehlend: **${missing.length}**`)
-    .setColor(missing.length ? 0xFEE75C : 0x57F287));
+    .setDescription(`Ich habe **${smartSetup.scanned}** lesbare Textkanäle geprüft.\n\n🛠️ Panel/Setup wirklich gesendet: **${configuredSet.size}**\n🔗 Nur verbunden: **${connectedSet.size}**\n⚠️ Fehler: **${failed.length}**\n❌ Fehlend: **${missing.length}**\n\n**/setup erstellt keine neuen Kanäle oder Kategorien.**`)
+    .setColor(failed.length ? 0xED4245 : (missing.length ? 0xFEE75C : 0x57F287)));
+
+  if (failed.length) {
+    const lines = failed.slice(0, 8).map(item => {
+      const channel = item.channelId ? guild.channels.cache.get(item.channelId) : null;
+      return `⚠️ **${setupChannelLabel(item.canonical)}**${channel ? ` → ${channel}` : ""}\n↳ ${String(item.error || "Fehler").slice(0, 170)}`;
+    });
+    embed.addFields({ name: "Konnte nicht eingerichtet werden", value: lines.join("\n").slice(0, 1024) });
+  }
 
   if (missingLines.length) embed.addFields({ name: "Fehlende Kanäle", value: missingLines.join("\n").slice(0, 1024) });
-  else embed.addFields({ name: "✅ Alles vorhanden", value: "Alle Bot-Kanäle wurden erkannt und eingerichtet. Es wurde kein neuer Kanal erstellt." });
+  else embed.addFields({ name: "✅ Alle benötigten Kanäle erkannt", value: "Es wurde kein neuer Kanal erstellt." });
 
-  if (foundLines.length) embed.addFields({ name: "Gefunden & eingerichtet", value: foundLines.slice(0, 12).join("\n").slice(0, 1024) });
+  if (foundLines.length) embed.addFields({ name: "Gefundene Kanäle", value: foundLines.slice(0, 15).join("\n").slice(0, 1024) });
 
   const components = [new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId("setup_check_refresh").setLabel("Neu prüfen & einrichten").setEmoji("🔄").setStyle(ButtonStyle.Primary)
@@ -2441,11 +2719,11 @@ async function runSetup(interaction) {
     console.warn("Setup check failed:", err?.message || err);
     return { scanned: 0, reused: 0, selected: [], aiUsed: false };
   });
-  const configured = await configureFoundSetupChannels(interaction.guild, smartSetup).catch(err => {
+  const setupResult = await configureFoundSetupChannels(interaction.guild, smartSetup).catch(err => {
     console.warn("Setup auto-configure failed:", err?.message || err);
-    return [];
+    return { configured: [], connected: [], failed: [{ canonical: "setup", channelId: null, error: String(err?.message || err) }] };
   });
-  return interaction.editReply({ content: "", ...setupCheckPayload(interaction.guild, smartSetup, configured) });
+  return interaction.editReply({ content: "", ...setupCheckPayload(interaction.guild, smartSetup, setupResult) });
 }
 
 async function runSetupInstall(interaction, options = {}) {
@@ -3137,11 +3415,11 @@ client.on("interactionCreate", async interaction => {
         console.warn("Setup refresh failed:", err?.message || err);
         return { scanned: 0, reused: 0, selected: [], aiUsed: false };
       });
-      const configured = await configureFoundSetupChannels(interaction.guild, smartSetup).catch(err => {
+      const setupResult = await configureFoundSetupChannels(interaction.guild, smartSetup).catch(err => {
         console.warn("Setup refresh auto-configure failed:", err?.message || err);
-        return [];
+        return { configured: [], connected: [], failed: [{ canonical: "setup", channelId: null, error: String(err?.message || err) }] };
       });
-      return interaction.editReply(setupCheckPayload(interaction.guild, smartSetup, configured));
+      return interaction.editReply(setupCheckPayload(interaction.guild, smartSetup, setupResult));
     }
 
     if (interaction.isStringSelectMenu() && interaction.customId === "setup_missing_info") {
@@ -3647,8 +3925,12 @@ client.on("interactionCreate", async interaction => {
         if (!ticket || interaction.channel.id !== channelId || ticket.status === "closed") {
           return interaction.reply({ content: "❌ This ticket is no longer available.", flags: MessageFlags.Ephemeral });
         }
+        if (!ticket.ownerId && ticket.external && !isSupportMember(interaction.member, interaction.guild.id)) {
+          ticket.ownerId = interaction.user.id;
+          saveDB();
+        }
         if (interaction.user.id !== ticket.ownerId) {
-          return interaction.reply({ content: "❌ Only the person who opened the ticket can choose this.", flags: MessageFlags.Ephemeral });
+          return interaction.reply({ content: "❌ Nur der Ticket-Ersteller kann die Support-AI für dieses Ticket auswählen.", flags: MessageFlags.Ephemeral });
         }
 
         if (id.startsWith("ticket_ai_yes:")) {
@@ -3668,9 +3950,10 @@ client.on("interactionCreate", async interaction => {
           ticket.aiEnabled = true;
           ticket.previousInteractionId = null;
           ticket.lastActivityAt = Date.now();
+          ticket.awaitingFirstUserMessage = !ticket.firstUserMessageAt;
           saveDB();
           await interaction.update({
-            content: "🤖 **AI support enabled.** Schreib dein Problem, deine Frage oder sende einen Screenshot. Bei Scam-, Staff-, Ban- oder anderen Moderationsfällen wird automatisch ein menschlicher Supporter hinzugezogen.",
+            content: "🤖 **AI-Support aktiviert.** Schreib dein Problem, deine Frage oder sende einen Screenshot, sobald du bereit bist. Wenn du erstmal nichts schreibst, wartet die AI weiter und gibt den Fall nicht auf. Bei Scam-, Staff-, Ban- oder anderen Moderationsfällen wird automatisch ein menschlicher Supporter hinzugezogen.",
             components: []
           });
           await supportLog(interaction.guild, "🤖 AI support enabled", `${interaction.channel} • User: ${interaction.user}`);
