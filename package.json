@@ -1,7 +1,7 @@
 {
   "name": "stilo-multigame-community-bot",
-  "version": "1.5.4",
-  "description": "Multi-game Discord community bot with Element Seas, AI support, member systems and Spotify Listening Party.",
+  "version": "1.5.5",
+  "description": "Multi-game Discord community bot with immediate slash-command sync, Spotify Listening Party, Element Seas, AI support and member systems.",
   "main": "src/index.js",
   "type": "commonjs",
   "scripts": {

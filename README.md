@@ -1,17 +1,14 @@
-# Spotify Listening Party Update v1.5.4
+# Spotify Command Fix v1.5.5
 
-Ausgehend von Bot v1.5.3.
+Ersetze in GitHub:
+- `src/index.js`
+- `src/spotify_party.js`
+- `package.json`
 
-In GitHub ersetzen/hinzufuegen:
-- `src/index.js` ersetzen
-- `src/spotify_party.js` neu hinzufuegen
-- `package.json` ersetzen
-- `.env.example` optional ersetzen
+Danach Railway neu deployen lassen.
 
-Railway Variablen hinzufuegen:
-- `SPOTIFY_CLIENT_ID`
-- `SPOTIFY_CLIENT_SECRET`
-- optional `SPOTIFY_MARKET=DE`
-- optional `SPOTIFY_PLAYLIST_URL=https://open.spotify.com/playlist/3oVDosIUz6bQpEJIgIsEzK`
-
-Danach neu deployen und `/spotify start` in einem Textchannel ausfuehren, waehrend du in einem Voice-Channel bist.
+Neu:
+- Slash Commands werden global registriert.
+- Zusätzlich werden sie auf allen freigegebenen Servern sofort guild-spezifisch synchronisiert.
+- `/commandsync` kann vom Bot-Owner genutzt werden, um alle Commands manuell sofort neu zu registrieren.
+- `/spotify start`, `/spotify now`, `/spotify playlist`, `/spotify stop` sollten danach sofort erscheinen.
