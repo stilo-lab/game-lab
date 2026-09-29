@@ -1505,9 +1505,16 @@ function splitDiscordText(text, max = 1900) {
 const translationCache = new Map();
 const translationCooldowns = new Map();
 
+function hasMassMention(message) {
+  const text = String(message?.content || "");
+  return Boolean(message?.mentions?.everyone) || /@(?:everyone|here)\b/i.test(text);
+}
+
 function shouldOfferTranslation(message) {
   const text = String(message?.content || "").trim();
   if (!text || text.length < 4) return false;
+  // Nie auf @everyone/@here mit Emojis reagieren.
+  if (hasMassMention(message)) return false;
   if (!/[A-Za-zÀ-ÿÄÖÜäöüß]/.test(text)) return false;
   return true;
 }
@@ -1628,8 +1635,66 @@ function getGuildKnowledgeText(guildId, maxChars = 7000, target = null, kind = n
 function learnUnderstanding(entry) {
   const targetLabel = entry.target === "ai" ? "die normale /ai" : entry.target === "support" ? "die Support-AI" : "/ai und die Support-AI";
   const scopeLabel = entry.scope === "global" ? "auf allen Servern" : "nur auf diesem Server";
-  if (entry.kind === "instruction") return `Ich soll ${targetLabel} ${scopeLabel} so steuern: **${entry.text}**`;
-  return `${targetLabel} soll ${scopeLabel} diesen Fakt als Wissen berücksichtigen: **${entry.text}**`;
+  if (entry.kind === "instruction") return `Ich soll ${targetLabel} ${scopeLabel} dauerhaft so steuern: **${entry.text}**`;
+  return `${targetLabel} soll ${scopeLabel} diesen Fakt als verlässliches Wissen berücksichtigen: **${entry.text}**`;
+}
+
+function fallbackLearnTarget(raw, explicitTarget) {
+  if (["ai", "support", "both"].includes(explicitTarget)) return explicitTarget;
+  const t = String(raw || "").toLowerCase();
+  const support = /\b(support|ticket|tickets|hilfe[- ]?ai|support[- ]?ai)\b/i.test(t);
+  const normal = /(^|\s)\/?ai\b|normale ai|chat[- ]?ai/i.test(t);
+  if (support && !normal) return "support";
+  if (normal && !support) return "ai";
+  return "both";
+}
+
+function normalizeLearnInstructionText(raw) {
+  let text = String(raw || "").trim();
+  const low = text.toLowerCase();
+  if (/kling.*(freud|freund|locker|best.?friend|kumpel)/i.test(low)) {
+    return "Antworte freundlich, locker, positiv und natürlich – wie ein guter Kumpel. Vermeide steife, übertrieben formelle oder immer gleiche Standardformulierungen.";
+  }
+  if (/kling.*professionell|professioneller/i.test(low)) return "Antworte professionell, klar, ruhig und strukturiert, ohne unnötig steif zu wirken.";
+  if (/k(ü|ue)rzer|kurz antwort/i.test(low)) return "Antworte standardmäßig kurz und direkt. Erkläre nur ausführlicher, wenn die Frage es wirklich braucht.";
+  if (/ausf(ü|ue)hrlicher|mehr erkl(ä|ae)ren/i.test(low)) return "Erkläre Antworten ausführlicher und nachvollziehbar, möglichst mit konkreten Schritten oder Beispielen.";
+  return text;
+}
+
+async function interpretLearnInput({ raw, explicitTarget, explicitKind, explicitScope, explicitTopic, guildName }) {
+  const base = {
+    target: fallbackLearnTarget(raw, explicitTarget),
+    kind: ["instruction", "knowledge"].includes(explicitKind) ? explicitKind : (looksLikeLearnInstruction(raw, explicitTopic) ? "instruction" : "knowledge"),
+    scope: explicitScope === "global" ? "global" : "server",
+    topic: String(explicitTopic || "").trim(),
+    text: String(raw || "").trim(),
+    example: ""
+  };
+  if (base.kind === "instruction") base.text = normalizeLearnInstructionText(base.text);
+  if (!base.topic) base.topic = base.kind === "instruction" ? "Verhalten / Stil" : "Wissen";
+
+  if (!GEMINI_API_KEY) return base;
+  try {
+    const response = await generateGeminiContent({
+      model: GEMINI_MODEL,
+      contents: String(raw || "").slice(0, 1500),
+      config: {
+        systemInstruction: `Du interpretierst eine Admin-Anweisung für einen Discord-Bot. Gib NUR valides JSON zurück, ohne Markdown.\nSchema: {"target":"ai|support|both","kind":"instruction|knowledge","topic":"kurzer Titel","normalized":"präzise gespeicherte Regel","example":"kurzes Beispiel wie die AI danach reagieren soll"}.\nRegeln:\n- Wenn der Admin explizit /ai nennt: target=ai. Wenn Support/Ticket-AI genannt wird: target=support. Wenn beides oder nichts klar ist: both.\n- Stil, Ton, Verhalten, Antwortlänge, Formulierung => instruction. Fakten, Regeln, Abläufe, Serverwissen => knowledge.\n- normalized muss die Aussage präzisieren, NICHT ihre Bedeutung verändern.\n- Bei Stil-Anweisungen formuliere eine dauerhafte klare Verhaltensregel.\n- Bei Fakten erfinde nichts dazu.\n- Keine Sicherheitsregeln umgehen, keine Secrets/Tokens als Wissen normalisieren.\nServername: ${guildName || "Discord Server"}`,
+        maxOutputTokens: 500
+      }
+    }, { label: "learn_interpret", maxRetries: 1 });
+    const rawText = String(response.text || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
+    const parsed = JSON.parse(rawText);
+    if (!["ai", "support", "both"].includes(explicitTarget) && ["ai", "support", "both"].includes(parsed.target)) base.target = parsed.target;
+    if (!["instruction", "knowledge"].includes(explicitKind) && ["instruction", "knowledge"].includes(parsed.kind)) base.kind = parsed.kind;
+    if (!explicitTopic && typeof parsed.topic === "string" && parsed.topic.trim()) base.topic = parsed.topic.trim().slice(0, 100);
+    if (typeof parsed.normalized === "string" && parsed.normalized.trim()) base.text = parsed.normalized.trim().slice(0, 1500);
+    if (typeof parsed.example === "string" && parsed.example.trim()) base.example = parsed.example.trim().slice(0, 600);
+  } catch (err) {
+    console.warn("Learn interpretation fallback:", err?.message || err);
+  }
+  if (base.kind === "instruction") base.text = normalizeLearnInstructionText(base.text);
+  return base;
 }
 
 function getGuildLearnContext(guildId, target, maxInstructionChars = 3500, maxKnowledgeChars = 5000) {
@@ -2472,18 +2537,18 @@ const commands = [
     .setDescription("Bringt /ai oder der Support-AI Wissen oder Verhalten bei.")
     .addSubcommand(s => s
       .setName("add")
-      .setDescription("Bringt einer AI neues Wissen oder eine dauerhafte Stil-Anweisung bei.")
-      .addStringOption(o => o.setName("ziel").setDescription("Welche AI soll das lernen?").setRequired(true).addChoices(
+      .setDescription("Bringt der AI etwas bei – Ziel und Art können automatisch erkannt werden.")
+      .addStringOption(o => o.setName("wissen").setDescription("Was soll die AI lernen? z.B. 'Kling lockerer' oder eine Serverregel").setRequired(true).setMaxLength(1500))
+      .addStringOption(o => o.setName("ziel").setDescription("Optional: Welche AI? Leer lassen = automatisch erkennen").setRequired(false).addChoices(
         { name: "🤖 /ai", value: "ai" },
         { name: "🎫 Support AI", value: "support" },
         { name: "🔁 Beide", value: "both" }
       ))
-      .addStringOption(o => o.setName("art").setDescription("Ist es Verhalten/Stil oder Wissen/Fakt?").setRequired(true).addChoices(
+      .addStringOption(o => o.setName("art").setDescription("Optional: Stil oder Wissen? Leer lassen = automatisch erkennen").setRequired(false).addChoices(
         { name: "🎨 Verhalten / Stil", value: "instruction" },
         { name: "📚 Wissen / Fakt", value: "knowledge" }
       ))
-      .addStringOption(o => o.setName("wissen").setDescription("z.B. 'Kling freudiger' oder ein Fakt").setRequired(true).setMaxLength(1500))
-      .addStringOption(o => o.setName("bereich").setDescription("Nur dieser Server oder alle Server?").setRequired(true).addChoices(
+      .addStringOption(o => o.setName("bereich").setDescription("Standard: nur dieser Server").setRequired(false).addChoices(
         { name: "🏠 Nur dieser Server", value: "server" },
         { name: "🌍 Alle Server (nur Bot-Owner)", value: "global" }
       ))
@@ -2783,35 +2848,10 @@ client.on("channelCreate", async channel => {
   );
 });
 
-async function reactToSuggestionSubmission(message) {
-  if (!message?.guild || !message.channel?.isTextBased?.()) return false;
-  if (message.author?.id === client.user?.id) return false;
-  const gd = guildData(message.guild.id);
-  const ids = new Set([
-    ...(Array.isArray(gd.suggestionChannelIds) ? gd.suggestionChannelIds : []),
-    ...(gd.channels?.suggestions ? [gd.channels.suggestions] : [])
-  ]);
-  if (!ids.has(message.channel.id)) return false;
-
-  // Ignore Discord system messages and completely empty posts. Other bots are allowed,
-  // because many suggestion bots publish the actual submission as an embed.
-  if (message.system) return false;
-  const embedText = (message.embeds || []).map(e => `${e.title || ""} ${e.description || ""}`).join(" ").trim();
-  if (!String(message.content || "").trim() && !embedText && !(message.attachments?.size > 0)) return false;
-
-  for (const emoji of ["💡", "👍", "👎"]) {
-    await message.react(emoji).catch(() => {});
-  }
-  return true;
-}
 
 client.on("messageCreate", async message => {
   if (!message.guild) return;
   if (!isGuildApproved(message.guild.id)) return;
-
-  // React to every new submission in channels detected by /setup, including embeds
-  // posted by other suggestion bots. Never react to our own messages.
-  await reactToSuggestionSubmission(message).catch(err => console.warn("Suggestion auto-reaction failed:", err?.message || err));
 
   // Ticket-Bots posten oft zuerst selbst ein Embed. Solche privaten Tickets werden
   // vor dem normalen Bot-Message-Filter erkannt und bekommen die Yes/No-Supportfrage.
@@ -2859,7 +2899,7 @@ client.on("messageCreate", async message => {
     const num = Number(message.content.trim());
     const expected = gd.counting.current + 1;
     if (!Number.isInteger(num) || num !== expected || gd.counting.lastUserId === message.author.id) {
-      try { await message.react("❌"); } catch {}
+      if (!hasMassMention(message)) { try { await message.react("❌"); } catch {} }
       gd.counting.current = 0;
       gd.counting.lastUserId = null;
       saveDB();
@@ -2867,7 +2907,7 @@ client.on("messageCreate", async message => {
     }
     gd.counting.current = num;
     gd.counting.lastUserId = message.author.id;
-    try { await message.react("✅"); } catch {}
+    if (!hasMassMention(message)) { try { await message.react("✅"); } catch {} }
     saveDB();
   }
 
@@ -4385,26 +4425,39 @@ client.on("interactionCreate", async interaction => {
           const sub = interaction.options.getSubcommand();
 
           if (sub === "add") {
-            const target = interaction.options.getString("ziel");
-            const kind = interaction.options.getString("art");
+            const rawKnowledge = interaction.options.getString("wissen")?.trim() || "";
+            const explicitTarget = interaction.options.getString("ziel");
+            const explicitKind = interaction.options.getString("art");
             const scope = interaction.options.getString("bereich") || "server";
-            const knowledge = interaction.options.getString("wissen").trim();
-            const topicInput = interaction.options.getString("thema")?.trim();
-            const topic = topicInput || (kind === "instruction" ? "Verhalten / Stil" : "Wissen");
-            if (!knowledge) return interaction.reply({ content: "❌ Der Learn-Inhalt darf nicht leer sein.", flags: MessageFlags.Ephemeral });
-            if (scope === "global" && !isOwner) return interaction.reply({ content: "❌ Nur der Bot-Owner darf Regeln für **alle Server** speichern. Wähle `Nur dieser Server`.", flags: MessageFlags.Ephemeral });
+            const topicInput = interaction.options.getString("thema")?.trim() || "";
+            if (!rawKnowledge) return interaction.reply({ content: "❌ Der Learn-Inhalt darf nicht leer sein.", flags: MessageFlags.Ephemeral });
+            if (scope === "global" && !isOwner) return interaction.reply({ content: "❌ Nur der Bot-Owner darf Regeln für **alle Server** speichern. Lass `bereich` leer oder wähle **Nur dieser Server**.", flags: MessageFlags.Ephemeral });
 
-            const store = scope === "global" ? db.globalAiKnowledge : gd.aiKnowledge;
-            if (store.length >= 150) return interaction.reply({ content: "❌ In diesem Learn-Bereich sind bereits 150 Einträge gespeichert. Lösche zuerst einen alten Eintrag.", flags: MessageFlags.Ephemeral });
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+            const interpreted = await interpretLearnInput({
+              raw: rawKnowledge, explicitTarget, explicitKind, explicitScope: scope, explicitTopic: topicInput, guildName: interaction.guild.name
+            });
+            const store = interpreted.scope === "global" ? db.globalAiKnowledge : gd.aiKnowledge;
+            if (store.length >= 150) return interaction.editReply("❌ In diesem Learn-Bereich sind bereits 150 Einträge gespeichert. Lösche zuerst einen alten Eintrag.");
+
+            // Exakte Duplikate nicht doppelt speichern.
+            const duplicate = store.find(e =>
+              String(e.text || "").trim().toLowerCase() === interpreted.text.toLowerCase() &&
+              (e.target || "both") === interpreted.target &&
+              (e.kind || "knowledge") === interpreted.kind
+            );
+            if (duplicate) {
+              return interaction.editReply(`ℹ️ Das habe ich bereits als **${duplicate.id}** gespeichert.\n\n💭 **So verstehe ich es:**\n${learnUnderstanding(normalizedLearnEntry(duplicate, interpreted.scope))}`);
+            }
 
             let id;
-            if (scope === "global") { db.globalAiKnowledgeCounter += 1; id = `G-${db.globalAiKnowledgeCounter}`; }
+            if (interpreted.scope === "global") { db.globalAiKnowledgeCounter += 1; id = `G-${db.globalAiKnowledgeCounter}`; }
             else { gd.aiKnowledgeCounter += 1; id = `K-${gd.aiKnowledgeCounter}`; }
             const entry = {
-              id, topic: topic.slice(0, 100), text: knowledge.slice(0, 1500),
-              target: ["ai", "support", "both"].includes(target) ? target : "both",
-              kind: kind === "instruction" ? "instruction" : "knowledge",
-              scope, guildId: scope === "server" ? interaction.guild.id : null,
+              id, topic: interpreted.topic.slice(0, 100), text: interpreted.text.slice(0, 1500),
+              originalText: rawKnowledge.slice(0, 1500),
+              target: interpreted.target, kind: interpreted.kind, scope: interpreted.scope,
+              guildId: interpreted.scope === "server" ? interaction.guild.id : null,
               createdBy: interaction.user.id, createdAt: Date.now()
             };
             store.push(entry);
@@ -4413,16 +4466,9 @@ client.on("interactionCreate", async interaction => {
             const targetLabel = entry.target === "ai" ? "🤖 /ai" : entry.target === "support" ? "🎫 Support AI" : "🔁 /ai + Support AI";
             const kindLabel = entry.kind === "instruction" ? "🎨 Verhalten / Stil" : "📚 Wissen / Fakt";
             const scopeLabel = entry.scope === "global" ? "🌍 Alle Server" : `🏠 Nur ${interaction.guild.name}`;
-            return interaction.reply({ content: `🧠 **Gelernt!**
-**${entry.id} • ${entry.topic}**
-🎯 ${targetLabel}
-${kindLabel}
-${scopeLabel}
-
-> ${entry.text}
-
-💭 **So habe ich es verstanden:**
-${learnUnderstanding(entry)}`.slice(0, 1950), flags: MessageFlags.Ephemeral });
+            const changed = entry.originalText.trim() !== entry.text.trim();
+            const example = interpreted.example ? `\n\n💬 **Beispielwirkung:**\n> ${interpreted.example}` : "";
+            return interaction.editReply({ content: `🧠 **Gelernt!**  **${entry.id}**\n🎯 ${targetLabel}\n${kindLabel}\n${scopeLabel}\n\n📝 **Du hast gesagt:**\n> ${entry.originalText}\n\n✅ **So speichere ich die Regel:**\n> ${entry.text}\n\n💭 **So habe ich es verstanden:**\n${learnUnderstanding(entry)}${changed ? "\n\n✨ Ich habe deine Formulierung nur präzisiert, nicht die Bedeutung geändert." : ""}${example}`.slice(0, 1950) });
           }
 
           if (sub === "list") {
