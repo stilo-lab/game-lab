@@ -1,12 +1,10 @@
-# v1.6.6 – @everyone / @here Hard Ignore
+# YouTube Ping Update v1.7.2
 
-Ersetze in GitHub:
-- `src/index.js`
-- `src/community.js`
-- `package.json`
+Replace/add these files in GitHub:
+- `src/index.js` (replace)
+- `src/youtube_ping.js` (new)
+- `package.json` (replace)
 
-`data/db.json` NICHT ersetzen.
+Then Railway redeploys automatically. Run `/commandsync` once after deploy.
 
-Danach Railway neu deployen.
-
-Nachrichten mit `@everyone` oder `@here` lösen keine automatischen Bot-Aktionen mehr aus.
+No YouTube API key is required.

@@ -1,12 +1,12 @@
 {
   "name": "stilo-multigame-community-bot",
   "version": "1.7.2",
-  "description": "Multi-game Discord community bot with live-updating Spotify Connect playlist sync, device controls, diagnostics, AI, moderation and community systems.",
+  "description": "Multi-game Discord community bot with YouTube upload/Short notifications, Spotify Connect, AI, moderation and community systems.",
   "main": "src/index.js",
   "type": "commonjs",
   "scripts": {
     "start": "node src/index.js",
-    "check": "node --check src/index.js && node --check src/community.js && node --check src/games.js && node --check src/staff.js && node --check src/element_seas.js && node --check src/spotify_party.js"
+    "check": "node --check src/index.js && node --check src/community.js && node --check src/games.js && node --check src/staff.js && node --check src/element_seas.js && node --check src/spotify_party.js && node --check src/youtube_ping.js"
   },
   "engines": {
     "node": ">=22.12.0"
