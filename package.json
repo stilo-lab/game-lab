@@ -1,7 +1,7 @@
 {
   "name": "stilo-multigame-community-bot",
-  "version": "1.6.1",
-  "description": "Multi-game Discord community bot with relaxed AI, global/server learn rules, external-ticket AI continuation, selective /create channel builder, owner-friendly /setup permissions, silent announcements setup, Spotify Connect and community systems.",
+  "version": "1.6.3",
+  "description": "Multi-game Discord community bot with strict self-repairing Smart Setup, manual /setupmap overrides, editable ticket AI messages, feedback, relaxed AI, external-ticket support AI, Spotify Connect and community systems.",
   "main": "src/index.js",
   "type": "commonjs",
   "scripts": {
