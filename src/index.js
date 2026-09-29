@@ -6,6 +6,7 @@ const { buildCommunityCommands, createCommunity } = require("./community");
 const { buildStaffCommands, createStaffSystem } = require("./staff");
 const { buildElementSeasCommands, createElementSeas } = require("./element_seas");
 const { buildSpotifyPartyCommands, createSpotifyParty } = require("./spotify_party");
+const { buildYouTubePingCommands, createYouTubePing } = require("./youtube_ping");
 const { GAME_CHOICES, gameName, gameListText, randomGamePrompt } = require("./games");
 const {
   Client,
@@ -2900,7 +2901,8 @@ const commands = [
   ...buildCommunityCommands(),
   ...buildStaffCommands(),
   ...buildElementSeasCommands(),
-  ...buildSpotifyPartyCommands()
+  ...buildSpotifyPartyCommands(),
+  ...buildYouTubePingCommands()
 ].map(c => c.toJSON());
 
 async function registerCommands() {
@@ -3002,6 +3004,14 @@ const spotifyParty = createSpotifyParty({
   isGuildApproved
 });
 
+const youtubePing = createYouTubePing({
+  client,
+  db,
+  saveDB,
+  footer,
+  isGuildApproved
+});
+
 async function snapshotInvites(guild) {
   try {
     const invites = await guild.invites.fetch();
@@ -3027,6 +3037,7 @@ client.once("clientReady", async () => {
     const externalScan = await scanExistingExternalTickets(guild).catch(() => null);
     if (externalScan?.detected) console.log(`External Ticket AI: ${externalScan.detected} Ticket-Kanal/Kanäle auf ${guild.name} erkannt.`);
   }
+  youtubePing.start();
   await processGiveaways().catch(err => console.error("Giveaway startup check failed:", err?.message || err));
   await checkTicketInactivity().catch(err => console.error("Ticket inactivity startup check failed:", err?.message || err));
   await community.onReady().catch(err => console.error("Community startup failed:", err?.message || err));
@@ -4686,6 +4697,7 @@ client.on("interactionCreate", async interaction => {
       });
     }
 
+    if (await youtubePing.handleInteraction(interaction)) return;
     if (await spotifyParty.handleInteraction(interaction)) return;
     if (await elementSeas.handleInteraction(interaction)) return;
     if (await staff.handleInteraction(interaction)) return;
