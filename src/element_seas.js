@@ -93,6 +93,7 @@ const ISLANDS = [
 function buildElementSeasCommands() {
   return [
     new SlashCommandBuilder().setName("elementseas").setDescription("Öffnet Element Seas – dein persistentes Discord-RPG."),
+    new SlashCommandBuilder().setName("sea").setDescription("Öffnet Element Seas – Kurzcommand für das RPG."),
     new SlashCommandBuilder().setName("seaprofile").setDescription("Zeigt ein Element-Seas-Profil.")
       .addUserOption(o => o.setName("user").setDescription("Optional: anderes Mitglied")),
     new SlashCommandBuilder().setName("seaduel").setDescription("Fordert ein Mitglied zu einem Element-Seas-Duell heraus.")
@@ -106,9 +107,16 @@ function createElementSeas(ctx) {
   if (!db.elementSeas || typeof db.elementSeas !== "object") db.elementSeas = {};
   if (!db.elementSeas.players) db.elementSeas.players = {};
   if (!db.elementSeas.duels) db.elementSeas.duels = {};
+  if (!db.elementSeas.battles || typeof db.elementSeas.battles !== "object") db.elementSeas.battles = {};
 
-  const battles = new Map();
-  const duelSessions = new Map();
+  const battles = new Map(Object.entries(db.elementSeas.battles || {}));
+  const duelSessions = new Map(Object.entries(db.elementSeas.duels || {}));
+
+  function persistSessions() {
+    db.elementSeas.battles = Object.fromEntries(battles);
+    db.elementSeas.duels = Object.fromEntries(duelSessions);
+    saveDB();
+  }
 
   const key = (guildId, userId) => `${guildId}:${userId}`;
   const powerById = id => POWERS.find(x => x.id === id) || null;
@@ -144,7 +152,22 @@ function createElementSeas(ctx) {
       saveDB();
     }
     const p = db.elementSeas.players[k];
+    if (!Number.isFinite(p.level) || p.level < 1) p.level = 1;
+    if (!Number.isFinite(p.xp) || p.xp < 0) p.xp = 0;
+    if (!Number.isFinite(p.gold) || p.gold < 0) p.gold = 500;
+    if (!Number.isFinite(p.shards) || p.shards < 0) p.shards = 0;
+    if (!Number.isFinite(p.bounty) || p.bounty < 0) p.bounty = 0;
+    if (!Number.isFinite(p.wins) || p.wins < 0) p.wins = 0;
+    if (!Number.isFinite(p.losses) || p.losses < 0) p.losses = 0;
+    if (!Number.isFinite(p.totalKills) || p.totalKills < 0) p.totalKills = 0;
+    if (!p.islandId || !ISLANDS.some(i => i.id === p.islandId)) p.islandId = "driftwood";
+    if (!Number.isFinite(p.sea) || p.sea < 1) p.sea = islandById(p.islandId).sea;
+    if (!p.weaponId || !WEAPONS.some(w => w.id === p.weaponId)) p.weaponId = "rustblade";
+    if (p.powerId && !POWERS.some(x => x.id === p.powerId)) p.powerId = null;
     if (!p.stats) p.stats = { strength: 1, defense: 1, power: 1 };
+    if (!Number.isFinite(p.stats.strength) || p.stats.strength < 1) p.stats.strength = 1;
+    if (!Number.isFinite(p.stats.defense) || p.stats.defense < 1) p.stats.defense = 1;
+    if (!Number.isFinite(p.stats.power) || p.stats.power < 1) p.stats.power = 1;
     if (!Number.isFinite(p.statPoints)) p.statPoints = 0;
     if (!Array.isArray(p.weaponsOwned)) p.weaponsOwned = ["rustblade"];
     if (!p.weaponMastery) p.weaponMastery = { rustblade: 1 };
@@ -276,6 +299,7 @@ function createElementSeas(ctx) {
       log: [], createdAt: Date.now()
     };
     battles.set(b.id, b);
+    persistSessions();
     return b;
   }
 
@@ -329,6 +353,7 @@ function createElementSeas(ctx) {
 
     saveDB();
     battles.delete(b.id);
+    persistSessions();
     const description = [
       `Du hast **${b.enemy.name}** besiegt!`,
       `⭐ **+${xp.toLocaleString()} XP** • 💰 **+${gold.toLocaleString()} Gold**`,
@@ -343,9 +368,11 @@ function createElementSeas(ctx) {
   }
 
   async function battleAction(interaction, b, action) {
-    if (!b || b.userId !== interaction.user.id) return interaction.reply({ content: "❌ Dieser Kampf gehört nicht dir.", flags: MessageFlags.Ephemeral });
+    if (!b) return interaction.reply({ content: "⌛ Dieser Kampf konnte nicht mehr geladen werden. Öffne mit `/sea` einen neuen Hub und starte den Kampf erneut.", flags: MessageFlags.Ephemeral });
+    if (b.userId !== interaction.user.id) return interaction.reply({ content: "❌ Dieser Kampf gehört nicht dir.", flags: MessageFlags.Ephemeral });
     if (Date.now() - b.createdAt > BATTLE_TTL) {
       battles.delete(b.id);
+      persistSessions();
       return interaction.update({ content: "⌛ Dieser Kampf ist abgelaufen. Öffne Element Seas neu.", embeds: [], components: [] });
     }
     const p = ensurePlayer(b.guildId, b.userId);
@@ -391,6 +418,7 @@ function createElementSeas(ctx) {
 
     if (b.playerHp <= 0) {
       battles.delete(b.id);
+      persistSessions();
       const lossGold = Math.min(p.gold, Math.max(25, Math.floor(p.gold * 0.025)));
       p.gold -= lossGold;
       saveDB();
@@ -398,6 +426,7 @@ function createElementSeas(ctx) {
         new ButtonBuilder().setCustomId("es_home").setLabel("Zurück zum Hub").setEmoji("🌊").setStyle(ButtonStyle.Primary)
       )] });
     }
+    persistSessions();
     return interaction.update({ embeds: [battleEmbed(b)], components: battleRows(b) });
   }
 
@@ -497,9 +526,14 @@ function createElementSeas(ctx) {
 
   async function handleInteraction(interaction) {
     if (interaction.isChatInputCommand()) {
-      if (interaction.commandName === "elementseas") {
+      if (["elementseas", "sea"].includes(interaction.commandName)) {
+        if (!interaction.guild) {
+          await interaction.reply({ content: "❌ Element Seas funktioniert nur auf einem Discord-Server.", flags: MessageFlags.Ephemeral });
+          return true;
+        }
         const p = ensurePlayer(interaction.guild.id, interaction.user.id);
-        return interaction.reply({ embeds:[hubEmbed(interaction.guild,interaction.user,p)], components:hubRows(p), flags:MessageFlags.Ephemeral }).then(()=>true);
+        await interaction.reply({ embeds:[hubEmbed(interaction.guild,interaction.user,p)], components:hubRows(p), flags:MessageFlags.Ephemeral });
+        return true;
       }
       if (interaction.commandName === "seaprofile") {
         const user = interaction.options.getUser("user") || interaction.user;
@@ -518,6 +552,7 @@ function createElementSeas(ctx) {
         if(Math.abs(a.level-b.level)>100){await interaction.reply({content:"❌ Für ein faires Duell dürfen eure Level höchstens 100 auseinanderliegen.",flags:MessageFlags.Ephemeral});return true;}
         const id=`D${Date.now().toString(36)}${Math.random().toString(36).slice(2,5)}`;
         duelSessions.set(id,{id,guildId:interaction.guild.id,aId:interaction.user.id,bId:target.id,status:"pending",createdAt:Date.now()});
+        persistSessions();
         await interaction.reply({content:`⚔️ ${target}, **${interaction.user.username}** fordert dich zu einem Element-Seas-Duell heraus!`,components:[new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId(`es_duel_accept:${id}`).setLabel("Annehmen").setEmoji("⚔️").setStyle(ButtonStyle.Success),
           new ButtonBuilder().setCustomId(`es_duel_decline:${id}`).setLabel("Ablehnen").setStyle(ButtonStyle.Secondary)
@@ -549,9 +584,9 @@ function createElementSeas(ctx) {
       if(id.startsWith("es_duel_accept:")||id.startsWith("es_duel_decline:")){
         const [act,did]=id.split(":");const d=duelSessions.get(did);if(!d)return interaction.reply({content:"❌ Challenge abgelaufen.",flags:MessageFlags.Ephemeral}).then(()=>true);
         if(interaction.user.id!==d.bId)return interaction.reply({content:"❌ Nur der herausgeforderte Spieler kann das entscheiden.",flags:MessageFlags.Ephemeral}).then(()=>true);
-        if(act==="es_duel_decline"){duelSessions.delete(did);await interaction.update({content:"❌ Duell abgelehnt.",components:[]});return true;}
+        if(act==="es_duel_decline"){duelSessions.delete(did);persistSessions();await interaction.update({content:"❌ Duell abgelehnt.",components:[]});return true;}
         d.status="active";d.hpA=duelMaxHp(ensurePlayer(d.guildId,d.aId));d.hpB=duelMaxHp(ensurePlayer(d.guildId,d.bId));d.turnId=Math.random()<0.5?d.aId:d.bId;d.guardA=false;d.guardB=false;d.log=[];
-        await interaction.update({content:"",embeds:[duelEmbed(d)],components:duelRows(d)});return true;
+        persistSessions();await interaction.update({content:"",embeds:[duelEmbed(d)],components:duelRows(d)});return true;
       }
       if(id.startsWith("es_duel_atk:")||id.startsWith("es_duel_pow:")||id.startsWith("es_duel_guard:")){
         const [act,did]=id.split(":");const d=duelSessions.get(did);if(!d||d.status!=="active")return interaction.reply({content:"❌ Duell nicht mehr aktiv.",flags:MessageFlags.Ephemeral}).then(()=>true);
@@ -564,8 +599,8 @@ function createElementSeas(ctx) {
           const guarded=selfIsA?d.guardB:d.guardA;if(guarded)dmg=Math.max(1,Math.floor(dmg*0.4));if(selfIsA)d.guardB=false;else d.guardA=false;
           if(selfIsA)d.hpB-=dmg;else d.hpA-=dmg;d.log.push(`${act==="es_duel_pow"?"✨":"⚔️"} <@${selfId}> trifft für **${dmg}**.`);
         }
-        if(d.hpA<=0||d.hpB<=0){const winner=d.hpA>0?d.aId:d.bId,loser=winner===d.aId?d.bId:d.aId;const wp=ensurePlayer(d.guildId,winner),lp=ensurePlayer(d.guildId,loser);wp.wins++;lp.losses++;const bounty=Math.max(25,Math.floor(lp.level*1.7));wp.bounty+=bounty;wp.gold+=Math.max(100,Math.floor(lp.level*8));saveDB();duelSessions.delete(did);await interaction.update({embeds:[footer(new EmbedBuilder().setTitle("🏆 Duel Winner").setDescription(`<@${winner}> gewinnt!\n🏴 **+${bounty} Bounty**`))],components:[]});return true;}
-        d.turnId=otherId;await interaction.update({embeds:[duelEmbed(d)],components:duelRows(d)});return true;
+        if(d.hpA<=0||d.hpB<=0){const winner=d.hpA>0?d.aId:d.bId,loser=winner===d.aId?d.bId:d.aId;const wp=ensurePlayer(d.guildId,winner),lp=ensurePlayer(d.guildId,loser);wp.wins++;lp.losses++;const bounty=Math.max(25,Math.floor(lp.level*1.7));wp.bounty+=bounty;wp.gold+=Math.max(100,Math.floor(lp.level*8));saveDB();duelSessions.delete(did);persistSessions();await interaction.update({embeds:[footer(new EmbedBuilder().setTitle("🏆 Duel Winner").setDescription(`<@${winner}> gewinnt!\n🏴 **+${bounty} Bounty**`))],components:[]});return true;}
+        d.turnId=otherId;persistSessions();await interaction.update({embeds:[duelEmbed(d)],components:duelRows(d)});return true;
       }
 
       if(!id.startsWith("es_"))return false;
@@ -602,12 +637,24 @@ function createElementSeas(ctx) {
 
   function cleanup() {
     const now=Date.now();
-    for(const [id,b] of battles)if(now-b.createdAt>BATTLE_TTL)battles.delete(id);
-    for(const [id,d] of duelSessions)if(now-d.createdAt>BATTLE_TTL)duelSessions.delete(id);
+    let changed=false;
+    for(const [id,b] of battles)if(now-b.createdAt>BATTLE_TTL){battles.delete(id);changed=true;}
+    for(const [id,d] of duelSessions)if(now-d.createdAt>BATTLE_TTL){duelSessions.delete(id);changed=true;}
+    if(changed) persistSessions();
   }
   setInterval(cleanup,5*60*1000).unref?.();
 
-  return { handleInteraction, ensurePlayer };
+  async function openHub(interaction) {
+    if (!interaction.guild) {
+      await interaction.reply({ content: "❌ Element Seas funktioniert nur auf einem Discord-Server.", flags: MessageFlags.Ephemeral });
+      return true;
+    }
+    const p = ensurePlayer(interaction.guild.id, interaction.user.id);
+    await interaction.reply({ embeds:[hubEmbed(interaction.guild,interaction.user,p)], components:hubRows(p), flags:MessageFlags.Ephemeral });
+    return true;
+  }
+
+  return { handleInteraction, ensurePlayer, openHub };
 }
 
 module.exports = { buildElementSeasCommands, createElementSeas };
