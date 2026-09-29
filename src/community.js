@@ -280,6 +280,7 @@ function createCommunity(ctx) {
     for (const [canonical, key] of Object.entries(map)) {
       const id = gd.channels?.[canonical];
       if (id && guild.channels.cache.get(id)) c.channels[key] = id;
+      else delete c.channels[key];
     }
 
     function missingPostPermissions(channel) {

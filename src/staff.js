@@ -227,6 +227,7 @@ function createStaffSystem(ctx) {
     for (const [canonical, key] of Object.entries(map)) {
       const id = gd.channels?.[canonical];
       if (id && guild.channels.cache.get(id)) s.channels[key] = id;
+      else delete s.channels[key];
     }
     if (!gd.setupPanels) gd.setupPanels = {};
 

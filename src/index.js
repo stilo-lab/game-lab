@@ -75,6 +75,10 @@ if (typeof db.maintenance !== "boolean") db.maintenance = false;
 if (!db.ownerInviteLinks || typeof db.ownerInviteLinks !== "object") db.ownerInviteLinks = {};
 if (!Array.isArray(db.globalAiKnowledge)) db.globalAiKnowledge = [];
 if (!Number.isInteger(db.globalAiKnowledgeCounter)) db.globalAiKnowledgeCounter = 0;
+if (!Array.isArray(db.feedback)) db.feedback = [];
+if (!db.feedbackRequests || typeof db.feedbackRequests !== "object") db.feedbackRequests = {};
+if (!Number.isInteger(db.feedbackCounter)) db.feedbackCounter = 0;
+if (!Number.isInteger(db.feedbackRequestCounter)) db.feedbackRequestCounter = 0;
 
 function saveDB() {
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
@@ -138,6 +142,12 @@ const SMART_SETUP_PURPOSES = Object.freeze([
 ]);
 
 const PRIVATE_SETUP_PURPOSES = new Set(["support-logs", "ticket-transcripts", "staff-audit", "ai-staff-alerts", "mod-cases", "staff-briefing", "staff-tasks"]);
+const SETUP_NEVER_AUTOMAP = [
+  /(^|-)giveaways?($|-)/, /(^|-)gewinnspiel(e)?($|-)/, /(^|-)raffle($|-)/,
+  /(^|-)general($|-)/, /(^|-)chat($|-)/, /(^|-)gaming-chat($|-)/, /(^|-)off-topic($|-)/,
+  /(^|-)memes?($|-)/, /(^|-)media($|-)/, /(^|-)music($|-)/, /(^|-)musik($|-)/,
+  /(^|-)bot-commands?($|-)/, /(^|-)commands?($|-)/, /(^|-)rules?($|-)/, /(^|-)regeln($|-)/
+];
 const smartSetupHints = new Map();
 
 function channelIsPrivateForEveryone(channel) {
@@ -199,21 +209,49 @@ function setupCreateChannelName(canonical) {
   return canonical;
 }
 
-function setupHeuristicScore(snapshot, purpose) {
+function setupAliasEvidence(snapshot, purpose) {
   const name = cleanName(snapshot.name);
   const topic = cleanName(snapshot.topic || "");
-  const history = cleanName((snapshot.messages || []).map(m => m.content || "").join(" "));
-  let score = 0;
-  for (const raw of purpose.aliases) {
-    const alias = cleanName(raw);
-    if (!alias) continue;
-    if (name === alias) score += 30;
-    else if (name.includes(alias) || alias.includes(name)) score += 14;
-    if (topic.includes(alias)) score += 6;
-    if (history.includes(alias)) score += 2;
+  const parent = cleanName(snapshot.parent || "");
+  const aliases = purpose.aliases.map(cleanName).filter(Boolean);
+  let exactName = false, nameScore = 0, topicScore = 0, parentScore = 0;
+  for (const alias of aliases) {
+    if (name === alias) { exactName = true; nameScore = Math.max(nameScore, 120); continue; }
+    const nameTokens = new Set(name.split("-").filter(Boolean));
+    const aliasTokens = alias.split("-").filter(Boolean);
+    if (aliasTokens.length && aliasTokens.every(t => nameTokens.has(t))) nameScore = Math.max(nameScore, 72);
+    else if (alias.length >= 5 && (name.startsWith(`${alias}-`) || name.endsWith(`-${alias}`))) nameScore = Math.max(nameScore, 62);
+    else if (alias.length >= 6 && name.includes(alias)) nameScore = Math.max(nameScore, 48);
+    if (topic === alias) topicScore = Math.max(topicScore, 52);
+    else if (alias.length >= 5 && topic.includes(alias)) topicScore = Math.max(topicScore, 28);
+    if (alias.length >= 5 && parent.includes(alias)) parentScore = Math.max(parentScore, 16);
   }
-  // Dynamic ticket channels are real cases, never the public ticket panel.
-  if (String(snapshot.topic || "").startsWith("ticket-owner:")) return -999;
+  return { name, topic, parent, aliases, exactName, nameScore, topicScore, parentScore, lexicalScore: nameScore + topicScore + parentScore };
+}
+
+function setupCandidateAllowed(snapshot, purpose, score = 0, source = "heuristic") {
+  if (String(snapshot.topic || "").startsWith("ticket-owner:")) return false;
+  if (PRIVATE_SETUP_PURPOSES.has(purpose.canonical) && !snapshot.private) return false;
+  const ev = setupAliasEvidence(snapshot, purpose);
+  if (SETUP_NEVER_AUTOMAP.some(rx => rx.test(ev.name))) return false;
+  const fortniteNamed = /(^|-)fortnite($|-)/.test(ev.name) || /fortnite/.test(ev.topic);
+  if (purpose.canonical === "announcements" && fortniteNamed) return false;
+  if (purpose.canonical === "fortnite-news" && !fortniteNamed) return false;
+  if (purpose.canonical === "item-shop" && !(/item/.test(ev.name) && /shop/.test(ev.name)) && !/fortnite.*shop|shop.*fortnite/.test(`${ev.name} ${ev.topic}`)) return false;
+  if (source === "AI" && ev.lexicalScore < 28) return false;
+  if (source === "heuristic" && ev.lexicalScore < 45) return false;
+  return score >= (source === "AI" ? 72 : 45);
+}
+
+function setupHeuristicScore(snapshot, purpose) {
+  const ev = setupAliasEvidence(snapshot, purpose);
+  if (SETUP_NEVER_AUTOMAP.some(rx => rx.test(ev.name))) return -999;
+  let score = ev.lexicalScore;
+  if (score > 0) {
+    const history = cleanName((snapshot.messages || []).map(m => `${m.content || ""} ${(m.embeds || []).join(" ")}`).join(" "));
+    for (const alias of ev.aliases) if (alias.length >= 5 && history.includes(alias)) score += 3;
+  }
+  if (!setupCandidateAllowed(snapshot, purpose, score, "heuristic")) return -999;
   return score;
 }
 
@@ -228,12 +266,14 @@ async function collectSetupChannelSnapshots(guild, historyLimit = 20) {
     let messages = [];
     try {
       const batch = await channel.messages.fetch({ limit: Math.max(5, Math.min(30, historyLimit)) });
-      messages = [...batch.values()].reverse().slice(-historyLimit).map(m => ({
-        author: m.author?.bot ? "BOT" : (m.author?.username || "USER"),
-        bot: Boolean(m.author?.bot),
-        content: String(m.content || "").slice(0, 350),
-        embeds: (m.embeds || []).slice(0, 2).map(e => `${e.title || ""} ${e.description || ""}`.slice(0, 350)).filter(Boolean)
-      }));
+      messages = [...batch.values()].reverse()
+        .filter(m => m.author?.id !== client.user?.id)
+        .slice(-historyLimit).map(m => ({
+          author: m.author?.bot ? "OTHER_BOT" : (m.author?.username || "USER"),
+          bot: Boolean(m.author?.bot),
+          content: String(m.content || "").slice(0, 350),
+          embeds: (m.embeds || []).slice(0, 2).map(e => `${e.title || ""} ${e.description || ""}`.slice(0, 350)).filter(Boolean)
+        }));
     } catch {}
     snapshots.push({
       id: channel.id,
@@ -253,7 +293,7 @@ function heuristicSetupAssignments(snapshots) {
   for (const snap of snapshots) {
     for (const purpose of SMART_SETUP_PURPOSES) {
       const score = setupHeuristicScore(snap, purpose);
-      if (score >= 12) candidates.push({ channelId: snap.id, canonical: purpose.canonical, score, reason: "name/history heuristic" });
+      if (score >= 45 && setupCandidateAllowed(snap, purpose, score, "heuristic")) candidates.push({ channelId: snap.id, canonical: purpose.canonical, score, reason: "strong name/topic match" });
     }
   }
   candidates.sort((a, b) => b.score - a.score);
@@ -298,7 +338,7 @@ async function aiSetupAssignments(guild, snapshots) {
         model: GEMINI_MODEL,
         contents: JSON.stringify(batch),
         config: {
-          systemInstruction: `You classify existing Discord channels during bot setup. Read EVERY supplied channel name, topic, parent category and recent message history before choosing. Fancy/stylized Unicode fonts must be interpreted as normal letters. For each channel, choose at most ONE purpose from this exact list or \"none\": ${allowed.join(", ")}. Examples: a channel called ticket/tickets/help/support where people ask for help should be purpose support; a suggestions/ideen/feedback channel should be suggestions; matesearch/lfg/team search should be teamsearch. Do not classify active private ticket case channels. Sensitive staff/log purposes should only be used when private=true. Return ONLY JSON array: [{\"channelId\":\"...\",\"purpose\":\"...\",\"confidence\":0.0,\"reason\":\"short reason\"}]. Be conservative; use none if unclear.`,
+          systemInstruction: `You classify existing Discord channels during bot setup. Channel NAME and TOPIC are primary evidence. Recent history is secondary and must NEVER override an unrelated channel name. Fancy/stylized Unicode fonts must be interpreted as normal letters. Never map unrelated channels such as giveaway/giveaways, general, chat, memes, media, music, rules or bot-commands to another purpose. Never classify a channel merely because an old bot message inside it mentions a feature. For each channel choose at most ONE purpose from this exact list or "none": ${allowed.join(", ")}. Use fortnite-news only when Fortnite is explicit in name/topic; general news/updates belongs to announcements. Do not classify active private ticket case channels. Sensitive staff/log purposes only when private=true. Return ONLY JSON array: [{"channelId":"...","purpose":"...","confidence":0.0,"reason":"short reason"}]. Be very conservative and use none if name/topic do not support the mapping.`,
           temperature: 0,
           maxOutputTokens: 2200
         }
@@ -313,41 +353,58 @@ async function aiSetupAssignments(guild, snapshots) {
   const snapById = new Map(snapshots.map(s => [s.id, s]));
   return results
     .map(x => ({ channelId: String(x.channelId || ""), canonical: String(x.purpose || ""), score: Math.round(Number(x.confidence || 0) * 100), reason: String(x.reason || "AI") }))
-    .filter(x => snapById.has(x.channelId) && allowed.includes(x.canonical) && x.canonical !== "none" && x.score >= 58)
-    .filter(x => !PRIVATE_SETUP_PURPOSES.has(x.canonical) || snapById.get(x.channelId)?.private);
+    .filter(x => snapById.has(x.channelId) && allowed.includes(x.canonical) && x.canonical !== "none" && x.score >= 72)
+    .filter(x => {
+      const snap = snapById.get(x.channelId);
+      const purpose = setupPurposeByCanonical(x.canonical);
+      return Boolean(snap && purpose && setupCandidateAllowed(snap, purpose, x.score, "AI"));
+    });
 }
 
 async function prepareSmartSetup(guild) {
   const snapshots = await collectSetupChannelSnapshots(guild, 20);
   const heuristic = heuristicSetupAssignments(snapshots);
   const ai = await aiSetupAssignments(guild, snapshots);
-  const all = [...ai.map(x => ({ ...x, source: "AI" })), ...heuristic.map(x => ({ ...x, source: "Heuristic" }))]
-    .sort((a, b) => b.score - a.score);
+  const gd = guildData(guild.id);
+  if (!gd.setupOverrides || typeof gd.setupOverrides !== "object") gd.setupOverrides = {};
+  const selected = [], usedChannels = new Set(), usedPurposes = new Set();
 
-  const usedChannels = new Set();
-  const usedPurposes = new Set();
-  const selected = [];
-  for (const item of all) {
-    if (usedChannels.has(item.channelId) || usedPurposes.has(item.canonical)) continue;
-    const snap = snapshots.find(s => s.id === item.channelId);
-    if (!snap) continue;
-    if (PRIVATE_SETUP_PURPOSES.has(item.canonical) && !snap.private) continue;
-    usedChannels.add(item.channelId);
-    usedPurposes.add(item.canonical);
-    selected.push(item);
+  for (const purpose of SMART_SETUP_PURPOSES) {
+    const channelId = gd.setupOverrides[purpose.canonical];
+    if (!channelId) continue;
+    const snap = snapshots.find(x => x.id === channelId);
+    if (!snap) { delete gd.setupOverrides[purpose.canonical]; continue; }
+    if (PRIVATE_SETUP_PURPOSES.has(purpose.canonical) && !snap.private) continue;
+    selected.push({ channelId, canonical: purpose.canonical, score: 999, reason: "manual override", source: "Manual" });
+    usedChannels.add(channelId); usedPurposes.add(purpose.canonical);
   }
 
-  // Suggestions are special: a server can have MORE THAN ONE channel where ideas are submitted.
-  // Keep all confident suggestion/input channels instead of only the single primary setup match.
+  for (const snap of snapshots) {
+    if (SETUP_NEVER_AUTOMAP.some(rx => rx.test(cleanName(snap.name)))) continue;
+    const exact = SMART_SETUP_PURPOSES.map(p => ({ p, ev: setupAliasEvidence(snap, p) }))
+      .filter(x => x.ev.exactName && (!PRIVATE_SETUP_PURPOSES.has(x.p.canonical) || snap.private));
+    if (exact.length !== 1) continue;
+    const canonical = exact[0].p.canonical;
+    if (usedChannels.has(snap.id) || usedPurposes.has(canonical)) continue;
+    selected.push({ channelId: snap.id, canonical, score: 120, reason: "exact channel-name match", source: "Exact" });
+    usedChannels.add(snap.id); usedPurposes.add(canonical);
+  }
+
+  const all = [...ai.map(x => ({ ...x, source: "AI" })), ...heuristic.map(x => ({ ...x, source: "Heuristic" }))].sort((a, b) => b.score - a.score);
+  for (const item of all) {
+    if (usedChannels.has(item.channelId) || usedPurposes.has(item.canonical)) continue;
+    const snap = snapshots.find(x => x.id === item.channelId);
+    const purpose = setupPurposeByCanonical(item.canonical);
+    if (!snap || !purpose || !setupCandidateAllowed(snap, purpose, item.score, item.source === "AI" ? "AI" : "heuristic")) continue;
+    selected.push(item); usedChannels.add(item.channelId); usedPurposes.add(item.canonical);
+  }
+
   const suggestionsPurpose = setupPurposeByCanonical("suggestions");
   const suggestionChannelIds = new Set();
   if (suggestionsPurpose) {
     for (const snap of snapshots) {
-      const score = setupHeuristicScore(snap, suggestionsPurpose);
-      if (score >= 10) suggestionChannelIds.add(snap.id);
-    }
-    for (const item of ai) {
-      if (item.canonical === "suggestions" && item.score >= 55) suggestionChannelIds.add(item.channelId);
+      const ev = setupAliasEvidence(snap, suggestionsPurpose);
+      if (!SETUP_NEVER_AUTOMAP.some(rx => rx.test(ev.name)) && ev.lexicalScore >= 45) suggestionChannelIds.add(snap.id);
     }
   }
   const primarySuggestion = selected.find(x => x.canonical === "suggestions");
@@ -356,13 +413,8 @@ async function prepareSmartSetup(guild) {
   const hints = new Map();
   for (const item of selected) hints.set(cleanName(item.canonical), item.channelId);
   smartSetupHints.set(guild.id, hints);
-  return {
-    scanned: snapshots.length,
-    reused: selected.length,
-    selected,
-    aiUsed: Boolean(GEMINI_API_KEY),
-    suggestionChannelIds: [...suggestionChannelIds]
-  };
+  saveDB();
+  return { scanned: snapshots.length, reused: selected.length, selected, aiUsed: Boolean(GEMINI_API_KEY), suggestionChannelIds: [...suggestionChannelIds] };
 }
 
 function looksLikeLearnInstruction(text, topic = "") {
@@ -393,6 +445,7 @@ function guildData(guildId) {
   }
   const gd = db.guilds[guildId];
   if (!gd.channels) gd.channels = {};
+  if (!gd.setupOverrides || typeof gd.setupOverrides !== "object") gd.setupOverrides = {};
   if (!gd.invites) gd.invites = {};
   if (!gd.counting) gd.counting = { current: 0, lastUserId: null };
   if (!Array.isArray(gd.aiKnowledge)) gd.aiKnowledge = [];
@@ -737,6 +790,176 @@ async function supportLog(guild, title, description) {
   }
 }
 
+
+function nextFeedbackRequestId() {
+  db.feedbackRequestCounter += 1;
+  return `FBR-${db.feedbackRequestCounter}`;
+}
+
+function nextFeedbackId() {
+  db.feedbackCounter += 1;
+  return `FB-${db.feedbackCounter}`;
+}
+
+function feedbackRequest(requestId) {
+  return db.feedbackRequests?.[requestId] || null;
+}
+
+function feedbackDmEmbed(request) {
+  const serverName = request.guildName || "Discord-Server";
+  const ticketLabel = request.ticketName ? `#${request.ticketName}` : "dein Support-Ticket";
+  return footer(new EmbedBuilder()
+    .setColor(0x5865F2)
+    .setTitle("💬 Wie war dein Support?")
+    .setDescription(`Dein Ticket **${ticketLabel}** auf **${serverName}** wurde beendet.\n\nDeine Meinung hilft dabei, den Bot und die Support-AI besser zu machen. Du kannst bewerten, **was gut war, was nicht gut war und was verbessert werden sollte**.`)
+    .setTimestamp());
+}
+
+function feedbackDmComponents(requestId) {
+  const ratingRow = new ActionRowBuilder().addComponents(
+    ...[1,2,3,4,5].map(n => new ButtonBuilder()
+      .setCustomId(`feedback_rate:${requestId}:${n}`)
+      .setLabel(`${n}⭐`)
+      .setStyle(n >= 4 ? ButtonStyle.Success : (n === 3 ? ButtonStyle.Secondary : ButtonStyle.Danger)))
+  );
+  const detailRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`feedback_open:${requestId}`)
+      .setLabel("Meinung einreichen")
+      .setEmoji("📝")
+      .setStyle(ButtonStyle.Primary)
+  );
+  return [ratingRow, detailRow];
+}
+
+function feedbackModal(customId, title = "Feedback zum Bot", existingRating = null) {
+  const modal = new ModalBuilder().setCustomId(customId).setTitle(title.slice(0, 45));
+  const rating = new TextInputBuilder()
+    .setCustomId("feedback_rating")
+    .setLabel("Bewertung 1-5")
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMinLength(1)
+    .setMaxLength(1)
+    .setPlaceholder("5");
+  if (existingRating && [1,2,3,4,5].includes(Number(existingRating))) rating.setValue(String(existingRating));
+  const good = new TextInputBuilder()
+    .setCustomId("feedback_good")
+    .setLabel("Was macht der Bot gut?")
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(false)
+    .setMaxLength(1000)
+    .setPlaceholder("z.B. Die Support-AI erklärt Schritte verständlich ...");
+  const bad = new TextInputBuilder()
+    .setCustomId("feedback_bad")
+    .setLabel("Was gefällt dir nicht / funktioniert schlecht?")
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(false)
+    .setMaxLength(1000)
+    .setPlaceholder("z.B. Manchmal antwortet die AI zu lang ...");
+  const improve = new TextInputBuilder()
+    .setCustomId("feedback_improve")
+    .setLabel("Was sollen wir verbessern?")
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(false)
+    .setMaxLength(1000)
+    .setPlaceholder("z.B. Bei Tickets zuerst eine kurze Lösung nennen ...");
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(rating),
+    new ActionRowBuilder().addComponents(good),
+    new ActionRowBuilder().addComponents(bad),
+    new ActionRowBuilder().addComponents(improve)
+  );
+  return modal;
+}
+
+function parseFeedbackRating(value) {
+  const rating = Number(String(value || "").trim());
+  return [1,2,3,4,5].includes(rating) ? rating : null;
+}
+
+function upsertTicketRating(ticket, guildId, rating) {
+  if (!ticket || ![1,2,3,4,5].includes(rating)) return;
+  const stats = supportStats(guildId);
+  const previous = Number(ticket.rating || 0);
+  if (previous && [1,2,3,4,5].includes(previous)) {
+    stats.ratingSum += rating - previous;
+  } else {
+    stats.ratingCount += 1;
+    stats.ratingSum += rating;
+  }
+  ticket.rating = rating;
+  ticket.ratedAt = Date.now();
+}
+
+async function storeFeedback({ guildId = null, guildName = null, userId, source = "general", ticketChannelId = null, ticketName = null, rating, good = "", bad = "", improve = "" }) {
+  const entry = {
+    id: nextFeedbackId(),
+    guildId,
+    guildName,
+    userId,
+    source,
+    ticketChannelId,
+    ticketName,
+    rating,
+    good: String(good || "").trim().slice(0, 1000),
+    bad: String(bad || "").trim().slice(0, 1000),
+    improve: String(improve || "").trim().slice(0, 1000),
+    createdAt: Date.now()
+  };
+  db.feedback.push(entry);
+  if (db.feedback.length > 500) db.feedback = db.feedback.slice(-500);
+  saveDB();
+
+  const parts = [
+    `⭐ **${entry.rating}/5**`,
+    `👤 <@${entry.userId}>`,
+    entry.source === "ticket" ? `🎫 Ticket: **${entry.ticketName || entry.ticketChannelId || "unbekannt"}**` : "🧩 Quelle: `/feedback`",
+    entry.good ? `\n✅ **Gut:**\n${entry.good}` : "",
+    entry.bad ? `\n❌ **Nicht gut:**\n${entry.bad}` : "",
+    entry.improve ? `\n💡 **Verbesserung:**\n${entry.improve}` : ""
+  ].filter(Boolean).join("\n");
+
+  const guild = guildId ? client.guilds.cache.get(guildId) : null;
+  if (guild) await supportLog(guild, `💬 Bot-Feedback ${entry.id}`, parts.slice(0, 3900));
+  await ownerNotify(client, `💬 **Neues Feedback ${entry.id}**${guildName ? ` von **${guildName}**` : ""}\n${parts}`.slice(0, 1800));
+  return entry;
+}
+
+async function sendTicketFeedbackDM(channelOrGuild, ticket, { source = "ticket" } = {}) {
+  if (!ticket?.ownerId || ticket.feedbackDmSent) return false;
+  const guild = channelOrGuild?.guild || channelOrGuild;
+  if (!guild?.id) return false;
+  const channelName = channelOrGuild?.name || ticket.channelName || null;
+  const requestId = nextFeedbackRequestId();
+  db.feedbackRequests[requestId] = {
+    id: requestId,
+    guildId: guild.id,
+    guildName: guild.name,
+    userId: ticket.ownerId,
+    source,
+    ticketChannelId: ticket.channelId || channelOrGuild?.id || null,
+    ticketName: channelName,
+    rating: ticket.rating || null,
+    createdAt: Date.now(),
+    completedAt: null
+  };
+  ticket.feedbackDmSent = true;
+  ticket.feedbackRequestId = requestId;
+  saveDB();
+
+  try {
+    const user = await client.users.fetch(ticket.ownerId);
+    await user.send({ embeds: [feedbackDmEmbed(db.feedbackRequests[requestId])], components: feedbackDmComponents(requestId) });
+    return true;
+  } catch (err) {
+    ticket.feedbackDmFailed = true;
+    saveDB();
+    console.warn("Ticket feedback DM failed:", err?.message || err);
+    return false;
+  }
+}
+
 function readFaqEntries() {
   try {
     const faqPath = path.join(__dirname, "..", "data", "faq.json");
@@ -898,7 +1121,7 @@ async function handoffToHuman(channel, ticket, requestedBy, reason = "User reque
     embeds: [embed],
     components: [ticketContinueAiRow(channel.id)],
     allowedMentions: { parse: [] }
-  }).catch(() => {});
+  }).then(sent => makeTicketMessageEditable(sent)).catch(() => {});
   await supportLog(channel.guild, "👤 Human handoff", `Ticket ${channel} • ${reason}`);
 }
 
@@ -953,6 +1176,9 @@ async function finalizeCloseTicket(channel, ticket, reason, closedById = null, a
     components: [ratingsRow, reopenRow]
   }).catch(() => {});
   await supportLog(channel.guild, "🔒 Ticket closed", `${channel} • Reason: **${ticket.closeReason}** • Closed by: ${closedById ? `<@${closedById}>` : "Auto-close"}`);
+  ticket.channelId = channel.id;
+  ticket.channelName = channel.name;
+  await sendTicketFeedbackDM(channel, ticket).catch(() => {});
   saveDB();
   return true;
 }
@@ -1089,16 +1315,21 @@ async function createSupportTicket(interaction, category, priority) {
   );
 
   const ping = gd.supportRoleId ? `<@&${gd.supportRoleId}>` : "";
-  await ch.send({
+  const introMsg = await ch.send({
     content: ping || undefined,
     embeds: [embed],
     components: [controls],
     allowedMentions: gd.supportRoleId ? { roles: [gd.supportRoleId] } : { parse: [] }
   });
-  await ch.send({
-    content: "**Do you want to get help from our AI?**\nIf you choose **Yes**, the AI automatically replies to every message you send here, can inspect screenshots/images, remembers the ticket context and can use Google Search when useful.\n\n*AI note: messages and images sent while AI support is enabled are sent to Google Gemini to generate the support response.*",
+  await makeTicketMessageEditable(introMsg);
+  const aiPromptMsg = await ch.send({
+    content: `**Do you want to get help from our AI?**
+If you choose **Yes**, the AI automatically replies to every message you send here, can inspect screenshots/images, remembers the ticket context and can use Google Search when useful.
+
+*AI note: messages and images sent while AI support is enabled are sent to Google Gemini to generate the support response.*`,
     components: [aiRow]
   });
+  await makeTicketMessageEditable(aiPromptMsg);
 
   await supportLog(guild, "🎫 Ticket opened", `${ch} • User: ${interaction.user} • Category: **${ticketCategoryLabel(category)}** • Priority: **${ticketPriorityLabel(priority)}**`);
   await ownerNotify(client, `🎫 Ticket geöffnet von ${interaction.user.tag} auf **${guild.name}** (${ticketCategoryLabel(category)}, ${ticketPriorityLabel(priority)}).`);
@@ -1689,6 +1920,26 @@ function ticketContinueAiRow(channelId, disabled = false) {
   );
 }
 
+function canEditTicketBotMessage(interaction, ticket) {
+  if (interaction.user?.id === OWNER_ID) return true;
+  if (interaction.member?.permissions?.has(PermissionsBitField.Flags.ManageMessages)) return true;
+  return Boolean(interaction.guild && isSupportMember(interaction.member, interaction.guild.id));
+}
+function ticketEditMessageRow(channelId, messageId) {
+  return new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`ticket_editmsg:${channelId}:${messageId}`).setLabel("Bot-Nachricht bearbeiten").setEmoji("✏️").setStyle(ButtonStyle.Secondary));
+}
+async function makeTicketMessageEditable(message) {
+  if (!message?.id || !message?.channel?.id || message.author?.id !== client.user?.id || !db.tickets[message.channel.id]) return message;
+  const rows = (message.components || []).map(row => row.toJSON ? row.toJSON() : row);
+  if (rows.some(row => (row.components || []).some(c => String(c.custom_id || c.customId || "").startsWith("ticket_editmsg:")))) return message;
+  if (rows.length < 5) await message.edit({ components: [...rows, ticketEditMessageRow(message.channel.id, message.id)] }).catch(() => {});
+  return message;
+}
+async function sendEditableTicketContent(channel, payload, { replyTo = null } = {}) {
+  const sent = replyTo ? await replyTo.reply({ ...payload, allowedMentions: payload.allowedMentions || { repliedUser: false } }) : await channel.send(payload);
+  await makeTicketMessageEditable(sent); return sent;
+}
+
 async function ensureExternalTicketRecord(channel, preferredUserId = null, options = {}) {
   if (!options.force && !looksLikeExternalTicketChannel(channel)) return null;
   let ticket = db.tickets[channel.id];
@@ -1740,9 +1991,10 @@ ${who}: Soll meine Support-AI in diesem Ticket mithelfen?
 Wenn du noch nichts schreibst, wartet die AI einfach weiter.`,
         components: [externalTicketAiRow(channel.id)],
         allowedMentions: ticket.ownerId ? { users: [ticket.ownerId] } : { parse: [] }
-      }).then(() => {
+      }).then(async sent => {
         ticket.supportPromptSent = true;
         saveDB();
+        await makeTicketMessageEditable(sent);
       }).catch(err => console.warn('External ticket AI prompt failed:', err?.message || err));
     }
   }
@@ -2094,17 +2346,17 @@ async function runTicketAi(message) {
   saveDB();
 
   if (shouldAutoEscalate(ticket, message.content || "") && !ticket.allowAiAfterHandoff) {
-    await message.reply({
+    await sendEditableTicketContent(message.channel, {
       content: "👤 **Das gebe ich direkt an einen Menschen weiter.** Bei Scam-Vorwürfen, Meldungen gegen Mods/Staff, Bans oder anderen Moderationsfällen trifft die AI keine Schuld- oder Strafentscheidung. Das Support-Team übernimmt diesen Fall.",
       allowedMentions: { repliedUser: false }
-    }).catch(() => {});
+    }, { replyTo: message }).catch(() => {});
     await handoffToHuman(message.channel, ticket, message.author.id, "Automatic escalation: scam/staff/moderation/report/appeal requires human review");
     return true;
   }
 
   const faq = findFaqMatch(message.content || "");
   if (faq && !GEMINI_API_KEY) {
-    await message.reply({ content: `💡 **FAQ:** ${faq.answer}`, allowedMentions: { repliedUser: false } });
+    await sendEditableTicketContent(message.channel, { content: `💡 **FAQ:** ${faq.answer}` }, { replyTo: message });
     return true;
   }
 
@@ -2117,17 +2369,17 @@ async function runTicketAi(message) {
     });
     if (!db.tickets[message.channel.id]?.aiEnabled) return true;
     const chunks = splitDiscordText(answer);
-    await message.reply({ content: chunks[0], allowedMentions: { repliedUser: false } });
-    for (const chunk of chunks.slice(1)) await message.channel.send(chunk);
+    await sendEditableTicketContent(message.channel, { content: chunks[0] }, { replyTo: message });
+    for (const chunk of chunks.slice(1)) await sendEditableTicketContent(message.channel, { content: chunk });
   } catch (err) {
     if (err?.message === "GEMINI_NOT_CONFIGURED") {
-      await message.reply({ content: "⚙️ **AI ist noch nicht eingerichtet.** Der Owner muss `GEMINI_API_KEY` in Railway eintragen. Dein Ticket bleibt für menschlichen Support offen.", allowedMentions: { repliedUser: false } });
+      await sendEditableTicketContent(message.channel, { content: "⚙️ **AI ist noch nicht eingerichtet.** Der Owner muss `GEMINI_API_KEY` in Railway eintragen. Dein Ticket bleibt für menschlichen Support offen." }, { replyTo: message });
     } else if (String(err?.message || "").includes("TIMEOUT")) {
       console.error("Ticket AI timeout:", err?.message || err);
-      await message.reply({ content: "⏱️ **Die AI antwortet gerade zu langsam.** Ich habe die Anfrage abgebrochen, damit das Ticket nicht hängen bleibt. Bitte versuche es erneut oder nutze **Get Human Support**.", allowedMentions: { repliedUser: false } }).catch(() => {});
+      await sendEditableTicketContent(message.channel, { content: "⏱️ **Die AI antwortet gerade zu langsam.** Ich habe die Anfrage abgebrochen, damit das Ticket nicht hängen bleibt. Bitte versuche es erneut oder nutze **Get Human Support**." }, { replyTo: message }).catch(() => {});
     } else {
       console.error("Ticket AI error:", err);
-      await message.reply({ content: "❌ **Die AI hatte ein technisches Problem.** Dein Ticket bleibt offen. Bitte versuche es erneut oder nutze **Get Human Support**.", allowedMentions: { repliedUser: false } }).catch(() => {});
+      await sendEditableTicketContent(message.channel, { content: "❌ **Die AI hatte ein technisches Problem.** Dein Ticket bleibt offen. Bitte versuche es erneut oder nutze **Get Human Support**." }, { replyTo: message }).catch(() => {});
     }
   }
   return true;
@@ -2162,6 +2414,18 @@ const commands = [
   new SlashCommandBuilder()
     .setName("create")
     .setDescription("Wähle fehlende Bot-Kanäle aus und erstelle nur diese."),
+  new SlashCommandBuilder()
+    .setName("setupmap")
+    .setDescription("Korrigiert eine Kanal-Zuordnung von /setup manuell.")
+    .addSubcommand(sc => sc.setName("set").setDescription("Ordnet eine Funktion fest einem Kanal zu.")
+      .addStringOption(o => o.setName("funktion").setDescription("Bot-Funktion").setRequired(true).addChoices(...SMART_SETUP_PURPOSES.map(p => ({ name: p.canonical, value: p.canonical }))))
+      .addChannelOption(o => o.setName("kanal").setDescription("Kanal").setRequired(true)))
+    .addSubcommand(sc => sc.setName("clear").setDescription("Entfernt eine manuelle Zuordnung.")
+      .addStringOption(o => o.setName("funktion").setDescription("Bot-Funktion").setRequired(true).addChoices(...SMART_SETUP_PURPOSES.map(p => ({ name: p.canonical, value: p.canonical })))))
+    .addSubcommand(sc => sc.setName("list").setDescription("Zeigt manuelle Setup-Zuordnungen.")),
+  new SlashCommandBuilder()
+    .setName("feedback")
+    .setDescription("Gib Feedback zum Bot: was gut ist, was nervt und was verbessert werden soll."),
   new SlashCommandBuilder()
     .setName("serversetup")
     .setDescription("Erstellt eine komplette Gaming-Community-Serverstruktur mit Chat, Support, Voice und Staff.")
@@ -2747,38 +3011,52 @@ function setupChannelLabel(canonical) {
 
 function rememberSetupAssignments(guild, smartSetup) {
   const gd = guildData(guild.id);
-  const coreAliases = {
-    "announcements": "announcements",
-    "invite-log": "inviteLog",
-    "counting": "counting",
-    "teamsearch": "teamsearch",
-    "support": "support",
-    "support-logs": "supportLogs",
-    "ticket-transcripts": "ticketTranscripts"
-  };
+  const coreAliases = { "announcements":"announcements", "invite-log":"inviteLog", "counting":"counting", "teamsearch":"teamsearch", "support":"support", "support-logs":"supportLogs", "ticket-transcripts":"ticketTranscripts" };
+  for (const purpose of SMART_SETUP_PURPOSES) delete gd.channels[purpose.canonical];
+  for (const alias of Object.values(coreAliases)) delete gd.channels[alias];
   for (const item of (smartSetup.selected || [])) {
     gd.channels[item.canonical] = item.channelId;
     const alias = coreAliases[item.canonical];
     if (alias) gd.channels[alias] = item.channelId;
   }
-  // Save every detected suggestions / feedback / submission channel.
-  gd.suggestionChannelIds = Array.from(new Set([
-    ...(Array.isArray(gd.suggestionChannelIds) ? gd.suggestionChannelIds : []),
-    ...(smartSetup.suggestionChannelIds || []),
-    ...(gd.channels.suggestions ? [gd.channels.suggestions] : [])
-  ])).filter(id => guild.channels.cache.has(id));
-
+  gd.suggestionChannelIds = Array.from(new Set([...(smartSetup.suggestionChannelIds || []), ...(gd.channels.suggestions ? [gd.channels.suggestions] : [])])).filter(id => guild.channels.cache.has(id));
   const support = gd.channels.support && guild.channels.cache.get(gd.channels.support);
-  if (support?.parentId) gd.channels.ticketCategory = support.parentId;
+  gd.channels.ticketCategory = support?.parentId || null;
   const teamsearch = gd.channels.teamsearch && guild.channels.cache.get(gd.channels.teamsearch);
-  if (teamsearch?.parentId) gd.channels.teamCategory = teamsearch.parentId;
-  gd.setup = true;
-  saveDB();
-  return gd;
+  gd.channels.teamCategory = teamsearch?.parentId || null;
+  gd.setup = true; saveDB(); return gd;
+}
+
+const SETUP_PANEL_TITLE_PURPOSES = new Map([
+  ["🎫 Support Ticket", "support"], ["🎮 Multi-Game Teamsearch", "teamsearch"], ["📨 Invite-Log aktiv", "invite-log"],
+  ["🔢 Counting aktiv", "counting"], ["🧾 Support-Logs verbunden", "support-logs"], ["📄 Ticket-Transcripts verbunden", "ticket-transcripts"],
+  ["👋 Willkommen", "welcome"], ["🎯 Daily Quests", "daily-quests"], ["🪙 Community Coin Shop", "coin-shop"],
+  ["🎭 Self Roles", "choose-roles"], ["💡 Suggestions", "suggestions"], ["⭐ Best Moments", "best-moments"],
+  ["🎬 Clip of the Week", "clip-of-the-week"], ["🎂 Geburtstage", "birthdays"], ["💬 Community-Frage des Tages", "community-fragen"],
+  ["📰 Fortnite News", "fortnite-news"], ["🛒 Fortnite Item Shop", "item-shop"], ["📅 Community Events", "events"], ["🛡️ Squads / Clans", "squad-hub"],
+  ["🧾 Staff Audit verbunden", "staff-audit"], ["🤖 AI Staff Alerts verbunden", "ai-staff-alerts"], ["📁 Moderationsfälle verbunden", "mod-cases"],
+  ["📊 Staff Briefing verbunden", "staff-briefing"], ["📋 Staff Tasks verbunden", "staff-tasks"]
+]);
+async function cleanupMisplacedSetupPanels(guild, gd) {
+  let removed = 0;
+  for (const channel of guild.channels.cache.values()) {
+    if (![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type) || !channel.viewable) continue;
+    const recent = await channel.messages.fetch({ limit: 60 }).catch(() => null);
+    if (!recent) continue;
+    for (const msg of recent.values()) {
+      if (msg.author?.id !== client.user?.id) continue;
+      const canonical = SETUP_PANEL_TITLE_PURPOSES.get(msg.embeds?.[0]?.title || "");
+      if (!canonical) continue;
+      const correctChannelId = gd.channels?.[canonical];
+      if (!correctChannelId || correctChannelId !== channel.id) await msg.delete().then(() => { removed += 1; }).catch(() => {});
+    }
+  }
+  return removed;
 }
 
 async function configureFoundSetupChannels(guild, smartSetup) {
   const gd = rememberSetupAssignments(guild, smartSetup);
+  const cleanedMisplaced = await cleanupMisplacedSetupPanels(guild, gd).catch(() => 0);
   const found = new Set((smartSetup.selected || []).map(x => x.canonical));
   const configured = new Set();
   const connected = new Set();
@@ -2891,7 +3169,7 @@ async function configureFoundSetupChannels(guild, smartSetup) {
 
   await snapshotInvites(guild).catch(err => console.warn("[setup] Invite snapshot failed:", err?.message || err));
   saveDB();
-  return { configured: [...configured], connected: [...connected], failed };
+  return { configured: [...configured], connected: [...connected], failed, cleanedMisplaced };
 }
 
 function setupCheckPayload(guild, smartSetup, setupResult = {}) {
@@ -2903,18 +3181,21 @@ function setupCheckPayload(guild, smartSetup, setupResult = {}) {
   const failed = Array.isArray(setupResult?.failed) ? setupResult.failed : [];
   const failedMap = new Map(failed.map(x => [x.canonical, x]));
 
+  const selectedByCanonical = new Map((smartSetup.selected || []).map(x => [x.canonical, x]));
   const foundLines = required.filter(canonical => found.has(canonical)).map(canonical => {
     const ch = guild.channels.cache.get(found.get(canonical));
-    if (failedMap.has(canonical)) return `⚠️ ${setupChannelLabel(canonical)} → ${ch || "gefunden"}`;
-    if (configuredSet.has(canonical)) return `🛠️ ${setupChannelLabel(canonical)} → ${ch || "gefunden"}`;
-    if (connectedSet.has(canonical)) return `🔗 ${setupChannelLabel(canonical)} → ${ch || "gefunden"}`;
-    return `✅ ${setupChannelLabel(canonical)} → ${ch || "gefunden"}`;
+    const picked = selectedByCanonical.get(canonical);
+    const source = picked?.source === "Manual" ? " 🧭" : (picked?.source === "Exact" ? " 🎯" : "");
+    if (failedMap.has(canonical)) return `⚠️ ${setupChannelLabel(canonical)} → ${ch || "gefunden"}${source}`;
+    if (configuredSet.has(canonical)) return `🛠️ ${setupChannelLabel(canonical)} → ${ch || "gefunden"}${source}`;
+    if (connectedSet.has(canonical)) return `🔗 ${setupChannelLabel(canonical)} → ${ch || "gefunden"}${source}`;
+    return `✅ ${setupChannelLabel(canonical)} → ${ch || "gefunden"}${source}`;
   });
   const missingLines = missing.map(canonical => `${PRIVATE_SETUP_PURPOSES.has(canonical) ? "🔒" : "❌"} ${setupChannelLabel(canonical)}`);
 
   const embed = footer(new EmbedBuilder()
     .setTitle("🧩 Smart Setup • prüfen & einrichten")
-    .setDescription(`Ich habe **${smartSetup.scanned}** lesbare Textkanäle geprüft.\n\n🛠️ Panel/Setup wirklich gesendet: **${configuredSet.size}**\n🔗 Nur verbunden: **${connectedSet.size}**\n💡 Vorschlags-/Einsende-Kanäle: **${(smartSetup.suggestionChannelIds || []).length}**\n⚠️ Fehler: **${failed.length}**\n❌ Fehlend: **${missing.length}**\n\n**/setup erstellt keine neuen Kanäle oder Kategorien.**`)
+    .setDescription(`Ich habe **${smartSetup.scanned}** lesbare Textkanäle geprüft.\n\n🛠️ Panel/Setup wirklich gesendet: **${configuredSet.size}**\n🔗 Nur verbunden: **${connectedSet.size}**\n💡 Vorschlags-/Einsende-Kanäle: **${(smartSetup.suggestionChannelIds || []).length}**\n🧹 Alte falsch platzierte Setup-Panels entfernt: **${Number(setupResult?.cleanedMisplaced || 0)}**\n⚠️ Fehler: **${failed.length}**\n❌ Fehlend: **${missing.length}**\n\n**/setup erstellt keine neuen Kanäle oder Kategorien.**`)
     .setColor(failed.length ? 0xED4245 : (missing.length ? 0xFEE75C : 0x57F287)));
 
   if (failed.length) {
@@ -3768,6 +4049,24 @@ function splitOwnerLinkList(header, lines, maxLen = 1900) {
   return chunks;
 }
 
+client.on("channelDelete", async channel => {
+  try {
+    const ticket = db.tickets?.[channel.id];
+    if (!ticket || !ticket.ownerId || ticket.feedbackDmSent) return;
+    // External ticket bots often delete the channel when the ticket is closed.
+    // We only send the feedback DM; we never manage the external ticket lifecycle.
+    ticket.channelId = channel.id;
+    ticket.channelName = channel.name || ticket.channelName || null;
+    ticket.status = ticket.status === "closed" ? ticket.status : "closed";
+    ticket.closedAt = ticket.closedAt || Date.now();
+    ticket.closeReason = ticket.closeReason || (ticket.external ? "Ticket wurde vom externen Ticket-System geschlossen." : "Ticket-Channel wurde gelöscht.");
+    await sendTicketFeedbackDM(channel.guild, ticket, { source: "ticket" }).catch(() => {});
+    saveDB();
+  } catch (err) {
+    console.warn("Ticket feedback on channelDelete failed:", err?.message || err);
+  }
+});
+
 client.on("interactionCreate", async interaction => {
   try {
     // Owner approval buttons work in DMs and must be handled before guild gating.
@@ -3785,6 +4084,82 @@ client.on("interactionCreate", async interaction => {
         .setColor(result.ok ? (action === "guild_approve" ? 0x57F287 : 0xED4245) : 0xFEE75C)
         .setTimestamp();
       return interaction.editReply({ embeds: [embed], components: [] }).catch(() => {});
+    }
+
+    // Feedback buttons/modals must also work inside DMs after a ticket was closed.
+    if (interaction.isButton() && interaction.customId.startsWith("feedback_rate:")) {
+      const [, requestId, ratingRaw] = interaction.customId.split(":");
+      const request = feedbackRequest(requestId);
+      const rating = Number(ratingRaw);
+      if (!request || request.userId !== interaction.user.id || ![1,2,3,4,5].includes(rating)) {
+        return interaction.reply({ content: "❌ Dieses Feedback ist nicht mehr verfügbar." }).catch(() => {});
+      }
+      request.rating = rating;
+      const ticket = request.ticketChannelId ? db.tickets[request.ticketChannelId] : null;
+      if (ticket) upsertTicketRating(ticket, request.guildId, rating);
+      saveDB();
+      return interaction.reply({ content: `⭐ Danke! **${rating}/5** gespeichert. Wenn du magst, klick noch auf **Meinung einreichen**, damit ich weiß, was gut oder schlecht war.` }).catch(() => {});
+    }
+
+    if (interaction.isButton() && interaction.customId.startsWith("feedback_open:")) {
+      const requestId = interaction.customId.split(":")[1];
+      const request = feedbackRequest(requestId);
+      if (!request || request.userId !== interaction.user.id) {
+        return interaction.reply({ content: "❌ Dieses Feedback ist nicht mehr verfügbar." }).catch(() => {});
+      }
+      return interaction.showModal(feedbackModal(`feedback_ticket_modal:${requestId}`, "Ticket-Feedback", request.rating));
+    }
+
+    if (interaction.isModalSubmit() && interaction.customId.startsWith("feedback_ticket_modal:")) {
+      const requestId = interaction.customId.split(":")[1];
+      const request = feedbackRequest(requestId);
+      if (!request || request.userId !== interaction.user.id) {
+        return interaction.reply({ content: "❌ Dieses Feedback ist nicht mehr verfügbar." }).catch(() => {});
+      }
+      const rating = parseFeedbackRating(interaction.fields.getTextInputValue("feedback_rating"));
+      if (!rating) return interaction.reply({ content: "❌ Bitte gib bei Bewertung eine Zahl von **1 bis 5** ein." }).catch(() => {});
+      const good = interaction.fields.getTextInputValue("feedback_good");
+      const bad = interaction.fields.getTextInputValue("feedback_bad");
+      const improve = interaction.fields.getTextInputValue("feedback_improve");
+      const ticket = request.ticketChannelId ? db.tickets[request.ticketChannelId] : null;
+      if (ticket) upsertTicketRating(ticket, request.guildId, rating);
+      request.rating = rating;
+      request.completedAt = Date.now();
+      await storeFeedback({
+        guildId: request.guildId,
+        guildName: request.guildName,
+        userId: interaction.user.id,
+        source: "ticket",
+        ticketChannelId: request.ticketChannelId,
+        ticketName: request.ticketName,
+        rating,
+        good,
+        bad,
+        improve
+      });
+      saveDB();
+      return interaction.reply({ content: "💙 Danke für dein Feedback! Es wurde an den Bot-Owner weitergegeben und hilft beim Verbessern des Bots." }).catch(() => {});
+    }
+
+    if (interaction.isModalSubmit() && interaction.customId.startsWith("feedback_general_modal:")) {
+      const guildId = interaction.customId.split(":")[1] || interaction.guild?.id || null;
+      const rating = parseFeedbackRating(interaction.fields.getTextInputValue("feedback_rating"));
+      if (!rating) return interaction.reply({ content: "❌ Bitte gib bei Bewertung eine Zahl von **1 bis 5** ein.", flags: interaction.guild ? MessageFlags.Ephemeral : undefined }).catch(() => {});
+      const good = interaction.fields.getTextInputValue("feedback_good");
+      const bad = interaction.fields.getTextInputValue("feedback_bad");
+      const improve = interaction.fields.getTextInputValue("feedback_improve");
+      const guild = guildId ? client.guilds.cache.get(guildId) : interaction.guild;
+      await storeFeedback({
+        guildId: guild?.id || guildId,
+        guildName: guild?.name || null,
+        userId: interaction.user.id,
+        source: "general",
+        rating,
+        good,
+        bad,
+        improve
+      });
+      return interaction.reply({ content: "💙 Danke! Dein Feedback wurde eingereicht.", flags: interaction.guild ? MessageFlags.Ephemeral : undefined }).catch(() => {});
     }
 
     // Owner-only server invite overview. Works before guild approval gating.
@@ -3886,12 +4261,33 @@ client.on("interactionCreate", async interaction => {
     if (await community.handleInteraction(interaction)) return;
 
     if (interaction.isChatInputCommand()) {
+      if (interaction.commandName === "setupmap") {
+        if (!canUseSmartSetup(interaction)) return interaction.reply({ content: "❌ Dafür brauchst du **Kanäle verwalten** oder Administrator-Rechte. Der Bot-Owner darf es immer benutzen.", flags: MessageFlags.Ephemeral });
+        const sub = interaction.options.getSubcommand();
+        const gd = guildData(interaction.guild.id);
+        if (sub === "list") {
+          const lines = Object.entries(gd.setupOverrides || {}).map(([canonical, id]) => `🧭 **${canonical}** → ${interaction.guild.channels.cache.get(id) || id}`);
+          return interaction.reply({ content: lines.length ? `**Manuelle Setup-Zuordnungen**\n${lines.join("\n")}` : "Noch keine manuellen Setup-Zuordnungen.", flags: MessageFlags.Ephemeral });
+        }
+        const canonical = interaction.options.getString("funktion", true);
+        if (sub === "clear") { delete gd.setupOverrides[canonical]; saveDB(); return interaction.reply({ content: `✅ Manuelle Zuordnung für **${canonical}** entfernt. Nutze jetzt /setup neu.`, flags: MessageFlags.Ephemeral }); }
+        const channel = interaction.options.getChannel("kanal", true);
+        if (![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)) return interaction.reply({ content: "❌ Bitte wähle einen Text- oder Announcement-Kanal.", flags: MessageFlags.Ephemeral });
+        if (PRIVATE_SETUP_PURPOSES.has(canonical) && !channelIsPrivateForEveryone(channel)) return interaction.reply({ content: "❌ Diese Staff-/Log-Funktion darf nur einem privaten Kanal zugeordnet werden.", flags: MessageFlags.Ephemeral });
+        gd.setupOverrides[canonical] = channel.id; saveDB();
+        return interaction.reply({ content: `✅ **${canonical}** ist jetzt fest ${channel} zugeordnet. /setup verwendet diese Zuordnung vor der AI-Erkennung.`, flags: MessageFlags.Ephemeral });
+      }
       switch (interaction.commandName) {
         case "setup":
           return await runSetup(interaction);
 
         case "create":
           return await runCreate(interaction);
+
+        case "feedback": {
+          if (!interaction.guild) return interaction.reply({ content: "❌ `/feedback` funktioniert aktuell in einem Server." });
+          return interaction.showModal(feedbackModal(`feedback_general_modal:${interaction.guild.id}`, "Feedback zum Bot"));
+        }
 
         case "serversetup":
           return await runServerSetup(interaction);
@@ -4260,6 +4656,18 @@ ${lines.join("\n\n")}`.slice(0, 1900), flags: MessageFlags.Ephemeral });
     }
 
     if (interaction.isModalSubmit()) {
+      if (interaction.customId.startsWith("ticket_editmsg_modal:")) {
+        const [, channelId, messageId] = interaction.customId.split(":");
+        const ticket = db.tickets[channelId];
+        if (!ticket || interaction.channel?.id !== channelId) return interaction.reply({ content: "❌ Ticket nicht mehr verfügbar.", flags: MessageFlags.Ephemeral });
+        if (!canEditTicketBotMessage(interaction, ticket)) return interaction.reply({ content: "❌ Nur Bot-Owner oder Support/Staff darf Bot-Nachrichten im Ticket bearbeiten.", flags: MessageFlags.Ephemeral });
+        const target = await interaction.channel.messages.fetch(messageId).catch(() => null);
+        if (!target || target.author?.id !== client.user?.id) return interaction.reply({ content: "❌ Bot-Nachricht nicht gefunden.", flags: MessageFlags.Ephemeral });
+        const content = interaction.fields.getTextInputValue("ticket_edit_content").trim();
+        if (!content) return interaction.reply({ content: "❌ Der Text darf nicht leer sein.", flags: MessageFlags.Ephemeral });
+        await target.edit({ content: content.slice(0, 2000) });
+        return interaction.reply({ content: "✅ Bot-Nachricht im Ticket wurde angepasst.", flags: MessageFlags.Ephemeral });
+      }
       if (interaction.customId.startsWith("improve_modal:")) {
         if (!isAiReviewAdmin(interaction)) return interaction.reply({ content: "❌ Nur fuer Administratoren.", flags: MessageFlags.Ephemeral });
         const recordId = interaction.customId.split(":")[1];
@@ -4307,6 +4715,19 @@ ${lines.join("\n\n")}`.slice(0, 1900), flags: MessageFlags.Ephemeral });
 
     if (interaction.isButton()) {
       const id = interaction.customId;
+
+      if (id.startsWith("ticket_editmsg:")) {
+        const [, channelId, messageId] = id.split(":");
+        const ticket = db.tickets[channelId];
+        if (!ticket || interaction.channel?.id !== channelId) return interaction.reply({ content: "❌ Ticket nicht mehr verfügbar.", flags: MessageFlags.Ephemeral });
+        if (!canEditTicketBotMessage(interaction, ticket)) return interaction.reply({ content: "❌ Nur Bot-Owner oder Support/Staff darf Bot-Nachrichten im Ticket bearbeiten.", flags: MessageFlags.Ephemeral });
+        const target = await interaction.channel.messages.fetch(messageId).catch(() => null);
+        if (!target || target.author?.id !== client.user?.id) return interaction.reply({ content: "❌ Bot-Nachricht nicht gefunden.", flags: MessageFlags.Ephemeral });
+        const modal = new ModalBuilder().setCustomId(`ticket_editmsg_modal:${channelId}:${messageId}`).setTitle("Bot-Nachricht bearbeiten");
+        const input = new TextInputBuilder().setCustomId("ticket_edit_content").setLabel("Neuer Text").setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(2000).setValue(String(target.content || "Text ergänzen …").slice(0, 2000));
+        modal.addComponents(new ActionRowBuilder().addComponents(input));
+        return interaction.showModal(modal);
+      }
 
       if (id.startsWith("improve_open:")) {
         if (!isAiReviewAdmin(interaction)) return interaction.reply({ content: "❌ Nur fuer Administratoren.", flags: MessageFlags.Ephemeral });
@@ -4413,7 +4834,7 @@ ${lines.join("\n\n")}`.slice(0, 1900), flags: MessageFlags.Ephemeral });
             saveDB();
             await interaction.update({
               content: "⚙️ **AI support ist noch nicht eingerichtet.** In Railway fehlt `GEMINI_API_KEY`. Das Ticket bleibt für menschlichen Support offen.",
-              components: []
+              components: [ticketEditMessageRow(channelId, interaction.message.id)]
             });
             await supportLog(interaction.guild, "⚠️ AI support unavailable", `${interaction.channel} • GEMINI_API_KEY missing`);
             return;
@@ -4427,7 +4848,7 @@ ${lines.join("\n\n")}`.slice(0, 1900), flags: MessageFlags.Ephemeral });
           saveDB();
           await interaction.update({
             content: "🤖 **AI-Support aktiviert.** Schreib dein Problem, deine Frage oder sende einen Screenshot, sobald du bereit bist. Wenn du erstmal nichts schreibst, wartet die AI weiter und gibt den Fall nicht auf. Bei Scam-, Staff-, Ban- oder anderen Moderationsfällen wird automatisch ein menschlicher Supporter hinzugezogen.",
-            components: []
+            components: [ticketEditMessageRow(channelId, interaction.message.id)]
           });
           await supportLog(interaction.guild, "🤖 AI support enabled", `${interaction.channel} • User: ${interaction.user}`);
           return;
@@ -4440,7 +4861,7 @@ ${lines.join("\n\n")}`.slice(0, 1900), flags: MessageFlags.Ephemeral });
         saveDB();
         await interaction.update({
           content: "👤 **AI support disabled.** Your ticket stays open for human support.",
-          components: []
+          components: [ticketEditMessageRow(channelId, interaction.message.id)]
         });
         await interaction.channel.send({
           content: "👤 Human support requested. The support team was already notified when the ticket opened.",
@@ -4462,8 +4883,8 @@ ${lines.join("\n\n")}`.slice(0, 1900), flags: MessageFlags.Ephemeral });
         ticket.lastActivityAt = Date.now();
         ticket.awaitingFirstUserMessage = !ticket.firstUserMessageAt;
         saveDB();
-        await interaction.update({ components: [ticketContinueAiRow(channelId, true)] }).catch(() => {});
-        await interaction.channel.send({ content: "🤖 **AI-Support läuft wieder weiter.** Der menschliche Support bleibt trotzdem im Fall. Bei Moderationsentscheidungen entscheidet weiterhin ein Mensch.", allowedMentions: { parse: [] } }).catch(() => {});
+        await interaction.update({ components: [ticketContinueAiRow(channelId, true), ticketEditMessageRow(channelId, interaction.message.id)] }).catch(() => {});
+        await interaction.channel.send({ content: "🤖 **AI-Support läuft wieder weiter.** Der menschliche Support bleibt trotzdem im Fall. Bei Moderationsentscheidungen entscheidet weiterhin ein Mensch.", allowedMentions: { parse: [] } }).then(sent => makeTicketMessageEditable(sent)).catch(() => {});
         await supportLog(interaction.guild, "🤖 AI continued after handoff", `${interaction.channel} • User: ${interaction.user}`);
         return;
       }
@@ -4515,6 +4936,7 @@ ${lines.join("\n\n")}`.slice(0, 1900), flags: MessageFlags.Ephemeral });
         const stats = supportStats(interaction.guild.id);
         stats.ratingCount += 1;
         stats.ratingSum += rating;
+        if (ticket.feedbackRequestId && db.feedbackRequests[ticket.feedbackRequestId]) db.feedbackRequests[ticket.feedbackRequestId].rating = rating;
         saveDB();
         await supportLog(interaction.guild, "⭐ Support rating", `${interaction.channel} rated **${rating}/5** by ${interaction.user}.`);
         return interaction.reply({ content: `⭐ Thanks! You rated the support **${rating}/5**.`, flags: MessageFlags.Ephemeral });
