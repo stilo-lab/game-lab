@@ -73,6 +73,8 @@ if (!db.guildApprovals.guilds || typeof db.guildApprovals.guilds !== "object") d
 if (typeof db.guildApprovals.initialized !== "boolean") db.guildApprovals.initialized = false;
 if (typeof db.maintenance !== "boolean") db.maintenance = false;
 if (!db.ownerInviteLinks || typeof db.ownerInviteLinks !== "object") db.ownerInviteLinks = {};
+if (!Array.isArray(db.globalAiKnowledge)) db.globalAiKnowledge = [];
+if (!Number.isInteger(db.globalAiKnowledgeCounter)) db.globalAiKnowledgeCounter = 0;
 
 function saveDB() {
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
@@ -825,26 +827,28 @@ async function summarizeTicketForHuman(channel, ticket) {
 }
 
 async function handoffToHuman(channel, ticket, requestedBy, reason = "User requested human support") {
-  if (ticket.humanRequested && ticket.status !== "closed") return;
+  if (ticket.humanRequested && ticket.status !== "closed" && !ticket.aiEnabled) return;
   ticket.aiEnabled = false;
   ticket.previousInteractionId = null;
   ticket.humanRequested = true;
+  ticket.allowAiAfterHandoff = false;
   ticket.humanRequestedAt = Date.now();
   ticket.lastActivityAt = Date.now();
   saveDB();
 
   const summary = await summarizeTicketForHuman(channel, ticket);
   const embed = footer(new EmbedBuilder()
-    .setTitle("👤 Human support requested")
+    .setTitle("👤 An menschlichen Support übergeben")
     .setDescription(summary)
     .addFields(
-      { name: "Reason", value: reason.slice(0, 1024) },
-      { name: "Requested by", value: requestedBy ? `<@${requestedBy}>` : "Automatic escalation" }
+      { name: "Grund", value: reason.slice(0, 1024) },
+      { name: "Angefordert von", value: requestedBy ? `<@${requestedBy}>` : "Automatische Übergabe" }
     )
     .setTimestamp());
   await channel.send({
-    content: "👤 A human support member is needed. The support team was already notified when the ticket opened.",
+    content: "👤 **Ein Mensch wurde hinzugezogen.** Wenn du trotzdem weiter Hilfe von der AI möchtest, klicke auf **Continue – AI hilft weiter**. Die AI unterstützt dann parallel; Moderationsentscheidungen bleiben beim Staff.",
     embeds: [embed],
+    components: [ticketContinueAiRow(channel.id)],
     allowedMentions: { parse: [] }
   }).catch(() => {});
   await supportLog(channel.guild, "👤 Human handoff", `Ticket ${channel} • ${reason}`);
@@ -1304,18 +1308,28 @@ async function handleTranslationReaction(reaction, user) {
   return true;
 }
 
+function normalizedLearnEntry(entry, scope = "server") {
+  if (!entry || typeof entry !== "object") return null;
+  return {
+    ...entry,
+    target: ["ai", "support", "both"].includes(entry.target) ? entry.target : "both",
+    kind: ["instruction", "knowledge"].includes(entry.kind) ? entry.kind : (looksLikeLearnInstruction(entry.text, entry.topic) ? "instruction" : "knowledge"),
+    scope: scope === "global" || entry.scope === "global" ? "global" : "server"
+  };
+}
+
 function getGuildKnowledgeEntries(guildId, target = null, kind = null) {
   if (!guildId) return [];
   const gd = guildData(guildId);
-  const entries = Array.isArray(gd.aiKnowledge) ? gd.aiKnowledge : [];
-  return entries.filter(entry => {
-    if (!entry || typeof entry !== "object") return false;
-    const entryTarget = ["ai", "support", "both"].includes(entry.target) ? entry.target : "both";
-    const entryKind = ["instruction", "knowledge"].includes(entry.kind) ? entry.kind : "knowledge";
-    const targetOk = !target || entryTarget === "both" || entryTarget === target;
-    const kindOk = !kind || entryKind === kind;
-    return targetOk && kindOk;
-  });
+  const serverEntries = (Array.isArray(gd.aiKnowledge) ? gd.aiKnowledge : []).map(e => normalizedLearnEntry(e, "server")).filter(Boolean);
+  const globalEntries = (Array.isArray(db.globalAiKnowledge) ? db.globalAiKnowledge : []).map(e => normalizedLearnEntry(e, "global")).filter(Boolean);
+  return [...globalEntries, ...serverEntries]
+    .filter(entry => {
+      const targetOk = !target || entry.target === "both" || entry.target === target;
+      const kindOk = !kind || entry.kind === kind;
+      return targetOk && kindOk;
+    })
+    .sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0));
 }
 
 function getGuildKnowledgeText(guildId, maxChars = 7000, target = null, kind = null) {
@@ -1324,13 +1338,19 @@ function getGuildKnowledgeText(guildId, maxChars = 7000, target = null, kind = n
   const lines = entries
     .slice(-100)
     .map(entry => {
-      const entryTarget = ["ai", "support", "both"].includes(entry.target) ? entry.target : "both";
-      const entryKind = ["instruction", "knowledge"].includes(entry.kind) ? entry.kind : "knowledge";
-      const kindLabel = entryKind === "instruction" ? "ANWEISUNG" : "WISSEN";
-      return `[${entry.id}][${kindLabel}][${entryTarget}] ${entry.topic}: ${entry.text}`;
+      const kindLabel = entry.kind === "instruction" ? "ANWEISUNG" : "WISSEN";
+      const scopeLabel = entry.scope === "global" ? "GLOBAL" : "SERVER";
+      return `[${entry.id}][${kindLabel}][${entry.target}][${scopeLabel}] ${entry.topic}: ${entry.text}`;
     });
   const joined = lines.join("\n");
   return joined.length > maxChars ? joined.slice(joined.length - maxChars) : joined;
+}
+
+function learnUnderstanding(entry) {
+  const targetLabel = entry.target === "ai" ? "die normale /ai" : entry.target === "support" ? "die Support-AI" : "/ai und die Support-AI";
+  const scopeLabel = entry.scope === "global" ? "auf allen Servern" : "nur auf diesem Server";
+  if (entry.kind === "instruction") return `Ich soll ${targetLabel} ${scopeLabel} so steuern: **${entry.text}**`;
+  return `${targetLabel} soll ${scopeLabel} diesen Fakt als Wissen berücksichtigen: **${entry.text}**`;
 }
 
 function getGuildLearnContext(guildId, target, maxInstructionChars = 3500, maxKnowledgeChars = 5000) {
@@ -1465,9 +1485,13 @@ async function askGemini(question, userTag = "Discord user", guildId = null, use
       systemInstruction: `Du bist die KI von ${BOT_NAME}, einem Multi-Game-Discord-Bot.
 
 DEIN STIL:
+- Schreib locker, warm und natürlich – eher wie ein guter Kumpel im Discord-Chat als wie ein steifer Support-Bot.
+- Passe dich der Sprache des Nutzers an. Wenn er kurz, locker oder mit Slang schreibt, darfst du ebenfalls locker antworten, ohne ihn nachzuäffen.
+- Kleine humorvolle Reaktionen und gelegentliche Emojis sind okay, aber übertreib nicht und erzwinge keine künstliche Begeisterung.
 - Antworte direkt auf die eigentliche Frage und nicht mit immer derselben Standard-Einleitung.
 - Wiederhole weder die Frage des Nutzers noch frühere Antworten unnötig.
 - Verwende nicht jedes Mal "Klar!", "Natürlich!", "Gerne!" oder denselben Schlusssatz.
+- Kling nicht angespannt, belehrend oder unnötig formell, außer der Nutzer möchte ausdrücklich einen formellen Text.
 - Nutze Listen nur, wenn sie die Antwort wirklich übersichtlicher machen.
 - Bei einer einfachen Frage: kurz und konkret. Bei einer komplexen Frage: ausführlicher und mit brauchbaren Schritten.
 - Wenn der Nutzer eine Folgefrage stellt, beziehe dich auf den bisherigen Gesprächsverlauf statt wieder von vorne anzufangen.
@@ -1538,6 +1562,27 @@ function looksLikeExternalTicketChannel(channel) {
   return explicitlyPrivate || effectivelyPrivate;
 }
 
+function externalTicketChannelIsPrivateEnough(channel) {
+  if (!channel?.guild || !isSupportedTicketChannelType(channel)) return false;
+  if (channel.isThread?.()) return true;
+  const everyone = channel.guild.roles.everyone;
+  const overwrite = channel.permissionOverwrites?.cache?.get(everyone.id);
+  const perms = channel.permissionsFor?.(everyone);
+  return Boolean(overwrite?.deny?.has(PermissionsBitField.Flags.ViewChannel)) || Boolean(perms && !perms.has(PermissionsBitField.Flags.ViewChannel));
+}
+
+function looksLikeTicketBotMessage(message) {
+  if (!message?.guild || !message.author?.bot || !externalTicketChannelIsPrivateEnough(message.channel)) return false;
+  const gd = guildData(message.guild.id);
+  const protectedIds = new Set([gd.channels?.support, gd.channels?.supportLogs, gd.channels?.ticketTranscripts, gd.channels?.staffAudit, gd.channels?.modCases].filter(Boolean));
+  if (protectedIds.has(message.channel.id)) return false;
+  if (String(message.channel.topic || "").startsWith("ticket-owner:")) return false;
+  const embedText = (message.embeds || []).map(e => [e.title, e.description, ...(e.fields || []).flatMap(f => [f.name, f.value])].filter(Boolean).join(" ")).join(" ");
+  const componentText = (message.components || []).flatMap(row => row.components || []).map(c => `${c.label || ""} ${c.customId || ""}`).join(" ");
+  const haystack = cleanName(`${message.content || ""} ${embedText} ${componentText} ${message.channel.name || ""} ${message.channel.parent?.name || ""}`);
+  return /(ticket|support|hilfe|claim|close-ticket|ticket-close|appeal|report|transcript|create-ticket|opened-ticket|ticket-created)/i.test(haystack);
+}
+
 async function inferExternalTicketOwner(channel, preferredUserId = null) {
   const guild = channel?.guild;
   if (!guild) return null;
@@ -1585,13 +1630,19 @@ async function inferExternalTicketOwner(channel, preferredUserId = null) {
 
 function externalTicketAiRow(channelId) {
   return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`ticket_ai_yes:${channelId}`).setLabel('AI Support starten').setEmoji('🤖').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId(`ticket_ai_no:${channelId}`).setLabel('Nur menschlicher Support').setEmoji('👤').setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId(`ticket_ai_yes:${channelId}`).setLabel('Yes – AI Support').setEmoji('🤖').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`ticket_ai_no:${channelId}`).setLabel('No – Human Support').setEmoji('👤').setStyle(ButtonStyle.Secondary)
+  );
+}
+
+function ticketContinueAiRow(channelId, disabled = false) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`ticket_ai_continue:${channelId}`).setLabel(disabled ? 'AI läuft weiter' : 'Continue – AI hilft weiter').setEmoji('🤖').setStyle(ButtonStyle.Primary).setDisabled(disabled)
   );
 }
 
 async function ensureExternalTicketRecord(channel, preferredUserId = null, options = {}) {
-  if (!looksLikeExternalTicketChannel(channel)) return null;
+  if (!options.force && !looksLikeExternalTicketChannel(channel)) return null;
   let ticket = db.tickets[channel.id];
   if (!ticket) {
     const ownerId = await inferExternalTicketOwner(channel, preferredUserId);
@@ -1632,7 +1683,13 @@ async function ensureExternalTicketRecord(channel, preferredUserId = null, optio
     if (canSend) {
       const who = ticket.ownerId ? `<@${ticket.ownerId}>` : 'Der Ticket-Ersteller';
       await channel.send({
-        content: `🤖 **Support-AI erkannt**\n${who}: Dieses Ticket wurde von einem anderen Ticket-Bot erstellt. Wenn du möchtest, kann meine Support-AI hier trotzdem helfen. Sie wartet auf deine erste echte Nachricht und gibt nicht auf, nur weil noch nichts geschrieben wurde.`,
+        content: `🤖 **Support-AI erkannt**
+${who}: Soll meine Support-AI in diesem Ticket mithelfen?
+
+**Yes** = AI hilft hier mit.
+**No** = nur menschlicher Support.
+
+Wenn du noch nichts schreibst, wartet die AI einfach weiter.`,
         components: [externalTicketAiRow(channel.id)],
         allowedMentions: ticket.ownerId ? { users: [ticket.ownerId] } : { parse: [] }
       }).then(() => {
@@ -1988,7 +2045,7 @@ async function runTicketAi(message) {
   ticket.awaitingFirstUserMessage = false;
   saveDB();
 
-  if (shouldAutoEscalate(ticket, message.content || "")) {
+  if (shouldAutoEscalate(ticket, message.content || "") && !ticket.allowAiAfterHandoff) {
     await message.reply({
       content: "👤 **Das gebe ich direkt an einen Menschen weiter.** Bei Scam-Vorwürfen, Meldungen gegen Mods/Staff, Bans oder anderen Moderationsfällen trifft die AI keine Schuld- oder Strafentscheidung. Das Support-Team übernimmt diesen Fall.",
       allowedMentions: { repliedUser: false }
@@ -2097,8 +2154,7 @@ const commands = [
     .addIntegerOption(o => o.setName("nachrichten").setDescription("Wie viele Nachrichten analysieren? (15-100)").setRequired(false).setMinValue(15).setMaxValue(100)),
   new SlashCommandBuilder()
     .setName("learn")
-    .setDescription("Bringt /ai oder der Support-AI Wissen oder Verhalten bei. Nur Admins.")
-    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
+    .setDescription("Bringt /ai oder der Support-AI Wissen oder Verhalten bei.")
     .addSubcommand(s => s
       .setName("add")
       .setDescription("Bringt einer AI neues Wissen oder eine dauerhafte Stil-Anweisung bei.")
@@ -2112,6 +2168,10 @@ const commands = [
         { name: "📚 Wissen / Fakt", value: "knowledge" }
       ))
       .addStringOption(o => o.setName("wissen").setDescription("z.B. 'Kling freudiger' oder ein Fakt").setRequired(true).setMaxLength(1500))
+      .addStringOption(o => o.setName("bereich").setDescription("Nur dieser Server oder alle Server?").setRequired(true).addChoices(
+        { name: "🏠 Nur dieser Server", value: "server" },
+        { name: "🌍 Alle Server (nur Bot-Owner)", value: "global" }
+      ))
       .addStringOption(o => o.setName("thema").setDescription("Optionaler Name, z.B. Tonfall oder Serverregel").setRequired(false).setMaxLength(100)))
     .addSubcommand(s => s
       .setName("list")
@@ -2120,6 +2180,10 @@ const commands = [
         { name: "🤖 /ai", value: "ai" },
         { name: "🎫 Support AI", value: "support" },
         { name: "🔁 Beide", value: "both" }
+      ))
+      .addStringOption(o => o.setName("bereich").setDescription("Optional nach Geltungsbereich filtern").setRequired(false).addChoices(
+        { name: "🏠 Dieser Server", value: "server" },
+        { name: "🌍 Alle Server", value: "global" }
       )))
     .addSubcommand(s => s
       .setName("delete")
@@ -2127,7 +2191,11 @@ const commands = [
       .addStringOption(o => o.setName("id").setDescription("ID, z.B. K-3").setRequired(true)))
     .addSubcommand(s => s
       .setName("clear")
-      .setDescription("Löscht alles, was die AI auf diesem Server über /learn gelernt hat.")),
+      .setDescription("Löscht Learn-Einträge für einen gewählten Bereich.")
+      .addStringOption(o => o.setName("bereich").setDescription("Was soll gelöscht werden?").setRequired(true).addChoices(
+        { name: "🏠 Dieser Server", value: "server" },
+        { name: "🌍 Alle Server (nur Bot-Owner)", value: "global" }
+      ))),
   new SlashCommandBuilder()
     .setName("verbesserung")
     .setDescription("Prueft letzte AI-Antworten und bringt der AI bessere Antworten bei. Nur Admins.")
@@ -2430,7 +2498,14 @@ client.on("messageCreate", async message => {
   // posted by other suggestion bots. Never react to our own messages.
   await reactToSuggestionSubmission(message).catch(err => console.warn("Suggestion auto-reaction failed:", err?.message || err));
 
-  // Other bot messages should not run moderation/levels/AI after the suggestion reaction.
+  // Ticket-Bots posten oft zuerst selbst ein Embed. Solche privaten Tickets werden
+  // vor dem normalen Bot-Message-Filter erkannt und bekommen die Yes/No-Supportfrage.
+  if (message.author.bot && looksLikeTicketBotMessage(message)) {
+    await ensureExternalTicketRecord(message.channel, null, { announce: true, force: true }).catch(err =>
+      console.warn("External ticket bot-post detection failed:", err?.message || err)
+    );
+  }
+  // Other bot messages should not run moderation/levels/AI after setup detection.
   if (message.author.bot) return;
   const gd = guildData(message.guild.id);
 
@@ -2710,7 +2785,27 @@ async function configureFoundSetupChannels(guild, smartSetup) {
     .setDescription("Nutze **/teamsearch**, um Mitspieler für **Fortnite, Roblox, Brawl Stars, GTA, Minecraft, VALORANT und viele weitere Games** zu finden.\n\nDu wählst Spiel, Modus, Plattform, Mikro und gesuchte Spielerzahl aus."));
   await installCorePanel("teamsearch", "teamsearch_info", { embeds: [teamEmbed] }, "Multi-Game Teamsearch");
 
-  await installCorePanel("announcements", "announcements_info", { embeds: [footer(new EmbedBuilder().setTitle("📢 Announcements verbunden").setDescription("Dieser Kanal wurde als Announcement-Kanal erkannt. Owner/Admins können mit `/announce` Bot-Ankündigungen hier posten."))] }, "Announcements verbunden");
+  if (found.has("announcements")) {
+    const channel = gd.channels?.announcements ? guild.channels.cache.get(gd.channels.announcements) : null;
+    const oldPanelId = gd.setupPanels?.announcements_info;
+    if (channel) {
+      if (oldPanelId) {
+        const oldMessage = await channel.messages.fetch(oldPanelId).catch(() => null);
+        if (oldMessage?.author?.id === client.user?.id) await oldMessage.delete().catch(() => {});
+      }
+      // Cleanup alter Setup-Spam aus früheren Versionen, aber echte /announce-Posts bleiben unangetastet.
+      const recent = await channel.messages.fetch({ limit: 100 }).catch(() => null);
+      if (recent) {
+        for (const msg of recent.values()) {
+          const isOldSetupInfo = msg.author?.id === client.user?.id && msg.embeds?.some(e => String(e.title || "").toLowerCase().includes("announcements verbunden"));
+          if (isOldSetupInfo) await msg.delete().catch(() => {});
+        }
+      }
+    }
+    if (gd.setupPanels) delete gd.setupPanels.announcements_info;
+    configured.add("announcements");
+    saveDB();
+  }
   await installCorePanel("invite-log", "invite_log_info", { embeds: [footer(new EmbedBuilder().setTitle("📨 Invite-Log aktiv").setDescription("Dieser Kanal wurde mit dem Invite-Tracking verbunden. Join-/Invite-Informationen können hier protokolliert werden."))] }, "Invite-Log aktiv");
   await installCorePanel("counting", "counting_info", { embeds: [footer(new EmbedBuilder().setTitle("🔢 Counting aktiv").setDescription("Counting ist in diesem Kanal aktiviert. Startet bei **1** und zählt abwechselnd weiter. Zwei Zahlen hintereinander vom selben User sind nicht erlaubt."))] }, "Counting aktiv");
   await installCorePanel("support-logs", "support_logs_info", { embeds: [footer(new EmbedBuilder().setTitle("🧾 Support-Logs verbunden").setDescription("Ticket- und Support-Aktionen werden mit diesem privaten Log-Kanal verbunden."))] }, "Support-Logs verbunden");
@@ -3595,7 +3690,8 @@ client.on("interactionCreate", async interaction => {
     }
 
     // On pending/unapproved servers the bot is intentionally inert.
-    if (interaction.guild && !isGuildApproved(interaction.guild.id)) {
+    const ownerLearnAnywhere = interaction.isChatInputCommand() && interaction.commandName === "learn" && interaction.user.id === OWNER_ID;
+    if (interaction.guild && !isGuildApproved(interaction.guild.id) && !ownerLearnAnywhere) {
       const content = "🔐 **Dieser Server wartet noch auf Freigabe durch den Bot-Owner.** Bis dahin sind alle Funktionen deaktiviert.";
       if (interaction.isRepliable()) return interaction.reply({ content, flags: MessageFlags.Ephemeral }).catch(() => {});
       return;
@@ -3731,10 +3827,10 @@ client.on("interactionCreate", async interaction => {
         }
 
         case "learn": {
-          const isAdmin = interaction.user.id === OWNER_ID || interaction.member.permissions.has(PermissionsBitField.Flags.Administrator);
-          if (!isAdmin) {
-            return interaction.reply({ content: "❌ `/learn` ist nur für Administratoren.", flags: MessageFlags.Ephemeral });
-          }
+          if (!interaction.guild) return interaction.reply({ content: "❌ `/learn` funktioniert in einem Server.", flags: MessageFlags.Ephemeral });
+          const isOwner = interaction.user.id === OWNER_ID;
+          const isAdmin = isOwner || interaction.member?.permissions?.has(PermissionsBitField.Flags.Administrator);
+          if (!isAdmin) return interaction.reply({ content: "❌ `/learn` ist nur für Administratoren oder den Bot-Owner.", flags: MessageFlags.Ephemeral });
 
           const gd = guildData(interaction.guild.id);
           const sub = interaction.options.getSubcommand();
@@ -3742,73 +3838,83 @@ client.on("interactionCreate", async interaction => {
           if (sub === "add") {
             const target = interaction.options.getString("ziel");
             const kind = interaction.options.getString("art");
+            const scope = interaction.options.getString("bereich") || "server";
             const knowledge = interaction.options.getString("wissen").trim();
             const topicInput = interaction.options.getString("thema")?.trim();
-            const topic = topicInput || (kind === "instruction" ? "Verhalten / Stil" : "Server-Wissen");
-            if (!knowledge) {
-              return interaction.reply({ content: "❌ Der Learn-Inhalt darf nicht leer sein.", flags: MessageFlags.Ephemeral });
-            }
+            const topic = topicInput || (kind === "instruction" ? "Verhalten / Stil" : "Wissen");
+            if (!knowledge) return interaction.reply({ content: "❌ Der Learn-Inhalt darf nicht leer sein.", flags: MessageFlags.Ephemeral });
+            if (scope === "global" && !isOwner) return interaction.reply({ content: "❌ Nur der Bot-Owner darf Regeln für **alle Server** speichern. Wähle `Nur dieser Server`.", flags: MessageFlags.Ephemeral });
 
-            if (gd.aiKnowledge.length >= 100) {
-              return interaction.reply({ content: "❌ Es sind bereits 100 Learn-Einträge gespeichert. Lösche zuerst einen alten Eintrag mit `/learn delete`.", flags: MessageFlags.Ephemeral });
-            }
+            const store = scope === "global" ? db.globalAiKnowledge : gd.aiKnowledge;
+            if (store.length >= 150) return interaction.reply({ content: "❌ In diesem Learn-Bereich sind bereits 150 Einträge gespeichert. Lösche zuerst einen alten Eintrag.", flags: MessageFlags.Ephemeral });
 
-            gd.aiKnowledgeCounter += 1;
+            let id;
+            if (scope === "global") { db.globalAiKnowledgeCounter += 1; id = `G-${db.globalAiKnowledgeCounter}`; }
+            else { gd.aiKnowledgeCounter += 1; id = `K-${gd.aiKnowledgeCounter}`; }
             const entry = {
-              id: `K-${gd.aiKnowledgeCounter}`,
-              topic: topic.slice(0, 100),
-              text: knowledge.slice(0, 1500),
+              id, topic: topic.slice(0, 100), text: knowledge.slice(0, 1500),
               target: ["ai", "support", "both"].includes(target) ? target : "both",
               kind: kind === "instruction" ? "instruction" : "knowledge",
-              createdBy: interaction.user.id,
-              createdAt: Date.now()
+              scope, guildId: scope === "server" ? interaction.guild.id : null,
+              createdBy: interaction.user.id, createdAt: Date.now()
             };
-            gd.aiKnowledge.push(entry);
+            store.push(entry);
             saveDB();
-
-            await staff.recordAction(interaction.guild.id, interaction.user.id, "ai-learn", { knowledgeId: entry.id, target: entry.target, kind: entry.kind });
+            await staff.recordAction(interaction.guild.id, interaction.user.id, "ai-learn", { knowledgeId: entry.id, target: entry.target, kind: entry.kind, scope: entry.scope });
             const targetLabel = entry.target === "ai" ? "🤖 /ai" : entry.target === "support" ? "🎫 Support AI" : "🔁 /ai + Support AI";
             const kindLabel = entry.kind === "instruction" ? "🎨 Verhalten / Stil" : "📚 Wissen / Fakt";
-            return interaction.reply({
-              content: `🧠 **Gelernt!**\n**${entry.id} • ${entry.topic}**\n🎯 ${targetLabel}\n${kindLabel}\n> ${entry.text}\n\n${entry.kind === "instruction" ? "Diese Anweisung wird ab jetzt bei **jeder Antwort der gewählten AI** als Verhaltensregel mitgegeben – also z.B. wirkt **„Kling freudiger“** direkt auf den Tonfall." : "Dieses Wissen wird der gewählten AI bei passenden Fragen als Server-Kontext gegeben."}`,
-              flags: MessageFlags.Ephemeral
-            });
+            const scopeLabel = entry.scope === "global" ? "🌍 Alle Server" : `🏠 Nur ${interaction.guild.name}`;
+            return interaction.reply({ content: `🧠 **Gelernt!**
+**${entry.id} • ${entry.topic}**
+🎯 ${targetLabel}
+${kindLabel}
+${scopeLabel}
+
+> ${entry.text}
+
+💭 **So habe ich es verstanden:**
+${learnUnderstanding(entry)}`.slice(0, 1950), flags: MessageFlags.Ephemeral });
           }
 
           if (sub === "list") {
             const filterTarget = interaction.options.getString("ziel");
-            let rows = gd.aiKnowledge;
-            if (filterTarget) rows = rows.filter(e => (e.target || "both") === filterTarget || e.target === "both");
-            if (!rows.length) {
-              return interaction.reply({ content: "🧠 Für diese Auswahl gibt es noch keine `/learn`-Einträge.", flags: MessageFlags.Ephemeral });
-            }
+            const filterScope = interaction.options.getString("bereich");
+            let rows = [...db.globalAiKnowledge.map(e => normalizedLearnEntry(e, "global")), ...gd.aiKnowledge.map(e => normalizedLearnEntry(e, "server"))].filter(Boolean);
+            if (filterTarget) rows = rows.filter(e => e.target === filterTarget || e.target === "both");
+            if (filterScope) rows = rows.filter(e => e.scope === filterScope);
+            rows.sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0));
+            if (!rows.length) return interaction.reply({ content: "🧠 Für diese Auswahl gibt es noch keine `/learn`-Einträge.", flags: MessageFlags.Ephemeral });
             const lines = rows.slice(-25).map(e => {
-              const targetLabel = (e.target || "both") === "ai" ? "🤖 /ai" : (e.target || "both") === "support" ? "🎫 Support" : "🔁 Beide";
-              const kindLabel = (e.kind || "knowledge") === "instruction" ? "🎨 Stil" : "📚 Wissen";
-              return `**${e.id}** • ${targetLabel} • ${kindLabel} • ${e.topic}\n${e.text.slice(0, 180)}${e.text.length > 180 ? "…" : ""}`;
+              const targetLabel = e.target === "ai" ? "🤖 /ai" : e.target === "support" ? "🎫 Support" : "🔁 Beide";
+              const kindLabel = e.kind === "instruction" ? "🎨 Stil" : "📚 Wissen";
+              const scopeLabel = e.scope === "global" ? "🌍 Global" : "🏠 Server";
+              return `**${e.id}** • ${scopeLabel} • ${targetLabel} • ${kindLabel} • ${e.topic}
+${e.text.slice(0, 180)}${e.text.length > 180 ? "…" : ""}`;
             });
-            return interaction.reply({
-              content: `🧠 **Gelernte AI-Regeln (${rows.length})**\n\n${lines.join("\n\n")}`.slice(0, 1900),
-              flags: MessageFlags.Ephemeral
-            });
+            return interaction.reply({ content: `🧠 **Gelernte AI-Regeln (${rows.length})**
+
+${lines.join("\n\n")}`.slice(0, 1900), flags: MessageFlags.Ephemeral });
           }
 
           if (sub === "delete") {
             const id = interaction.options.getString("id").trim().toUpperCase();
-            const idx = gd.aiKnowledge.findIndex(e => String(e.id).toUpperCase() === id);
-            if (idx === -1) {
-              return interaction.reply({ content: `❌ Kein Learn-Eintrag mit der ID **${id}** gefunden.`, flags: MessageFlags.Ephemeral });
-            }
-            const [removed] = gd.aiKnowledge.splice(idx, 1);
-            saveDB();
-            return interaction.reply({ content: `🗑️ **${removed.id} • ${removed.topic}** wurde aus dem AI-Wissen gelöscht.`, flags: MessageFlags.Ephemeral });
+            let scope = "server", store = gd.aiKnowledge, idx = store.findIndex(e => String(e.id).toUpperCase() === id);
+            if (idx === -1) { scope = "global"; store = db.globalAiKnowledge; idx = store.findIndex(e => String(e.id).toUpperCase() === id); }
+            if (idx === -1) return interaction.reply({ content: `❌ Kein Learn-Eintrag mit der ID **${id}** gefunden.`, flags: MessageFlags.Ephemeral });
+            if (scope === "global" && !isOwner) return interaction.reply({ content: "❌ Nur der Bot-Owner darf globale Learn-Einträge löschen.", flags: MessageFlags.Ephemeral });
+            const [removed] = store.splice(idx, 1); saveDB();
+            return interaction.reply({ content: `🗑️ **${removed.id} • ${removed.topic}** wurde aus dem ${scope === "global" ? "globalen" : "Server-"}AI-Wissen gelöscht.`, flags: MessageFlags.Ephemeral });
           }
 
           if (sub === "clear") {
-            const count = gd.aiKnowledge.length;
-            gd.aiKnowledge = [];
-            saveDB();
-            return interaction.reply({ content: `🧹 ${count} Learn-Einträge wurden für diesen Server gelöscht.`, flags: MessageFlags.Ephemeral });
+            const scope = interaction.options.getString("bereich") || "server";
+            if (scope === "global") {
+              if (!isOwner) return interaction.reply({ content: "❌ Nur der Bot-Owner darf globale Learn-Einträge löschen.", flags: MessageFlags.Ephemeral });
+              const count = db.globalAiKnowledge.length; db.globalAiKnowledge = []; saveDB();
+              return interaction.reply({ content: `🧹 ${count} globale Learn-Einträge wurden gelöscht.`, flags: MessageFlags.Ephemeral });
+            }
+            const count = gd.aiKnowledge.length; gd.aiKnowledge = []; saveDB();
+            return interaction.reply({ content: `🧹 ${count} Learn-Einträge wurden nur für **${interaction.guild.name}** gelöscht.`, flags: MessageFlags.Ephemeral });
           }
           return;
         }
@@ -4161,6 +4267,7 @@ client.on("interactionCreate", async interaction => {
           }
 
           ticket.aiEnabled = true;
+          ticket.allowAiAfterHandoff = false;
           ticket.previousInteractionId = null;
           ticket.lastActivityAt = Date.now();
           ticket.awaitingFirstUserMessage = !ticket.firstUserMessageAt;
@@ -4174,6 +4281,7 @@ client.on("interactionCreate", async interaction => {
         }
 
         ticket.aiEnabled = false;
+        ticket.allowAiAfterHandoff = false;
         ticket.previousInteractionId = null;
         ticket.humanRequested = true;
         saveDB();
@@ -4185,6 +4293,25 @@ client.on("interactionCreate", async interaction => {
           content: "👤 Human support requested. The support team was already notified when the ticket opened.",
           allowedMentions: { parse: [] }
         }).catch(() => {});
+        return;
+      }
+
+      if (id.startsWith("ticket_ai_continue:")) {
+        const channelId = id.split(":")[1];
+        const ticket = db.tickets[channelId];
+        if (!ticket || channelId !== interaction.channel.id || ticket.status === "closed") return interaction.reply({ content: "❌ Dieses Ticket ist nicht mehr verfügbar.", flags: MessageFlags.Ephemeral });
+        if (interaction.user.id !== ticket.ownerId && !isSupportMember(interaction.member, interaction.guild.id)) return interaction.reply({ content: "❌ Nur der Ticket-Ersteller oder das Support-Team kann die AI weiterlaufen lassen.", flags: MessageFlags.Ephemeral });
+        if (!GEMINI_API_KEY) return interaction.reply({ content: "⚙️ Die AI ist noch nicht eingerichtet (`GEMINI_API_KEY` fehlt).", flags: MessageFlags.Ephemeral });
+        ticket.aiEnabled = true;
+        ticket.humanRequested = true;
+        ticket.allowAiAfterHandoff = true;
+        ticket.previousInteractionId = null;
+        ticket.lastActivityAt = Date.now();
+        ticket.awaitingFirstUserMessage = !ticket.firstUserMessageAt;
+        saveDB();
+        await interaction.update({ components: [ticketContinueAiRow(channelId, true)] }).catch(() => {});
+        await interaction.channel.send({ content: "🤖 **AI-Support läuft wieder weiter.** Der menschliche Support bleibt trotzdem im Fall. Bei Moderationsentscheidungen entscheidet weiterhin ein Mensch.", allowedMentions: { parse: [] } }).catch(() => {});
+        await supportLog(interaction.guild, "🤖 AI continued after handoff", `${interaction.channel} • User: ${interaction.user}`);
         return;
       }
 
