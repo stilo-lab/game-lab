@@ -1,9 +1,12 @@
-# Setup Detection Fix v1.6.5
+# v1.6.6 – @everyone / @here Hard Ignore
 
 Ersetze in GitHub:
 - `src/index.js`
+- `src/community.js`
 - `package.json`
 
 `data/db.json` NICHT ersetzen.
 
-Danach Railway neu deployen und `/setup` erneut ausführen. `/commandsync` ist nur nötig, falls Discord die Commands nicht anzeigt.
+Danach Railway neu deployen.
+
+Nachrichten mit `@everyone` oder `@here` lösen keine automatischen Bot-Aktionen mehr aus.
