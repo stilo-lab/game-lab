@@ -491,6 +491,8 @@ function createCommunity(ctx) {
     try { if (reaction.partial) await reaction.fetch(); } catch { return; }
     const msg = reaction.message;
     if (!msg.guild || reaction.emoji.name !== "⭐") return;
+    // Mass mentions are a complete no-op for bot automations, including Starboard.
+    if (msg.mentions?.everyone || /@(?:everyone|here)\b/i.test(String(msg.content || ""))) return;
     const c = ensureGuild(msg.guild.id);
     if ((reaction.count || 0) < (c.settings.starThreshold || 3)) return;
     const starCh = msg.guild.channels.cache.get(c.channels.starboard);

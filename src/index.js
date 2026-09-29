@@ -2846,6 +2846,9 @@ client.on("guildMemberRemove", member => {
 });
 client.on("messageDelete", message => {
   if (message.guild && !isGuildApproved(message.guild.id)) return;
+  // Absolute ignore: messages containing @everyone/@here are not processed,
+  // logged or answered by automatic systems.
+  if (hasMassMention(message)) return;
   staff.onMessageDelete(message).catch(() => {});
 });
 
@@ -2858,6 +2861,13 @@ client.on("voiceStateUpdate", (oldState, newState) => {
 client.on("messageReactionAdd", async (reaction, user) => {
   const guildId = reaction.message?.guild?.id;
   if (guildId && !isGuildApproved(guildId)) return;
+  // Absolute ignore for mass-mention messages. Even if somebody reacts later,
+  // the bot must not translate, starboard or otherwise act on @everyone/@here.
+  try {
+    if (reaction.partial) await reaction.fetch();
+    if (reaction.message?.partial) await reaction.message.fetch();
+  } catch {}
+  if (hasMassMention(reaction.message)) return;
   await handleTranslationReaction(reaction, user).catch(err => console.warn("Translation reaction failed:", err?.message || err));
   await community.onReactionAdd(reaction, user).catch(() => {});
 });
@@ -2878,6 +2888,12 @@ client.on("channelCreate", async channel => {
 client.on("messageCreate", async message => {
   if (!message.guild) return;
   if (!isGuildApproved(message.guild.id)) return;
+
+  // HARD IGNORE: Sobald eine Nachricht @everyone oder @here enthält, macht der
+  // Bot mit genau dieser Nachricht gar nichts automatisch. Keine Reaktion, keine
+  // AI-/Support-Antwort, keine Moderation, kein Counting, keine Übersetzung,
+  // kein Suggestions-/Community-System und keine Ticket-Erkennung.
+  if (hasMassMention(message)) return;
 
   // Ticket-Bots posten oft zuerst selbst ein Embed. Solche privaten Tickets werden
   // vor dem normalen Bot-Message-Filter erkannt und bekommen die Yes/No-Supportfrage.
