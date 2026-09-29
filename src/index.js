@@ -101,14 +101,14 @@ function plainUnicodeText(value = "") {
   return Array.from(String(value || "").normalize("NFKC").normalize("NFKD"))
     .map(ch => FANCY_CHAR_MAP[ch] || FANCY_CHAR_MAP[ch.toLowerCase()] || ch)
     .join("")
-    .replace(/[\\u0300-\\u036f]/g, "");
+    .replace(/[\u0300-\u036f]/g, "");
 }
 
 function cleanName(s = "") {
   return plainUnicodeText(s)
-    .replace(/[^\\p{L}\\p{N}\\s\\-_]/gu, "")
+    .replace(/[^\p{L}\p{N}\s_-]/gu, "")
     .toLowerCase()
-    .replace(/[_\\s]+/g, "-")
+    .replace(/[_\s]+/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
 }
@@ -238,8 +238,9 @@ function setupCandidateAllowed(snapshot, purpose, score = 0, source = "heuristic
   if (purpose.canonical === "announcements" && fortniteNamed) return false;
   if (purpose.canonical === "fortnite-news" && !fortniteNamed) return false;
   if (purpose.canonical === "item-shop" && !(/item/.test(ev.name) && /shop/.test(ev.name)) && !/fortnite.*shop|shop.*fortnite/.test(`${ev.name} ${ev.topic}`)) return false;
-  if (source === "AI" && ev.lexicalScore < 28) return false;
-  if (source === "heuristic" && ev.lexicalScore < 45) return false;
+  if (ev.exactName) return true;
+  if (source === "AI" && ev.lexicalScore < 20) return false;
+  if (source === "heuristic" && ev.lexicalScore < 34 && setupLooseNameScore(snapshot, purpose) < 52) return false;
   return score >= (source === "AI" ? 72 : 45);
 }
 
@@ -258,13 +259,15 @@ function setupHeuristicScore(snapshot, purpose) {
 async function collectSetupChannelSnapshots(guild, historyLimit = 20) {
   const channels = [...guild.channels.cache.values()]
     .filter(ch => [ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(ch.type))
-    .filter(ch => ch.viewable && ch.permissionsFor(guild.members.me)?.has(PermissionsBitField.Flags.ReadMessageHistory))
+    // Name/topic detection must still work when history permission is missing.
+    .filter(ch => ch.viewable)
     .filter(ch => !String(ch.topic || "").startsWith("ticket-owner:"));
 
   const snapshots = [];
   for (const channel of channels) {
     let messages = [];
-    try {
+    const canReadHistory = Boolean(channel.permissionsFor(guild.members.me)?.has(PermissionsBitField.Flags.ReadMessageHistory));
+    if (canReadHistory) try {
       const batch = await channel.messages.fetch({ limit: Math.max(5, Math.min(30, historyLimit)) });
       messages = [...batch.values()].reverse()
         .filter(m => m.author?.id !== client.user?.id)
@@ -288,11 +291,34 @@ async function collectSetupChannelSnapshots(guild, historyLimit = 20) {
   return snapshots;
 }
 
+function setupLooseNameScore(snapshot, purpose) {
+  const name = cleanName(snapshot.name);
+  const topic = cleanName(snapshot.topic || "");
+  const parent = cleanName(snapshot.parent || "");
+  const aliases = purpose.aliases.map(cleanName).filter(Boolean);
+  const nameTokens = new Set(name.split("-").filter(Boolean));
+  let best = 0;
+  for (const alias of aliases) {
+    const aliasTokens = alias.split("-").filter(Boolean);
+    if (!aliasTokens.length) continue;
+    const overlap = aliasTokens.filter(t => nameTokens.has(t)).length;
+    if (overlap === aliasTokens.length) best = Math.max(best, 70);
+    else if (overlap > 0 && aliasTokens.length > 1) best = Math.max(best, 46 + overlap * 8);
+    if (topic && (topic === alias || topic.includes(alias))) best = Math.max(best, 52);
+    if (parent && (parent === alias || parent.includes(alias))) best = Math.max(best, 34);
+  }
+  return best;
+}
+
 function heuristicSetupAssignments(snapshots) {
   const candidates = [];
   for (const snap of snapshots) {
     for (const purpose of SMART_SETUP_PURPOSES) {
-      const score = setupHeuristicScore(snap, purpose);
+      let score = setupHeuristicScore(snap, purpose);
+      if (score < 45) {
+        const loose = setupLooseNameScore(snap, purpose);
+        if (loose >= 52) score = loose;
+      }
       if (score >= 45 && setupCandidateAllowed(snap, purpose, score, "heuristic")) candidates.push({ channelId: snap.id, canonical: purpose.canonical, score, reason: "strong name/topic match" });
     }
   }
