@@ -1,10 +1,9 @@
+# Stilo Bot Update v1.6.0
 
+Ersetze in GitHub:
+- `src/index.js`
+- `package.json`
 
-## v1.5.9 – Owner `/links`
+Danach Railway neu deployen lassen und als Bot-Owner einmal `/commandsync` ausführen.
 
-- `/links` ist nur für den in `OWNER_ID` eingetragenen Bot-Owner.
-- Zeigt alle Server, auf denen der Bot aktuell Mitglied ist.
-- Für jeden Server versucht der Bot einen permanenten Invite (`maxAge=0`, `maxUses=0`) zu erstellen.
-- Bereits erstellte Bot-Invites werden wiederverwendet.
-- Falls dem Bot `Einladung erstellen` fehlt, wird der Server trotzdem angezeigt und der Fehler genannt.
-- Die Ausgabe ist ephemeral und nur für den Owner sichtbar.
+`data/db.json` ist absichtlich nicht enthalten. Deine gespeicherten Daten bleiben erhalten.
