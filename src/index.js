@@ -151,6 +151,54 @@ function setupPurposeByCanonical(name) {
   return SMART_SETUP_PURPOSES.find(p => cleanName(p.canonical) === n) || null;
 }
 
+function canUseSmartSetup(interaction) {
+  if (interaction?.user?.id === OWNER_ID) return true;
+  const perms = interaction?.member?.permissions;
+  return Boolean(perms?.has(PermissionsBitField.Flags.Administrator) || perms?.has(PermissionsBitField.Flags.ManageChannels));
+}
+
+function canCreateSetupChannels(interaction) {
+  const perms = interaction?.member?.permissions;
+  return Boolean(perms?.has(PermissionsBitField.Flags.Administrator) || perms?.has(PermissionsBitField.Flags.ManageChannels));
+}
+
+function missingSetupCanonicals(smartSetup) {
+  const found = new Set((smartSetup?.selected || []).map(x => x.canonical));
+  return SMART_SETUP_PURPOSES.map(p => p.canonical).filter(canonical => !found.has(canonical));
+}
+
+const CREATE_CATEGORY_BY_PURPOSE = Object.freeze({
+  announcements: "GAMING • INFO",
+  welcome: "GAMING • INFO",
+  "fortnite-news": "GAMING • INFO",
+  "item-shop": "GAMING • INFO",
+  "invite-log": "GAMING • COMMUNITY",
+  counting: "GAMING • COMMUNITY",
+  "daily-quests": "GAMING • COMMUNITY",
+  "coin-shop": "GAMING • COMMUNITY",
+  "choose-roles": "GAMING • COMMUNITY",
+  suggestions: "GAMING • COMMUNITY",
+  "best-moments": "GAMING • COMMUNITY",
+  "clip-of-the-week": "GAMING • COMMUNITY",
+  birthdays: "GAMING • COMMUNITY",
+  "community-fragen": "GAMING • COMMUNITY",
+  teamsearch: "GAMING • TEAMSEARCH",
+  events: "GAMING • EVENTS",
+  "squad-hub": "GAMING • SQUADS",
+  support: "GAMING • SUPPORT",
+  "support-logs": "STAFF • MANAGEMENT",
+  "ticket-transcripts": "STAFF • MANAGEMENT",
+  "staff-audit": "STAFF • MANAGEMENT",
+  "ai-staff-alerts": "STAFF • MANAGEMENT",
+  "mod-cases": "STAFF • MANAGEMENT",
+  "staff-briefing": "STAFF • MANAGEMENT",
+  "staff-tasks": "STAFF • MANAGEMENT"
+});
+
+function setupCreateChannelName(canonical) {
+  return canonical;
+}
+
 function setupHeuristicScore(snapshot, purpose) {
   const name = cleanName(snapshot.name);
   const topic = cleanName(snapshot.topic || "");
@@ -2110,7 +2158,10 @@ function startAiCooldown(userId) {
 const commands = [
   new SlashCommandBuilder()
     .setName("setup")
-    .setDescription("Prüft vorhandene Kanäle und zeigt fehlende an – erstellt nichts."),
+    .setDescription("Prüft vorhandene Kanäle, richtet gefundene ein und zeigt fehlende an."),
+  new SlashCommandBuilder()
+    .setName("create")
+    .setDescription("Wähle fehlende Bot-Kanäle aus und erstelle nur diese."),
   new SlashCommandBuilder()
     .setName("serversetup")
     .setDescription("Erstellt eine komplette Gaming-Community-Serverstruktur mit Chat, Support, Voice und Staff.")
@@ -2901,9 +2952,87 @@ function setupCheckPayload(guild, smartSetup, setupResult = {}) {
   return { embeds: [embed], components };
 }
 
+async function createSelectedSetupChannels(interaction, canonicals) {
+  const guild = interaction.guild;
+  const botPerms = guild.members.me?.permissions;
+  if (!botPerms?.has(PermissionsBitField.Flags.Administrator) && !botPerms?.has(PermissionsBitField.Flags.ManageChannels)) {
+    throw new Error("Der Bot braucht `Kanäle verwalten` oder Administrator-Rechte.");
+  }
+
+  const supportRole = guildData(guild.id).supportRoleId ? guild.roles.cache.get(guildData(guild.id).supportRoleId) : null;
+  const meId = guild.members.me?.id || client.user.id;
+  const created = [];
+  const reused = [];
+  const failed = [];
+
+  for (const canonical of [...new Set(canonicals)].filter(x => setupPurposeByCanonical(x))) {
+    try {
+      const beforeIds = new Set(guild.channels.cache.keys());
+      const categoryName = CREATE_CATEGORY_BY_PURPOSE[canonical] || "GAMING • COMMUNITY";
+      const parent = await findOrCreateCategory(guild, categoryName);
+      let channel;
+
+      if (PRIVATE_SETUP_PURPOSES.has(canonical)) {
+        const overwrites = [
+          { id: guild.roles.everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+          ...(supportRole ? [{ id: supportRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] }] : []),
+          { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
+          { id: meId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.ManageMessages, PermissionsBitField.Flags.ManageChannels, PermissionsBitField.Flags.EmbedLinks, PermissionsBitField.Flags.AttachFiles] }
+        ];
+        channel = await findOrCreatePrivateText(guild, setupCreateChannelName(canonical), parent, overwrites);
+      } else {
+        channel = await findOrCreateText(guild, setupCreateChannelName(canonical), parent);
+      }
+
+      if (beforeIds.has(channel.id)) reused.push({ canonical, channelId: channel.id });
+      else created.push({ canonical, channelId: channel.id });
+    } catch (err) {
+      failed.push({ canonical, error: String(err?.message || err).slice(0, 250) });
+    }
+  }
+
+  const smartSetup = await prepareSmartSetup(guild);
+  const configured = await configureFoundSetupChannels(guild, smartSetup).catch(err => ({ configured: [], connected: [], failed: [{ canonical: "setup", channelId: null, error: String(err?.message || err) }] }));
+  return { created, reused, failed: [...failed, ...(configured.failed || [])], smartSetup, configured };
+}
+
+async function runCreate(interaction) {
+  if (!canCreateSetupChannels(interaction)) {
+    return interaction.reply({ content: "❌ Für `/create` brauchst du **Kanäle verwalten** oder Administrator-Rechte.", flags: MessageFlags.Ephemeral });
+  }
+  const botPerms = interaction.guild.members.me?.permissions;
+  if (!botPerms?.has(PermissionsBitField.Flags.Administrator) && !botPerms?.has(PermissionsBitField.Flags.ManageChannels)) {
+    return interaction.reply({ content: "❌ Ich selbst brauche **Kanäle verwalten** oder Administrator-Rechte, damit ich Kanäle erstellen kann.", flags: MessageFlags.Ephemeral });
+  }
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  const smartSetup = await prepareSmartSetup(interaction.guild).catch(() => ({ selected: [], scanned: 0 }));
+  const missing = missingSetupCanonicals(smartSetup);
+  if (!missing.length) {
+    return interaction.editReply({ content: "✅ Es fehlen aktuell keine Bot-Kanäle. `/setup` kann die vorhandenen Kanäle jetzt einrichten.", components: [] });
+  }
+
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId("create_missing_channels")
+    .setPlaceholder("Kanäle auswählen, die erstellt werden sollen")
+    .setMinValues(1)
+    .setMaxValues(Math.min(25, missing.length))
+    .addOptions(...missing.slice(0, 25).map(canonical => ({
+      label: setupChannelLabel(canonical).replace(/^#/, "").slice(0, 100),
+      value: canonical,
+      description: String(SETUP_CHANNEL_INFO[canonical]?.purpose || "Bot-Funktion").slice(0, 100),
+      emoji: PRIVATE_SETUP_PURPOSES.has(canonical) ? "🔒" : "📁"
+    })));
+
+  return interaction.editReply({
+    content: `🧱 **Channel Creator**\nEs fehlen **${missing.length}** erkannte Bot-Kanäle. Wähle genau die aus, die ich erstellen soll. Danach richte ich die neuen Kanäle direkt ein.`,
+    components: [new ActionRowBuilder().addComponents(menu)]
+  });
+}
+
 async function runSetup(interaction) {
-  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ content: "❌ Dafür brauchst du Administrator-Rechte.", flags: MessageFlags.Ephemeral });
+  if (!canUseSmartSetup(interaction)) {
+    return interaction.reply({ content: "❌ Dafür brauchst du **Kanäle verwalten** oder Administrator-Rechte. Der Bot-Owner darf `/setup` immer benutzen.", flags: MessageFlags.Ephemeral });
   }
   if (!interaction.deferred && !interaction.replied) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -3701,9 +3830,30 @@ client.on("interactionCreate", async interaction => {
       return interaction.reply({ content: "🔧 Der Bot ist gerade im Wartungsmodus.", flags: MessageFlags.Ephemeral });
     }
 
+    if (interaction.isStringSelectMenu() && interaction.customId === "create_missing_channels") {
+      if (!canCreateSetupChannels(interaction)) {
+        return interaction.reply({ content: "❌ Dafür brauchst du **Kanäle verwalten** oder Administrator-Rechte.", flags: MessageFlags.Ephemeral });
+      }
+      await interaction.deferUpdate();
+      try {
+        const result = await createSelectedSetupChannels(interaction, interaction.values || []);
+        const createdLines = result.created.map(x => `✅ ${setupChannelLabel(x.canonical)} → ${interaction.guild.channels.cache.get(x.channelId) || x.channelId}`);
+        const reusedLines = result.reused.map(x => `♻️ ${setupChannelLabel(x.canonical)} → bereits vorhanden`);
+        const failLines = result.failed.slice(0, 8).map(x => `⚠️ ${setupChannelLabel(x.canonical)} → ${x.error}`);
+        const remaining = missingSetupCanonicals(result.smartSetup);
+        return interaction.editReply({
+          content: `🧱 **Channel Creator fertig**\n\n${[...createdLines, ...reusedLines, ...failLines].join("\n") || "Keine Änderung."}\n\n❌ Noch fehlend: **${remaining.length}**\n🛠️ Neu gefundene Kanäle wurden direkt eingerichtet.`,
+          components: []
+        });
+      } catch (err) {
+        console.error("/create failed:", err);
+        return interaction.editReply({ content: `❌ Erstellen fehlgeschlagen: ${String(err?.message || err).slice(0, 1500)}`, components: [] });
+      }
+    }
+
     if (interaction.isButton() && interaction.customId === "setup_check_refresh") {
-      if (!interaction.member?.permissions?.has(PermissionsBitField.Flags.Administrator)) {
-        return interaction.reply({ content: "❌ Dafür brauchst du Administrator-Rechte.", flags: MessageFlags.Ephemeral });
+      if (!canUseSmartSetup(interaction)) {
+        return interaction.reply({ content: "❌ Dafür brauchst du **Kanäle verwalten** oder Administrator-Rechte. Der Bot-Owner darf `/setup` immer benutzen.", flags: MessageFlags.Ephemeral });
       }
       await interaction.deferUpdate();
       const smartSetup = await prepareSmartSetup(interaction.guild).catch(err => {
@@ -3718,8 +3868,8 @@ client.on("interactionCreate", async interaction => {
     }
 
     if (interaction.isStringSelectMenu() && interaction.customId === "setup_missing_info") {
-      if (!interaction.member?.permissions?.has(PermissionsBitField.Flags.Administrator)) {
-        return interaction.reply({ content: "❌ Dafür brauchst du Administrator-Rechte.", flags: MessageFlags.Ephemeral });
+      if (!canUseSmartSetup(interaction)) {
+        return interaction.reply({ content: "❌ Dafür brauchst du **Kanäle verwalten** oder Administrator-Rechte. Der Bot-Owner darf `/setup` immer benutzen.", flags: MessageFlags.Ephemeral });
       }
       const canonical = interaction.values?.[0];
       const info = SETUP_CHANNEL_INFO[canonical];
@@ -3739,6 +3889,9 @@ client.on("interactionCreate", async interaction => {
       switch (interaction.commandName) {
         case "setup":
           return await runSetup(interaction);
+
+        case "create":
+          return await runCreate(interaction);
 
         case "serversetup":
           return await runServerSetup(interaction);
