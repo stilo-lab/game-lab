@@ -18,16 +18,14 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const DEFAULT_PLAYLIST_URL = 'https://open.spotify.com/playlist/0j5WfIigrPdHMGu9TKZ860';
-const DEFAULT_PLAYLIST_ID = '0j5WfIigrPdHMGu9TKZ860';
+const DEFAULT_PLAYLIST_URL = process.env.SPOTIFY_PLAYLIST_URL || 'https://open.spotify.com/playlist/3oVDosIUz6bQpEJIgIsEzK';
+const DEFAULT_PLAYLIST_ID = extractPlaylistId(DEFAULT_PLAYLIST_URL) || '3oVDosIUz6bQpEJIgIsEzK';
 const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID || '';
 const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET || '';
 const SPOTIFY_MARKET = String(process.env.SPOTIFY_MARKET || 'DE').toUpperCase();
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const AUTH_PATH = path.join(DATA_DIR, 'spotify_auth.json');
 const TRACK_CACHE_PATH = path.join(DATA_DIR, 'spotify_track_cache.json');
-const PLAYLIST_CACHE_PATH = path.join(DATA_DIR, 'spotify_playlist_cache.json');
-const PLAYLIST_REFRESH_MS = Math.max(30_000, Number(process.env.SPOTIFY_PLAYLIST_REFRESH_MS || 60_000));
 
 function redirectUri() {
   const explicit = String(process.env.SPOTIFY_REDIRECT_URI || '').trim();
@@ -45,7 +43,66 @@ const SPOTIFY_SCOPES = [
   'playlist-read-private'
 ].join(' ');
 
-// Playlist-Titel werden live von Spotify geladen und lokal als Last-Known-Good-Cache gespeichert.
+const FALLBACK_PLAYLIST = [
+  ['MONTAGEM GUERREIRO - Slowed', 'Avenxir, SUNJI', '1:14'],
+  ['MONTAGEM RINGO - Slowed', 'SCHWVFTY', '1:24'],
+  ['VANITY FUNK - SUPER SLOWED', 'NTRXBRST', '1:56'],
+  ['MEOW BOSS - Slowed', 'SLAVYAN13, DJ CHANSEY', '1:44'],
+  ['CHOP MAGIA - Ultra Slowed', 'CASAP, CHIEF DORO', '1:27'],
+  ['CHOP MAGIA - Slowed', 'CASAP, CHIEF DORO', '1:22'],
+  ['MONTAGEM GLORIA - Slowed', 'Rushex, Avenxir, MONTAGEM', '1:31'],
+  ['MONTAGEM GLORIA - Ultra Slowed', 'Rushex, Avenxir, MONTAGEM', '1:42'],
+  ['JABIK - Slowed', 'DJ VASILY', '1:13'],
+  ['pursuit - super slowed', 'isq', '2:04'],
+  ['NATI NATI - Ultra Slowed', 'TRVXER, 0ketaminxe', '2:10'],
+  ['MONTAGEM KOKORO - SLOWED', 'Dj Samir, Nulteex, R9X', '1:42'],
+  ['LAST CHANCE FUNK - Slowed Version', 'TEENWXVE', '1:35'],
+  ['FUNK SERENO', 'ICEDMANE, DYSMANE', '2:10'],
+  ['FUNK SERENO - SLOWED', 'ICEDMANE, DYSMANE', '2:25'],
+  ['MONTAGEM UNKNOWN - Slowed', 'AKXNESHIVA, Avenxir, HamiBeats', '1:20'],
+  ['MONTAGEM RITMADA - Super Slowed', 'cape, MXSTERIXD, Tonzão', '1:37'],
+  ['MONTAGEM FEARLESS - Ultra Slowed', 'lirvie, DJ eu4oria, DJ FZ DA ZN, Matra!', '2:32'],
+  ['TIKI TIKI - Super Slowed', 'QMIIR, SALIMA CHICA', '2:35'],
+  ['TIKI TIKI - Slowed', 'QMIIR, SALIMA CHICA', '2:01'],
+  ['MONTAGEM ALQUIMIA - SLOWED', 'h6itam, n7san7os, Mc Menor Do Alvorada', '1:53'],
+  ['BAD ENDING FUNK', 'Shimuda, SlowlyDying', '1:10'],
+  ['SAD! - FUNK', 'MEMPHX, SEKIMANE', '1:22'],
+  ['PASSO BEM SOLTO - Slowed', 'ATLXS', '1:56'],
+  ['VOCE NA MIRA - Slowed', 'Hwungii, DJ VGK1', '2:50'],
+  ['FUNK CRIMINAL - SLOWED', 'ICEDMANE, DYSMANE', '1:32'],
+  ['FUNK CRIMINAL - SUPER SLOWED', 'ICEDMANE, DYSMANE', '1:44'],
+  ['VAZIO ETERNO - Slowed', 'LUMIX, KXRSED, LXSTFFACE, MC LyC4N', '1:49'],
+  ['Dia De Fiesta - Super Slowed', 'qaraqshy, !Nxght, ZNVUTY', '2:00'],
+  ['MONTAGEM PERIGOSA - Slowed', 'KVRXD, SEKIMANE, Dj Samir', '1:32'],
+  ['MONTAGEM COLASO - SUPER SLOWED', 'Hugomasked, B3ATZ, FVNK.Ltd', '2:00'],
+  ['NO BATIDÃO - Slowed', 'ZXKAI, slxughter', '1:47'],
+  ['YANI MA - Super Slowed', 'DJ Javi26, MXZI, Mc Staff', '1:14'],
+  ['BAILA CONMIGO - Extreme Slowed', "Yb Wasg'ood", '1:59'],
+  ['LOUCURA LETAL - Super Slowed', 'Nakama, Nxxkz', '1:42'],
+  ['LOUCURA LETAL - Ultra Slowed', 'Nakama, Nxxkz', '1:55'],
+  ['MONTAGEM TORMENTA - Slowed', 'qaraqshy, GUSTXV', '2:05'],
+  ['LUA MORTE - Ultra Slowed', 'Sayfalse, nulled., RVNGE, Dj Samir', '2:18'],
+  ['MONTAGEM SILICONADE - Slowed', 'SICXRIUS', '1:49'],
+  ['MONTAGEM PEGADORA - Super Slowed', 'Rubikdice, Chilx, WAA', '1:50'],
+  ['MONTAGEM APOLLO - Slowed', 'SCHWVFTY', '1:39'],
+  ['MUTILATOR (ULTRA SLOWED)', 'ZMAJOR, Lurk', '2:16'],
+  ['MUTILATOR (SLOWED)', 'ZMAJOR, Lurk', '1:49'],
+  ['MONTAGEM SETHRON - Ultra Slowed', 'SASORIIXPP, Zhanbxqq, DJ Javi26', '1:52'],
+  ['YALA - Slowed', 'QMIIR, DJ Zarek, Irokz', '2:39']
+].map(([name, artists, duration]) => {
+  const [m, sec] = duration.split(':').map(Number);
+  const query = `${name} ${artists}`;
+  return {
+    id: null,
+    name,
+    artists,
+    durationMs: ((m || 0) * 60 + (sec || 0)) * 1000,
+    url: `https://open.spotify.com/search/${encodeURIComponent(query)}`,
+    explicit: false,
+    cover: null,
+    fallback: true
+  };
+});
 
 function extractPlaylistId(url = '') {
   const match = String(url).match(/playlist\/([A-Za-z0-9]+)/i);
@@ -143,10 +200,9 @@ function buildSpotifyPartyCommands() {
       .addSubcommand(s => s.setName('start').setDescription('Startet die feste Playlist und öffnet den Party-Player.'))
       .addSubcommand(s => s.setName('now').setDescription('Zeigt den aktuell laufenden Spotify-Track.'))
       .addSubcommand(s => s.setName('playlist').setDescription('Zeigt die Titel der festen Community-Playlist.')
-        .addIntegerOption(o => o.setName('seite').setDescription('Playlist-Seite').setMinValue(1).setMaxValue(50)))
+        .addIntegerOption(o => o.setName('seite').setDescription('Seite 1-3').setMinValue(1).setMaxValue(3)))
       .addSubcommand(s => s.setName('play').setDescription('Spielt einen bestimmten Titel der Community-Playlist.')
-        .addIntegerOption(o => o.setName('nummer').setDescription('Tracknummer aus /spotify playlist').setMinValue(1).setMaxValue(1000).setRequired(true)))
-      .addSubcommand(s => s.setName('refresh').setDescription('Lädt die aktuelle Spotify-Playlist sofort neu.'))
+        .addIntegerOption(o => o.setName('nummer').setDescription('Tracknummer aus /spotify playlist').setMinValue(1).setMaxValue(45).setRequired(true)))
       .addSubcommand(s => s.setName('pause').setDescription('Pausiert Spotify.'))
       .addSubcommand(s => s.setName('resume').setDescription('Setzt Spotify fort.'))
       .addSubcommand(s => s.setName('next').setDescription('Springt zum nächsten Track.'))
@@ -169,9 +225,6 @@ function createSpotifyParty({ client, footer, isGuildApproved }) {
   const pendingStates = new Map();
   let appTokenCache = { token: null, expiresAt: 0 };
   const resolvedTrackCache = new Map(Object.entries(safeJsonRead(TRACK_CACHE_PATH, {})));
-  const playlistCacheStore = safeJsonRead(PLAYLIST_CACHE_PATH, { playlists: {} });
-  if (!playlistCacheStore.playlists || typeof playlistCacheStore.playlists !== 'object') playlistCacheStore.playlists = {};
-  const livePlaylistCache = new Map();
   let oauthServer = null;
 
   function isManager(interaction) {
@@ -387,116 +440,33 @@ function createSpotifyParty({ client, footer, isGuildApproved }) {
   }
 
 
-  function playlistCacheKey(guildId) {
-    return `${guildId || 'global'}:${DEFAULT_PLAYLIST_ID}`;
-  }
-
-  function playlistFromDisk(guildId) {
-    const exact = playlistCacheStore.playlists?.[playlistCacheKey(guildId)];
-    const any = exact || playlistCacheStore.playlists?.[`global:${DEFAULT_PLAYLIST_ID}`] || null;
-    if (!any || !Array.isArray(any.tracks)) return null;
-    return { ...any, tracks:any.tracks.map(t => ({...t})), stale:true };
-  }
-
-  function persistPlaylist(guildId, playlist) {
-    const clean = {
-      id:playlist.id,
-      uri:playlist.uri,
-      name:playlist.name,
-      owner:playlist.owner,
-      url:playlist.url,
-      image:playlist.image,
-      snapshotId:playlist.snapshotId || null,
-      total:Number(playlist.total || playlist.tracks?.length || 0),
-      fetchedAt:Date.now(),
-      tracks:(playlist.tracks || []).map(t => ({...t}))
-    };
-    playlistCacheStore.playlists[playlistCacheKey(guildId)] = clean;
-    playlistCacheStore.playlists[`global:${DEFAULT_PLAYLIST_ID}`] = clean;
-    safeJsonWrite(PLAYLIST_CACHE_PATH, playlistCacheStore);
-  }
-
-  function spotifyTrackFromPlaylistItem(entry) {
-    const t = entry?.item || entry?.track || null;
-    if (!t || t.type === 'episode' || !t.name) return null;
-    const artists = (t.artists || []).map(a => a.name).filter(Boolean).join(', ') || 'Unknown Artist';
-    return {
-      id:t.id || null,
-      uri:t.uri || (t.id ? `spotify:track:${t.id}` : null),
-      name:t.name,
-      artists,
-      durationMs:Number(t.duration_ms || 0),
-      url:t.external_urls?.spotify || DEFAULT_PLAYLIST_URL,
-      explicit:Boolean(t.explicit),
-      cover:t.album?.images?.[0]?.url || null,
-      addedAt:entry?.added_at || null,
-      fallback:false
-    };
-  }
-
-  async function fetchLivePlaylist(guildId) {
-    const meta = await userApi(guildId, `/playlists/${DEFAULT_PLAYLIST_ID}?market=${encodeURIComponent(SPOTIFY_MARKET)}`);
-    const tracks = [];
-    let offset = 0;
-    let total = Number(meta?.items?.total || meta?.tracks?.total || 0);
-    let pages = 0;
-    do {
-      const page = await userApi(guildId, `/playlists/${DEFAULT_PLAYLIST_ID}/items?market=${encodeURIComponent(SPOTIFY_MARKET)}&limit=50&offset=${offset}`);
-      const items = Array.isArray(page?.items) ? page.items : [];
-      for (const entry of items) {
-        const t = spotifyTrackFromPlaylistItem(entry);
-        if (t) tracks.push(t);
+  async function loadPlaylist() {
+    let first = null;
+    let tracks = [];
+    try {
+      if (SPOTIFY_CLIENT_ID && SPOTIFY_CLIENT_SECRET) {
+        first = await appGet(`https://api.spotify.com/v1/playlists/${DEFAULT_PLAYLIST_ID}?market=${encodeURIComponent(SPOTIFY_MARKET)}`);
+        const page = first?.items || first?.tracks || null;
+        for (const entry of page?.items || []) {
+          const t = entry?.item || entry?.track;
+          if (!t?.name) continue;
+          const artists = (t.artists || []).map(a => a.name).filter(Boolean).join(', ') || 'Unknown Artist';
+          tracks.push({ id:t.id || null, name:t.name, artists, durationMs:Number(t.duration_ms || 0), url:t.external_urls?.spotify || DEFAULT_PLAYLIST_URL, explicit:Boolean(t.explicit), cover:t.album?.images?.[0]?.url || null, fallback:false });
+        }
       }
-      total = Number(page?.total ?? total ?? tracks.length);
-      offset += items.length || 50;
-      pages += 1;
-      if (!page?.next || items.length === 0) break;
-    } while (offset < total && pages < 100);
-
-    if (!tracks.length && total > 0) throw new Error('SPOTIFY_PLAYLIST_ITEMS_EMPTY');
-    const playlist = {
-      id:DEFAULT_PLAYLIST_ID,
-      uri:`spotify:playlist:${DEFAULT_PLAYLIST_ID}`,
-      name:meta?.name || 'DJ AND GAMING SONGS',
-      owner:meta?.owner?.display_name || meta?.owner?.id || 'Community Playlist',
-      url:meta?.external_urls?.spotify || DEFAULT_PLAYLIST_URL,
-      image:meta?.images?.[0]?.url || null,
-      snapshotId:meta?.snapshot_id || null,
-      total:tracks.length,
-      fetchedAt:Date.now(),
+    } catch (err) {
+      console.warn('Spotify playlist metadata unavailable; using fallback:', err?.message || err);
+    }
+    if (!tracks.length) tracks = FALLBACK_PLAYLIST.map(t => ({ ...t }));
+    return {
+      id: DEFAULT_PLAYLIST_ID,
+      uri: `spotify:playlist:${DEFAULT_PLAYLIST_ID}`,
+      name: first?.name || 'BEST PHONK/FUNK 2026🔥',
+      owner: first?.owner?.display_name || first?.owner?.id || 'Community Playlist',
+      url: first?.external_urls?.spotify || DEFAULT_PLAYLIST_URL,
+      image: first?.images?.[0]?.url || null,
       tracks
     };
-    persistPlaylist(guildId, playlist);
-    return playlist;
-  }
-
-  async function loadPlaylist(guildId, { force = false } = {}) {
-    const key = playlistCacheKey(guildId);
-    const cached = livePlaylistCache.get(key);
-    if (!force && cached && Date.now() - Number(cached.fetchedAt || 0) < 30_000) return cached;
-    try {
-      const live = await fetchLivePlaylist(guildId);
-      livePlaylistCache.set(key, live);
-      return live;
-    } catch (err) {
-      const disk = playlistFromDisk(guildId);
-      if (disk?.tracks?.length) {
-        console.warn('Spotify live playlist refresh failed; using last-known-good cache:', err?.message || err);
-        livePlaylistCache.set(key, disk);
-        return disk;
-      }
-      throw err;
-    }
-  }
-
-  async function refreshSessionPlaylist(session, force = true) {
-    const old = session.playlist;
-    const fresh = await loadPlaylist(session.guildId, { force });
-    const oldSnapshot = old?.snapshotId || null;
-    const changed = oldSnapshot && fresh.snapshotId ? oldSnapshot !== fresh.snapshotId : (old?.tracks?.length || 0) !== (fresh?.tracks?.length || 0);
-    session.playlist = fresh;
-    if (fresh.tracks.length) session.index = Math.max(0, Math.min(session.index, fresh.tracks.length - 1));
-    return { fresh, changed };
   }
 
   async function getDevices(guildId) {
@@ -520,18 +490,19 @@ function createSpotifyParty({ client, footer, isGuildApproved }) {
     return userApi(guildId, '/me/player');
   }
 
-  async function playPlaylist(guildId, deviceId, position = 0, playlist = null) {
+  async function playPlaylist(guildId, deviceId, position = 0) {
     if (deviceId) await transferPlayback(guildId, deviceId, false).catch(() => {});
     const q = deviceId ? `?device_id=${encodeURIComponent(deviceId)}` : '';
     try {
       await userApi(guildId, `/me/player/play${q}`, { method:'PUT', body: { context_uri:`spotify:playlist:${DEFAULT_PLAYLIST_ID}`, offset:{ position:Math.max(0, position) }, position_ms:0 } });
-      return { mode:'context', track:playlist?.tracks?.[position] || null };
+      return { mode:'context' };
     } catch (err) {
-      const current = playlist || await loadPlaylist(guildId, { force:false }).catch(() => null);
-      const track = current?.tracks?.[Math.max(0, position)] || null;
-      if (!track?.id) throw err;
-      await userApi(guildId, `/me/player/play${q}`, { method:'PUT', body:{ uris:[track.uri || `spotify:track:${track.id}`], position_ms:0 } });
-      return { mode:'single', track };
+      // Spotify 2026 Dev Mode may hide foreign playlist items. Fall back to the known track list.
+      const fallback = FALLBACK_PLAYLIST[Math.max(0, Math.min(FALLBACK_PLAYLIST.length - 1, position))];
+      const resolved = await resolveTrack(fallback);
+      if (!resolved?.id) throw err;
+      await userApi(guildId, `/me/player/play${q}`, { method:'PUT', body:{ uris:[resolved.uri || `spotify:track:${resolved.id}`], position_ms:0 } });
+      return { mode:'single', track:resolved };
     }
   }
 
@@ -545,7 +516,6 @@ function createSpotifyParty({ client, footer, isGuildApproved }) {
     if (err?.status === 429 || raw.includes('429')) return `⏳ Spotify bremst die Anfragen gerade. Warte ${err?.retryAfter || 'ein paar'} Sekunden und versuche es erneut.`;
     if (err?.status === 403 || raw.includes('403')) return '❌ Spotify hat die Aktion abgelehnt. Prüfe: **Premium**, Spotify-App-Zugriff/Development-Mode und ob das verbundene Konto Zugriff auf die App hat.';
     if (err?.status === 404 || raw.includes('404')) return '❌ Spotify findet gerade kein steuerbares Gerät. Öffne Spotify auf PC/Handy, starte dort kurz einen Song und nutze `/spotify devices`.';
-    if (raw.includes('SPOTIFY_PLAYLIST_ITEMS_EMPTY')) return '❌ Die Playlist konnte gerade nicht live gelesen werden. Prüfe, ob das verbundene Spotify-Konto Besitzer oder Mitbearbeiter dieser Playlist ist.';
     if (raw.includes('PREMIUM_REQUIRED')) return '❌ Für die Player-Steuerung wird Spotify Premium benötigt.';
     return `❌ Spotify-Fehler: ${raw.slice(0, 260)}`;
   }
@@ -722,15 +692,10 @@ function createSpotifyParty({ client, footer, isGuildApproved }) {
         rows.push(`${state?.device ? '✅' : '⚠️'} Aktiver Player${state?.device ? `: **${state.device.name}**` : ': keiner'}`);
       } catch (err) { rows.push(`❌ API-Test: ${spotifyErrorText(err).replace(/^❌\s*/, '')}`); }
     }
-    if (rec?.refreshToken) {
-      try {
-        const playlist = await loadPlaylist(interaction.guild.id, { force:true });
-        rows.push(`✅ Live-Playlist: **${playlist.name}** • **${playlist.tracks.length} Titel**${playlist.stale ? ' • ⚠️ Cache' : ''}`);
-        rows.push(`✅ Auto-Sync: alle **${Math.round(PLAYLIST_REFRESH_MS/1000)} Sekunden** bei laufender Party`);
-      } catch (err) {
-        rows.push(`❌ Playlist-Live-Sync: ${spotifyErrorText(err).replace(/^❌\s*/, '')}`);
-      }
-    }
+    try {
+      const meta = SPOTIFY_CLIENT_ID && SPOTIFY_CLIENT_SECRET ? await appGet(`https://api.spotify.com/v1/playlists/${DEFAULT_PLAYLIST_ID}`) : null;
+      rows.push(`${meta?.name ? '✅' : '⚠️'} Playlist-Metadaten${meta?.name ? `: **${meta.name}**` : ': Fallback-Liste wird benutzt'}`);
+    } catch { rows.push('⚠️ Playlist-Metadaten nicht verfügbar — Fallback-Liste ist aktiv'); }
     rows.push('ℹ️ Spotify-Ton läuft auf dem ausgewählten **Spotify Connect Gerät**, nicht als rebroadcastetes Audio im Discord-VC.');
     return interaction.editReply(`🩺 **Spotify Diagnose**\n\n${rows.join('\n')}`);
   }
@@ -746,14 +711,11 @@ function createSpotifyParty({ client, footer, isGuildApproved }) {
     }
     await interaction.deferReply();
     let playlist;
-    try { playlist = await loadPlaylist(interaction.guild.id, { force:true }); } catch (err) {
-      console.warn('Spotify live playlist unavailable at start:', err?.message || err);
-      playlist = { id:DEFAULT_PLAYLIST_ID, uri:`spotify:playlist:${DEFAULT_PLAYLIST_ID}`, name:'DJ AND GAMING SONGS', url:DEFAULT_PLAYLIST_URL, tracks:[] };
-    }
+    try { playlist = await loadPlaylist(); } catch { playlist = { id:DEFAULT_PLAYLIST_ID, uri:`spotify:playlist:${DEFAULT_PLAYLIST_ID}`, name:'BEST PHONK/FUNK 2026🔥', url:DEFAULT_PLAYLIST_URL, tracks:FALLBACK_PLAYLIST.map(t => ({...t})) }; }
     try {
       const device = await chooseDevice(interaction.guild.id);
       if (!device) return interaction.editReply('❌ Kein Spotify-Gerät gefunden. **Öffne Spotify auf PC oder Handy**, starte kurz irgendeinen Song und nutze danach `/spotify start` erneut.');
-      const playResult = await playPlaylist(interaction.guild.id, device.id, 0, playlist);
+      const playResult = await playPlaylist(interaction.guild.id, device.id, 0);
       const old = sessions.get(interaction.guild.id);
       if (old) { try { getVoiceConnection(interaction.guild.id)?.destroy(); } catch {} sessions.delete(interaction.guild.id); }
       let connection;
@@ -797,66 +759,32 @@ function createSpotifyParty({ client, footer, isGuildApproved }) {
       return interaction.reply({ content:'✅ Spotify wurde für diesen Server getrennt.', flags:MessageFlags.Ephemeral });
     }
     if (sub === 'start') return startParty(interaction);
+    if (sub === 'playlist') {
+      const page = interaction.options.getInteger('seite') || 1;
+      const perPage = 15;
+      const startIndex = (page - 1) * perPage;
+      const tracks = FALLBACK_PLAYLIST.slice(startIndex, startIndex + perPage);
+      const lines = tracks.map((t,i) => `${startIndex+i+1}. **${truncate(t.name, 44)}** — ${truncate(t.artists, 35)}`);
+      return interaction.reply({ content:`🎵 **BEST PHONK/FUNK 2026🔥 — Seite ${page}/3**\n${lines.join('\n')}\n\nNutze \`/spotify play nummer:X\`.\n${DEFAULT_PLAYLIST_URL}`, flags:MessageFlags.Ephemeral });
+    }
 
     const rec = authRecord(interaction.guild.id);
     if (!rec?.refreshToken) return interaction.reply({ content:'❌ Spotify ist noch nicht verbunden. Ein Admin muss zuerst `/spotify connect` benutzen.', flags:MessageFlags.Ephemeral });
     const session = sessions.get(interaction.guild.id);
 
-    if (sub === 'playlist') {
-      await interaction.deferReply({ flags:MessageFlags.Ephemeral });
-      try {
-        const playlist = await loadPlaylist(interaction.guild.id, { force:true });
-        const page = interaction.options.getInteger('seite') || 1;
-        const perPage = 15;
-        const totalPages = Math.max(1, Math.ceil(playlist.tracks.length / perPage));
-        if (page > totalPages) return interaction.editReply(`❌ Diese Seite gibt es nicht. Die Playlist hat **${totalPages}** Seite(n).`);
-        const startIndex = (page - 1) * perPage;
-        const tracks = playlist.tracks.slice(startIndex, startIndex + perPage);
-        const lines = tracks.map((t,i) => `${startIndex+i+1}. **${truncate(t.name, 44)}** — ${truncate(t.artists, 35)}`);
-        return interaction.editReply(`🎵 **${playlist.name} — Seite ${page}/${totalPages}**
-${lines.join('\n') || 'Noch keine Titel gefunden.'}
-
-**${playlist.tracks.length} Titel** • live von Spotify synchronisiert
-Nutze \`/spotify play nummer:X\`.
-${playlist.url}`);
-      } catch (err) { return interaction.editReply(spotifyErrorText(err)); }
-    }
-
-    if (sub === 'refresh') {
-      await interaction.deferReply({ flags:MessageFlags.Ephemeral });
-      try {
-        const fresh = await loadPlaylist(interaction.guild.id, { force:true });
-        if (session) {
-          session.playlist = fresh;
-          session.index = Math.max(0, Math.min(session.index, Math.max(0, fresh.tracks.length - 1)));
-          await updatePanel(session, `Playlist aktualisiert • ${fresh.tracks.length} Titel`).catch(() => {});
-        }
-        return interaction.editReply(`🔄 **Playlist aktualisiert:** ${fresh.tracks.length} Titel geladen.
-${fresh.url}`);
-      } catch (err) { return interaction.editReply(spotifyErrorText(err)); }
-    }
-
     if (sub === 'play') {
       const number = interaction.options.getInteger('nummer');
       await interaction.deferReply({ flags:MessageFlags.Ephemeral });
       try {
-        const playlist = await loadPlaylist(interaction.guild.id, { force:true });
-        if (number < 1 || number > playlist.tracks.length) return interaction.editReply(`❌ Track **${number}** gibt es nicht. Die Playlist hat aktuell **${playlist.tracks.length} Titel**.`);
         const device = await chooseDevice(interaction.guild.id, session?.deviceId);
         if (!device) return interaction.editReply('❌ Kein Spotify-Gerät gefunden. Öffne Spotify und nutze `/spotify devices`.');
-        const result = await playPlaylist(interaction.guild.id, device.id, number - 1, playlist);
+        const result = await playPlaylist(interaction.guild.id, device.id, number - 1);
         if (session) {
-          session.playlist = playlist;
-          session.index = number - 1;
-          session.deviceId = device.id;
-          session.deviceName = device.name;
-          session.liveTrack = result.track || playlist.tracks[number - 1] || null;
-          session.playMode = result.mode || 'context';
-          await sleep(600);
-          await updatePanel(session, `Track ${number} gestartet`);
+          session.index = number - 1; session.deviceId = device.id; session.deviceName = device.name; session.liveTrack = result.track || null; session.playMode = result.mode || 'context';
+          await sleep(600); await updatePanel(session, `Track ${number} gestartet`);
         }
-        const track = playlist.tracks[number - 1];
-        return interaction.editReply(`▶️ **${track?.name || `Track ${number}`}** läuft jetzt auf **${device.name}**.`);
+        const fallback = FALLBACK_PLAYLIST[number - 1];
+        return interaction.editReply(`▶️ **${fallback?.name || `Track ${number}`}** läuft jetzt auf **${device.name}**.`);
       } catch (err) { return interaction.editReply(spotifyErrorText(err)); }
     }
 
@@ -879,11 +807,11 @@ ${fresh.url}`);
       if (sub === 'pause') await playerAction(interaction.guild.id, `/me/player/pause${deviceQ}`, 'PUT');
       else if (sub === 'resume') { if (device?.id) await transferPlayback(interaction.guild.id, device.id, false).catch(()=>{}); await playerAction(interaction.guild.id, `/me/player/play${deviceQ}`, 'PUT'); }
       else if (sub === 'next') {
-        if (session?.playMode === 'single') { const len = Math.max(1, session.playlist?.tracks?.length || 0); const idx = (session.index + 1) % len; const r = await playPlaylist(interaction.guild.id, device?.id, idx, session.playlist); session.index = idx; session.playMode = r.mode; session.liveTrack = r.track || null; }
+        if (session?.playMode === 'single') { const idx = (session.index + 1) % FALLBACK_PLAYLIST.length; const r = await playPlaylist(interaction.guild.id, device?.id, idx); session.index = idx; session.playMode = r.mode; session.liveTrack = r.track || null; }
         else await playerAction(interaction.guild.id, `/me/player/next${deviceQ}`, 'POST');
       }
       else if (sub === 'previous') {
-        if (session?.playMode === 'single') { const len = Math.max(1, session.playlist?.tracks?.length || 0); const idx = (session.index - 1 + len) % len; const r = await playPlaylist(interaction.guild.id, device?.id, idx, session.playlist); session.index = idx; session.playMode = r.mode; session.liveTrack = r.track || null; }
+        if (session?.playMode === 'single') { const idx = (session.index - 1 + FALLBACK_PLAYLIST.length) % FALLBACK_PLAYLIST.length; const r = await playPlaylist(interaction.guild.id, device?.id, idx); session.index = idx; session.playMode = r.mode; session.liveTrack = r.track || null; }
         else await playerAction(interaction.guild.id, `/me/player/previous${deviceQ}`, 'POST');
       }
       else if (sub === 'volume') {
@@ -917,12 +845,8 @@ ${fresh.url}`);
     if (!userCanControl(interaction, session)) return interaction.reply({ content:'❌ Geh in den Party-Voice-Channel, um die Wiedergabe zu steuern.', flags:MessageFlags.Ephemeral });
 
     if (interaction.customId === 'spotify_queue') {
-      try { await refreshSessionPlaylist(session, false); } catch {}
-      const tracks = session.playlist?.tracks || [];
-      const lines = tracks.slice(0, 15).map((t,i) => `${i+1}. **${truncate(t.name, 48)}** — ${truncate(t.artists, 35)}`);
-      return interaction.reply({ content:`📜 **${session.playlist?.name || 'Community Playlist'}**
-${lines.join('\n') || 'Keine Titel geladen.'}
-… ${tracks.length} Titel insgesamt.`, flags:MessageFlags.Ephemeral });
+      const lines = FALLBACK_PLAYLIST.slice(0, 15).map((t,i) => `${i+1}. **${truncate(t.name, 48)}** — ${truncate(t.artists, 35)}`);
+      return interaction.reply({ content:`📜 **Community Playlist**\n${lines.join('\n')}\n… ${FALLBACK_PLAYLIST.length} Titel insgesamt.`, flags:MessageFlags.Ephemeral });
     }
     if (interaction.customId === 'spotify_sync') {
       try { await syncSession(session); } catch {}
@@ -932,11 +856,11 @@ ${lines.join('\n') || 'Keine Titel geladen.'}
     await interaction.deferUpdate();
     try {
       if (interaction.customId === 'spotify_prev') {
-        if (session.playMode === 'single') { const len = Math.max(1, session.playlist?.tracks?.length || 0); const idx = (session.index - 1 + len) % len; const r = await playPlaylist(session.guildId, session.deviceId, idx, session.playlist); session.index = idx; session.playMode = r.mode; session.liveTrack = r.track || null; }
+        if (session.playMode === 'single') { const idx = (session.index - 1 + FALLBACK_PLAYLIST.length) % FALLBACK_PLAYLIST.length; const r = await playPlaylist(session.guildId, session.deviceId, idx); session.index = idx; session.playMode = r.mode; session.liveTrack = r.track || null; }
         else await playerAction(session.guildId, '/me/player/previous', 'POST');
       }
       else if (interaction.customId === 'spotify_next') {
-        if (session.playMode === 'single') { const len = Math.max(1, session.playlist?.tracks?.length || 0); const idx = (session.index + 1) % len; const r = await playPlaylist(session.guildId, session.deviceId, idx, session.playlist); session.index = idx; session.playMode = r.mode; session.liveTrack = r.track || null; }
+        if (session.playMode === 'single') { const idx = (session.index + 1) % FALLBACK_PLAYLIST.length; const r = await playPlaylist(session.guildId, session.deviceId, idx); session.index = idx; session.playMode = r.mode; session.liveTrack = r.track || null; }
         else await playerAction(session.guildId, '/me/player/next', 'POST');
       }
       else if (interaction.customId === 'spotify_toggle') {
@@ -959,19 +883,6 @@ ${lines.join('\n') || 'Keine Titel geladen.'}
       await updatePanel(session, 'Spotify-Steuerung fehlgeschlagen').catch(() => {});
     }
   }
-
-
-  const playlistRefreshTimer = setInterval(async () => {
-    for (const session of sessions.values()) {
-      try {
-        const { fresh, changed } = await refreshSessionPlaylist(session, true);
-        if (changed) await updatePanel(session, `🔄 Playlist automatisch aktualisiert • ${fresh.tracks.length} Titel`).catch(() => {});
-      } catch (err) {
-        console.warn('Spotify automatic playlist refresh failed:', err?.message || err);
-      }
-    }
-  }, PLAYLIST_REFRESH_MS);
-  playlistRefreshTimer.unref?.();
 
   async function handleInteraction(interaction) {
     if (!interaction.guild || !isGuildApproved?.(interaction.guild.id)) return false;
@@ -999,7 +910,6 @@ ${lines.join('\n') || 'Keine Titel geladen.'}
   function onShutdown() {
     for (const guildId of sessions.keys()) { try { getVoiceConnection(guildId)?.destroy(); } catch {} }
     sessions.clear();
-    try { clearInterval(playlistRefreshTimer); } catch {}
     try { oauthServer?.close(); } catch {}
   }
 

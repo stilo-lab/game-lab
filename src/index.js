@@ -6,7 +6,18 @@ const { buildCommunityCommands, createCommunity } = require("./community");
 const { buildStaffCommands, createStaffSystem } = require("./staff");
 const { buildElementSeasCommands, createElementSeas } = require("./element_seas");
 const { buildSpotifyPartyCommands, createSpotifyParty } = require("./spotify_party");
-const { buildYouTubePingCommands, createYouTubePing } = require("./youtube_ping");
+// Optional module: a missing/broken YouTube add-on must not stop the existing bot.
+let youtubeUploadsModule = null;
+let youtubeUploadCommands = [];
+try {
+  youtubeUploadsModule = require("./youtube_uploads");
+  youtubeUploadCommands = youtubeUploadsModule.buildYouTubeUploadCommands();
+  for (const command of youtubeUploadCommands) command.toJSON();
+} catch (err) {
+  youtubeUploadsModule = null;
+  youtubeUploadCommands = [];
+  console.warn("YouTube uploads module unavailable:", err?.message || err);
+}
 const { GAME_CHOICES, gameName, gameListText, randomGamePrompt } = require("./games");
 const {
   Client,
@@ -2902,7 +2913,7 @@ const commands = [
   ...buildStaffCommands(),
   ...buildElementSeasCommands(),
   ...buildSpotifyPartyCommands(),
-  ...buildYouTubePingCommands()
+  ...youtubeUploadCommands
 ].map(c => c.toJSON());
 
 async function registerCommands() {
@@ -3004,13 +3015,17 @@ const spotifyParty = createSpotifyParty({
   isGuildApproved
 });
 
-const youtubePing = createYouTubePing({
-  client,
-  db,
-  saveDB,
-  footer,
-  isGuildApproved
-});
+const youtubeUploads = (() => {
+  try {
+    return youtubeUploadsModule?.createYouTubeUploads({
+      client, OWNER_ID, isGuildApproved, isMaintenance: () => db.maintenance,
+      legacySubscriptions: db.youtubePing?.guilds
+    }) || null;
+  } catch (err) {
+    console.warn("YouTube uploads initialization failed:", err?.message || err);
+    return null;
+  }
+})();
 
 async function snapshotInvites(guild) {
   try {
@@ -3025,6 +3040,7 @@ async function snapshotInvites(guild) {
 client.once("clientReady", async () => {
   console.log(`${BOT_NAME} ist online als ${client.user.tag}`);
   await bootstrapGuildApprovals().catch(err => console.error("Guild approval bootstrap failed:", err?.message || err));
+  try { youtubeUploads?.start(); } catch (err) { console.warn("YouTube uploads startup failed:", err?.message || err); }
   try {
     await registerCommands();
   } catch (err) {
@@ -3037,7 +3053,6 @@ client.once("clientReady", async () => {
     const externalScan = await scanExistingExternalTickets(guild).catch(() => null);
     if (externalScan?.detected) console.log(`External Ticket AI: ${externalScan.detected} Ticket-Kanal/Kanäle auf ${guild.name} erkannt.`);
   }
-  youtubePing.start();
   await processGiveaways().catch(err => console.error("Giveaway startup check failed:", err?.message || err));
   await checkTicketInactivity().catch(err => console.error("Ticket inactivity startup check failed:", err?.message || err));
   await community.onReady().catch(err => console.error("Community startup failed:", err?.message || err));
@@ -4697,8 +4712,8 @@ client.on("interactionCreate", async interaction => {
       });
     }
 
-    if (await youtubePing.handleInteraction(interaction)) return;
     if (await spotifyParty.handleInteraction(interaction)) return;
+    if (youtubeUploads && await youtubeUploads.handleInteraction(interaction)) return;
     if (await elementSeas.handleInteraction(interaction)) return;
     if (await staff.handleInteraction(interaction)) return;
     if (await community.handleInteraction(interaction)) return;
