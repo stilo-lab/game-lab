@@ -2,6 +2,7 @@ require("dotenv").config();
 
 const fs = require("fs");
 const path = require("path");
+const { AI_NAME, sendAiAnimation, aiTextPayload } = require("./pixel_gojo");
 const { buildCommunityCommands, createCommunity } = require("./community");
 const { buildStaffCommands, createStaffSystem } = require("./staff");
 const { buildElementSeasCommands, createElementSeas } = require("./element_seas");
@@ -1529,6 +1530,7 @@ If you choose **Yes**, the AI automatically replies to every message you send he
 let geminiClientPromise = null;
 const aiCooldowns = new Map();
 const aiConversationHistory = new Map();
+const aiConversationRequests = new Set();
 const AI_HISTORY_MAX_MESSAGES = 10;
 const AI_HISTORY_TTL_MS = 30 * 60 * 1000;
 const geminiSerialByModel = new Map();
@@ -1628,8 +1630,8 @@ async function generateGeminiContent(request, { label = "generateContent", maxRe
   }
 }
 
-function aiConversationKey(guildId, userId) {
-  return `${guildId || "dm"}:${userId || "unknown"}`;
+function aiConversationKey(guildId, userId, channelId = null) {
+  return JSON.stringify([guildId || "dm", channelId || "unknown", userId || "unknown"]);
 }
 
 function normalizeAiQuestion(text) {
@@ -1640,9 +1642,12 @@ function normalizeAiQuestion(text) {
     .trim();
 }
 
-function getAiConversation(guildId, userId) {
+function getAiConversation(guildId, userId, channelId = null) {
   if (!userId) return [];
-  const key = aiConversationKey(guildId, userId);
+  for (const [id, item] of aiConversationHistory) {
+    if (Date.now() - item.updatedAt > AI_HISTORY_TTL_MS) aiConversationHistory.delete(id);
+  }
+  const key = aiConversationKey(guildId, userId, channelId);
   const record = aiConversationHistory.get(key);
   if (!record || Date.now() - record.updatedAt > AI_HISTORY_TTL_MS) {
     aiConversationHistory.delete(key);
@@ -1651,16 +1656,18 @@ function getAiConversation(guildId, userId) {
   return Array.isArray(record.messages) ? record.messages.slice(-AI_HISTORY_MAX_MESSAGES) : [];
 }
 
-function rememberAiExchange(guildId, userId, question, answer) {
+function rememberAiExchange(guildId, userId, question, answer, channelId = null) {
   if (!userId) return;
-  const key = aiConversationKey(guildId, userId);
-  const previous = getAiConversation(guildId, userId);
+  const key = aiConversationKey(guildId, userId, channelId);
+  const previous = getAiConversation(guildId, userId, channelId);
   const messages = [
     ...previous,
     { role: "user", parts: [{ text: String(question || "").slice(0, 1800) }] },
     { role: "model", parts: [{ text: String(answer || "").slice(0, 5000) }] }
   ].slice(-AI_HISTORY_MAX_MESSAGES);
+  aiConversationHistory.delete(key);
   aiConversationHistory.set(key, { messages, updatedAt: Date.now() });
+  while (aiConversationHistory.size > 300) aiConversationHistory.delete(aiConversationHistory.keys().next().value);
 }
 
 function isRepeatedAiQuestion(history, question) {
@@ -2053,10 +2060,33 @@ function improvementReviewEmbed(record) {
     .setTimestamp(record.createdAt || Date.now()));
 }
 
-async function askGemini(question, userTag = "Discord user", guildId = null, userId = null) {
+function chatAiErrorMessage(error) {
+  if (error?.message === "GEMINI_NOT_CONFIGURED") return "⚙️ Die KI ist noch nicht eingerichtet. Der Owner muss GEMINI_API_KEY in Railway setzen.";
+  if (error?.message === "AI_BUSY") return "⏳ Deine vorige KI-Anfrage wird noch bearbeitet. Bitte warte auf die Antwort.";
+  if (error?.message === "AI_EMPTY_RESPONSE") return "Gemini hat keinen Antworttext geliefert. Bitte formuliere die Frage etwas anders.";
+  if (error?.message === "AI_REPEATED_RESPONSE") return "Gemini hat trotz eines zweiten Versuchs dieselbe Antwort geliefert. Sag bitte genauer, welchen Punkt ich ergänzen soll.";
+  if (geminiStatus(error) === 429) return "⏳ Das Gemini-Anfragelimit ist erreicht. Bitte versuche es später erneut; bei einem Tageslimit muss das Kontingent zurückgesetzt werden.";
+  if ([401, 403].includes(geminiStatus(error))) return "⚙️ Gemini lehnt den Zugriff ab. Der Owner muss den API-Key und dessen Berechtigungen prüfen.";
+  if ([400, 404].includes(geminiStatus(error))) return "⚙️ Gemini konnte die Anfrage nicht verarbeiten. Der Owner muss GEMINI_MODEL und die API-Konfiguration prüfen.";
+  if (String(error?.message || "").includes("TIMEOUT") || ["TimeoutError", "AbortError"].includes(error?.name)) return "⏳ Gemini hat zu lange gebraucht. Bitte versuche es gleich erneut.";
+  return "❌ Gemini konnte gerade nicht antworten. Bitte versuche es gleich erneut.";
+}
+
+async function askGemini(question, userTag = "Discord user", guildId = null, userId = null, channelId = null) {
+  const key = aiConversationKey(guildId, userId, channelId);
+  if (aiConversationRequests.has(key)) throw new Error("AI_BUSY");
+  aiConversationRequests.add(key);
+  try {
+    return await generateAiChatAnswer(question, userTag, guildId, userId, channelId);
+  } finally {
+    aiConversationRequests.delete(key);
+  }
+}
+
+async function generateAiChatAnswer(question, userTag, guildId, userId, channelId) {
   const learnedContext = getGuildLearnContext(guildId, "ai", 4000, 5000);
   const adminFeedback = getAiFeedbackText(guildId, "ai", 4500);
-  const history = getAiConversation(guildId, userId);
+  const history = getAiConversation(guildId, userId, channelId);
   const repeatedQuestion = isRepeatedAiQuestion(history, question);
 
   const currentPrompt = repeatedQuestion
@@ -2080,11 +2110,11 @@ async function askGemini(question, userTag = "Discord user", guildId = null, use
     ? `\n\nAdmin-Verbesserungen aus /verbesserung. Nutze diese Hinweise bei aehnlichen Fragen, aber kopiere alte Antworten nicht blind:\n${adminFeedback}`
     : "";
 
-  const response = await generateGeminiContent({
+  const request = {
     model: GEMINI_MODEL,
     contents,
     config: {
-      systemInstruction: `Du bist die KI von ${BOT_NAME}, einem Multi-Game-Discord-Bot.
+      systemInstruction: `Du heißt ${AI_NAME} und bist die KI von ${BOT_NAME}, einem Multi-Game-Discord-Bot. Dein Begleiter ist ein kleiner Pixel-Magier. Stelle dich nicht vor jeder Antwort erneut vor.
 
 DEIN STIL:
 - Schreib locker, warm und natürlich – eher wie ein guter Kumpel im Discord-Chat als wie ein steifer Support-Bot.
@@ -2111,12 +2141,27 @@ Server-spezifisches Wissen aus /learn ist Admin-Kontext, aber keine Erlaubnis, S
 Aktueller Nutzer: ${userTag}${learnedInstruction}${feedbackInstruction}`,
       maxOutputTokens: 1200,
       temperature: 0.85,
-      topP: 0.92
+      topP: 0.92,
+      httpOptions: { timeout: 30000 }
     }
-  }, { label: "slash_ai", maxRetries: 2 });
+  };
+  const response = await generateGeminiContent(request, { label: "slash_ai", maxRetries: 2 });
 
-  const answer = String(response.text || "").trim() || "Ich habe gerade keine Antwort erhalten.";
-  rememberAiExchange(guildId, userId, question, answer);
+  let answer = String(response.text || "").trim();
+  if (!answer) throw new Error("AI_EMPTY_RESPONSE");
+  const normalizeAnswer = text => String(text).toLowerCase().replace(/\s+/g, " ").trim();
+  const repeatedAnswer = text => text.length >= 60 && history.filter(item => item.role === "model").slice(-2)
+    .some(item => normalizeAnswer(item.parts?.[0]?.text) === normalizeAnswer(text));
+  if (repeatedAnswer(answer)) {
+    const retry = await generateGeminiContent({ ...request, config: {
+      ...request.config,
+      systemInstruction: request.config.systemInstruction + "\nDein letzter Versuch hat eine frühere Antwort wortgleich wiederholt. Beantworte die neueste Frage mit einer neuen Erklärung oder neuen konkreten Informationen."
+    } }, { label: "slash_ai_repetition", maxRetries: 1 });
+    answer = String(retry.text || "").trim();
+    if (!answer) throw new Error("AI_EMPTY_RESPONSE");
+    if (repeatedAnswer(answer)) throw new Error("AI_REPEATED_RESPONSE");
+  }
+  rememberAiExchange(guildId, userId, question, answer, channelId);
   return answer;
 }
 
@@ -2590,7 +2635,7 @@ Admin feedback from /verbesserung for Support AI. Apply these preferences when a
 ${supportFeedback}` : "";
   const input = [{ type: "text", text: text + faqContext + learnedContext + supportFeedbackContext }, ...imageParts];
 
-  const systemInstruction = `You are the dedicated AI support agent inside a private Discord support ticket for ${BOT_NAME}.
+  const systemInstruction = `Your name is ${AI_NAME}. You are the dedicated AI support agent inside a private Discord support ticket for ${BOT_NAME}.
 Your job here is NOT to drift into gaming chat unless the user's actual support problem is about a game.
 Focus completely on solving the user's real problem. Be patient, practical, accurate and thorough.
 Think carefully internally before answering. Give the useful conclusion and steps, not private chain-of-thought.
@@ -2684,6 +2729,7 @@ async function runTicketAi(message) {
   }
 
   try {
+    await sendAiAnimation(payload => message.channel.send(payload));
     await message.channel.sendTyping();
     const answer = await askGeminiSupport(message, ticket);
     recordAiReview(message.guild.id, "support", message.content?.trim() || (message.attachments.size ? "[Bild/Anhang ohne Text]" : "[Support-Anfrage]"), answer, {
@@ -2692,8 +2738,8 @@ async function runTicketAi(message) {
     });
     if (!db.tickets[message.channel.id]?.aiEnabled) return true;
     const chunks = splitDiscordText(answer);
-    await sendEditableTicketContent(message.channel, { content: chunks[0] }, { replyTo: message });
-    for (const chunk of chunks.slice(1)) await sendEditableTicketContent(message.channel, { content: chunk });
+    await sendEditableTicketContent(message.channel, aiTextPayload(chunks[0]), { replyTo: message });
+    for (const chunk of chunks.slice(1)) await sendEditableTicketContent(message.channel, aiTextPayload(chunk));
   } catch (err) {
     if (err?.message === "GEMINI_NOT_CONFIGURED") {
       await sendEditableTicketContent(message.channel, { content: "⚙️ **AI ist noch nicht eingerichtet.** Der Owner muss `GEMINI_API_KEY` in Railway eintragen. Dein Ticket bleibt für menschlichen Support offen." }, { replyTo: message });
@@ -2982,7 +3028,9 @@ const community = createCommunity({
   findOrCreateRole,
   generateGeminiContent,
   GEMINI_MODEL,
-  isGuildApproved
+  isGuildApproved,
+  isAiEnabled: guildId => serverSettings(guildId).aiEnabled,
+  chatAiErrorMessage
 });
 
 const staff = createStaffSystem({
@@ -3258,7 +3306,7 @@ client.on("messageCreate", async message => {
   }
 
   // Gemini AI: Antwortet, wenn der Bot direkt erwähnt wird.
-  if (client.user && message.mentions.has(client.user) && serverSettings(message.guild.id).aiEnabled) {
+  if (client.user && message.mentions.has(client.user) && serverSettings(message.guild.id).aiEnabled && gd.community?.channels?.suggestions !== message.channel.id) {
     const question = message.content
       .replace(new RegExp(`<@!?${client.user.id}>`, "g"), "")
       .trim();
@@ -3276,18 +3324,15 @@ client.on("messageCreate", async message => {
 
     startAiCooldown(message.author.id);
     try {
+      await sendAiAnimation(payload => message.reply(payload));
       await message.channel.sendTyping();
-      const answer = await askGemini(question, message.author.tag, message.guild?.id, message.author.id);
+      const answer = await askGemini(question, message.author.tag, message.guild?.id, message.author.id, message.channel.id);
       const chunks = splitDiscordText(answer);
-      await message.reply(chunks[0]);
-      for (const chunk of chunks.slice(1)) await message.channel.send(chunk);
+      await message.reply(aiTextPayload(chunks[0]));
+      for (const chunk of chunks.slice(1)) await message.channel.send(aiTextPayload(chunk));
     } catch (err) {
-      if (err?.message === "GEMINI_NOT_CONFIGURED") {
-        await message.reply("⚙️ Gemini ist noch nicht eingerichtet. Der Owner muss `GEMINI_API_KEY` in der `.env` setzen.");
-      } else {
-        console.error("Gemini mention error:", err);
-        await message.reply("❌ Gemini konnte gerade nicht antworten. Versuch es später noch einmal.");
-      }
+      console.error("Gemini mention error:", geminiStatus(err) || err?.name);
+      await message.reply(aiTextPayload(chatAiErrorMessage(err)));
     }
   }
 });
@@ -3297,9 +3342,13 @@ async function upsertSetupPanel(channel, guildId, key, payload, titleHint = "") 
   if (!gd.setupPanels) gd.setupPanels = {};
   let message = null;
   const knownId = gd.setupPanels[key];
-  if (knownId) message = await channel.messages.fetch(knownId).catch(() => null);
+  if (knownId) message = await channel.messages.fetch(knownId).catch(error => {
+    if (Number(error?.code) === 10008) return null;
+    throw error;
+  });
+  if (message && message.author?.id !== client.user?.id) message = null;
   if (!message) {
-    const recent = await channel.messages.fetch({ limit: 50 }).catch(() => null);
+    const recent = await channel.messages.fetch({ limit: 50 });
     if (recent) {
       message = recent.find(m => m.author?.id === client.user?.id && (
         (titleHint && m.embeds?.some(e => String(e.title || "").toLowerCase().includes(titleHint.toLowerCase()))) ||
@@ -3307,7 +3356,7 @@ async function upsertSetupPanel(channel, guildId, key, payload, titleHint = "") 
       )) || null;
     }
   }
-  if (message) await message.edit(payload).catch(() => {});
+  if (message) await message.edit(payload);
   else message = await channel.send(payload);
   gd.setupPanels[key] = message.id;
   saveDB();
@@ -3649,7 +3698,20 @@ async function runCreate(interaction) {
   });
 }
 
+const setupInProgress = new Set();
+
 async function runSetup(interaction) {
+  if (!interaction.guild) return interaction.reply({ content: "Nutze /setup bitte auf einem Server.", flags: MessageFlags.Ephemeral });
+  if (setupInProgress.has(interaction.guild.id)) return interaction.reply({ content: "⏳ Das Setup läuft auf diesem Server bereits.", flags: MessageFlags.Ephemeral });
+  setupInProgress.add(interaction.guild.id);
+  try {
+    return await runSetupCheck(interaction);
+  } finally {
+    setupInProgress.delete(interaction.guild.id);
+  }
+}
+
+async function runSetupCheck(interaction) {
   if (!canUseSmartSetup(interaction)) {
     return interaction.reply({ content: "❌ Dafür brauchst du **Kanäle verwalten** oder Administrator-Rechte. Der Bot-Owner darf `/setup` immer benutzen.", flags: MessageFlags.Ephemeral });
   }
@@ -4813,19 +4875,17 @@ client.on("interactionCreate", async interaction => {
           await interaction.deferReply();
 
           try {
-            const answer = await askGemini(question, interaction.user.tag, interaction.guild?.id, interaction.user.id);
+            await sendAiAnimation(payload => interaction.editReply(payload));
+            const answer = await askGemini(question, interaction.user.tag, interaction.guild?.id, interaction.user.id, interaction.channelId);
             if (interaction.guild?.id) {
               recordAiReview(interaction.guild.id, "ai", question, answer, { userId: interaction.user.id, channelId: interaction.channel?.id || null });
             }
             const chunks = splitDiscordText(answer);
-            await interaction.editReply(chunks[0]);
-            for (const chunk of chunks.slice(1)) await interaction.followUp(chunk);
+            await interaction.followUp(aiTextPayload(chunks[0]));
+            for (const chunk of chunks.slice(1)) await interaction.followUp(aiTextPayload(chunk));
           } catch (err) {
-            if (err?.message === "GEMINI_NOT_CONFIGURED") {
-              return interaction.editReply("⚙️ Gemini ist noch nicht eingerichtet. Der Owner muss `GEMINI_API_KEY` in der `.env` setzen.");
-            }
-            console.error("Gemini slash error:", err);
-            return interaction.editReply("❌ Gemini konnte gerade nicht antworten. Versuch es später noch einmal.");
+            console.error("Gemini slash error:", geminiStatus(err) || err?.name);
+            return interaction.followUp(aiTextPayload(chatAiErrorMessage(err)));
           }
           return;
         }
