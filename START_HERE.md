@@ -1,38 +1,77 @@
-# Sammelupdate v1.6.8 bis v1.7.2 – hier anfangen
+# YouTube-Upload-System v1.7.3 – Installation
 
-Alle Updates aus dem Chat „rekordbox fix (bot)“, früher „Multi game bot erstellt“, ab einschließlich des Minigame-Fixes v1.6.8 in einem Paket.
+Dieses Update gehört zu deinem vorhandenen Stilo Multi-Game Bot / „rekordbox fix (bot)“. Es baut auf dem aktuellen Paket v1.7.2 auf und enthält alle benötigten Programmdateien. Deinen bisherigen Bot und seine Daten behalten.
 
-Dieses Update ist für deinen bereits vorhandenen Stilo Multi-Game Community Bot ab v1.6.7. Es ist kein separates neues Bot-Projekt. Falls der Minigame-Fix schon installiert ist, kannst du das Paket trotzdem verwenden.
+## 1. Update hochladen
 
-## In dein bestehendes GitHub-Repository hochladen
+1. Diese ZIP auf deinem Mac entpacken.
+2. Dein bestehendes Bot-Repository auf GitHub öffnen.
+3. In die oberste Ebene gehen, in der `package.json` und `src` liegen.
+4. „Add file“ → „Upload files“ öffnen.
+5. Die entpackten Ordner `src` und `tests` sowie `package.json`, `START_HERE.md` und `UPLOAD_SYSTEM.md` hineinziehen. Die ZIP selbst nicht hochladen. Unter `src` müssen die JavaScript-Dateien liegen.
+6. „Commit changes“ anklicken und Railway den neuen Stand deployen lassen.
+7. Sobald der Bot online ist, als Bot-Owner einmal `/commandsync` ausführen.
 
-1. ZIP auf deinem Mac entpacken.
-2. Dein bestehendes Bot-Repository öffnen. In dessen oberster Ebene müssen `package.json` und der Ordner `src` liegen.
-3. „Add file“ → „Upload files“ öffnen.
-4. Den entpackten Ordner `src`, `package.json`, `START_HERE.md` und `README_UPDATE.md` hineinziehen. Lade die Dateien in derselben Ordnerstruktur hoch; lade nicht die ZIP selbst hoch. Kontrolliere vor dem Speichern, dass die drei JavaScript-Dateien unter `src/` liegen.
-5. „Commit changes“ anklicken. Gleichnamige Dateien werden dadurch aktualisiert. Die übrigen Dateien in `src` behalten.
-6. Railway neu deployen lassen bzw. den neuen Stand deployen.
-7. Sobald der Bot online ist, in Discord `/commandsync` ausführen.
-8. Mit `/sea` das Minigame öffnen; Spotify mit `/spotify diagnose` prüfen.
+Deine Railway-Variablen, echten Tokens und die Dateien in `data` bleiben bestehen. Die ZIP enthält keine leere Datenbank und keine Anmeldedaten. Falls schon eine `src/youtube_ping.js` existiert, kann sie liegen bleiben: Das neue Hauptprogramm startet dieses alte Modul nicht mehr.
 
-Die mitgelieferte `.env.example` ist nur eine Vorlage. Deine echten Tokens und API-Keys bleiben in den Railway-Variablen bzw. in deiner lokalen `.env`.
+## 2. YouTube-Kanal einrichten
 
-## Bestehende Daten erhalten
+1. In Discord `/uploads` eingeben.
+2. **YouTube-Kanal hinzufügen** anklicken.
+3. Den YouTube-Kanal-Link einfügen, zum Beispiel `https://www.youtube.com/@DeinKanal`.
+4. Im Auswahlmenü den Discord-Textkanal wählen.
+5. Fertig! Über **Testmeldung senden** kannst du eine Beispielmeldung mit dem neuesten Upload senden lassen.
 
-Das Paket enthält keine `data/db.json` und keine Spotify-Anmeldedaten. Deinen bestehenden `data`-Ordner behalten. Auf Railway muss `/app/data` dauerhaft über ein Volume gespeichert sein, damit Level, Coins, Kämpfe und Anmeldungen einen Redeploy überstehen.
+Oder direkt mit einem Befehl:
 
-## Deine Spotify-Playlist
+`/uploads link:https://www.youtube.com/@DeinKanal kanal:#youtube-uploads`
 
-Im Code dieses Updates ist diese Playlist fest als Standard gesetzt:
-https://open.spotify.com/playlist/0j5WfIigrPdHMGu9TKZ860
+Auch die bisherigen Befehle bleiben verfügbar:
 
-- Beim Starten, Anzeigen oder Auswählen eines Titels wird die Liste neu geladen.
-- Während einer laufenden Party wird sie standardmäßig alle 60 Sekunden aktualisiert.
-- `/spotify refresh` lädt sie sofort neu.
-- Neue und entfernte Songs werden übernommen, sofern Spotify die aktuelle Liste erfolgreich liefert. Bei einem Ladefehler nutzt der Bot die zuletzt gespeicherte Liste.
+`/youtube add link:… kanal:…`
+`/youtube list`
+`/youtube check`
+`/youtube test id:…`
+`/youtube remove id:…`
 
-Wenn Spotify bereits eingerichtet ist, bleiben deine Zugangsdaten bestehen. Falls noch keine Verbindung besteht, zuerst `/spotify connect` benutzen. Bei Problemen helfen `/spotify diagnose` und `/spotify devices`; mit `/spotify device nummer:…` wählst du ein Gerät aus.
+Die Abo-ID steht in der Übersicht. Bereits vorhandene IDs wie `YT-1` bleiben gültig.
 
-Das vorhandene Spotify-Modul steuert ein verbundenes Spotify-Gerät. Es überträgt die Musik nicht als Audio in den Discord-Voice-Channel.
+## 3. Benachrichtigungen
 
-Alle enthaltenen Änderungen stehen in `README_UPDATE.md`.
+- Der Bot prüft standardmäßig alle **2 Minuten** auf neue Einträge.
+- Neue Videos und Shorts werden gemeldet, sobald sie im öffentlichen YouTube-Kanal-Feed erscheinen.
+- Die Meldung enthält Titel, Kanalname, Vorschaubild, Link und einen **Video ansehen**-Button.
+- Beim Einrichten werden bereits vorhandene Videos nicht nachträglich gepostet.
+- Für Rollen-Pings kannst du beim Befehl die Option `ping` verwenden oder im Abo auf **Ping-Rolle ändern** klicken.
+- Ohne ausgewählte Rolle gibt es keinen Rollen-Ping. Testmeldungen pingen keine Rolle.
+- Im Menü kannst du Abos pausieren, fortsetzen, den Discord-Kanal ändern und Abos entfernen.
+
+## Rechte und Speicherung
+
+Einrichten dürfen Bot-/Server-Owner und Mitglieder mit **Server verwalten** oder **Kanäle verwalten**.
+
+Der Bot braucht im Zielkanal:
+- Kanal ansehen
+- Nachrichten senden
+- Links einbetten
+- Nachrichtenverlauf anzeigen
+
+Eine ausgewählte Ping-Rolle muss erwähnbar sein oder der Bot braucht dafür das Recht **@everyone, @here und alle Rollen erwähnen**. Das System selbst erlaubt keinen @everyone-Ping.
+
+Ein YouTube-API-Key und eine zusätzliche Callback-Adresse sind für dieses System nicht erforderlich.
+
+Die Abos und wartenden Meldungen speichert der Bot in `data/youtube_uploads.json`. Bestehende YouTube-Abos aus dem vorherigen System werden einmalig übernommen; `data/db.json` wird dabei nicht verändert. Auf Railway muss dein vorhandenes Volume weiterhin unter `/app/data` eingebunden sein, damit die Daten nach einem Redeploy erhalten bleiben.
+
+Optional: `YOUTUBE_UPLOAD_POLL_SECONDS=120` in Railway. Erlaubter Bereich: 60–1800 Sekunden. Die ältere Variable `YOUTUBE_POLL_SECONDS` wird ebenfalls unterstützt.
+
+## Wenn etwas nicht klappt
+
+- **Command fehlt:** Nach dem Deployment `/commandsync` als Bot-Owner ausführen.
+- **Kanal-Link nicht erkannt:** Den direkten YouTube-Kanal-Link `https://www.youtube.com/channel/UC…` verwenden. Er benötigt keine Auflösung der @Handle-Seite. Keine Video- oder Playlist-Links verwenden.
+- **Keine Meldung:** `/uploads` öffnen und das Abo auswählen; dort stehen der letzte Prüftermin, wartende Meldungen und Fehler. Bot-Rechte und Serverfreigabe prüfen.
+- **YouTube liefert 404 oder reagiert nicht:** Später erneut prüfen. Vorhandene Abos bleiben gespeichert. Fehlgeschlagene Zustellungen bleiben in der Warteschlange.
+- **Wartungsmodus:** Während der Wartung sendet das neue Upload-System keine Meldungen.
+
+YouTube kann den Feed verzögert aktualisieren. Er enthält nur die jüngsten öffentlichen Uploads; bei langen Ausfällen können ältere, schon aus dem Feed verschwundene Videos nicht nachträglich ermittelt werden. Es gibt deshalb keine Garantie für sekundengenaue oder lückenlose Meldungen während längerer Offline-Zeiten.
+
+Details zur Prüfung stehen in `UPLOAD_SYSTEM.md`.
