@@ -1,0 +1,2230 @@
+[
+  {
+    "options": [],
+    "name": "setup",
+    "description": "Prüft vorhandene Kanäle, richtet gefundene ein und zeigt fehlende an.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "create",
+    "description": "Wähle fehlende Bot-Kanäle aus und erstelle nur diese.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "settings",
+    "description": "Öffnet das Server-Control-Panel für Bot-Funktionen.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 3,
+        "choices": [
+          {
+            "name": "Automatisch",
+            "value": "auto"
+          },
+          {
+            "name": "Deutsch",
+            "value": "German"
+          },
+          {
+            "name": "English",
+            "value": "English"
+          },
+          {
+            "name": "Français",
+            "value": "French"
+          },
+          {
+            "name": "Español",
+            "value": "Spanish"
+          },
+          {
+            "name": "Italiano",
+            "value": "Italian"
+          },
+          {
+            "name": "Português",
+            "value": "Portuguese"
+          },
+          {
+            "name": "Türkçe",
+            "value": "Turkish"
+          },
+          {
+            "name": "Polski",
+            "value": "Polish"
+          },
+          {
+            "name": "Nederlands",
+            "value": "Dutch"
+          }
+        ],
+        "name": "sprache",
+        "description": "Deine Sprache oder Automatisch",
+        "required": true
+      }
+    ],
+    "name": "language",
+    "description": "Legt deine persönliche Übersetzungssprache fest.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 1,
+        "name": "set",
+        "description": "Ordnet eine Funktion fest einem Kanal zu.",
+        "options": [
+          {
+            "type": 3,
+            "choices": [
+              {
+                "name": "announcements",
+                "value": "announcements"
+              },
+              {
+                "name": "invite-log",
+                "value": "invite-log"
+              },
+              {
+                "name": "counting",
+                "value": "counting"
+              },
+              {
+                "name": "teamsearch",
+                "value": "teamsearch"
+              },
+              {
+                "name": "support",
+                "value": "support"
+              },
+              {
+                "name": "support-logs",
+                "value": "support-logs"
+              },
+              {
+                "name": "ticket-transcripts",
+                "value": "ticket-transcripts"
+              },
+              {
+                "name": "welcome",
+                "value": "welcome"
+              },
+              {
+                "name": "daily-quests",
+                "value": "daily-quests"
+              },
+              {
+                "name": "coin-shop",
+                "value": "coin-shop"
+              },
+              {
+                "name": "choose-roles",
+                "value": "choose-roles"
+              },
+              {
+                "name": "suggestions",
+                "value": "suggestions"
+              },
+              {
+                "name": "best-moments",
+                "value": "best-moments"
+              },
+              {
+                "name": "clip-of-the-week",
+                "value": "clip-of-the-week"
+              },
+              {
+                "name": "birthdays",
+                "value": "birthdays"
+              },
+              {
+                "name": "community-fragen",
+                "value": "community-fragen"
+              },
+              {
+                "name": "fortnite-news",
+                "value": "fortnite-news"
+              },
+              {
+                "name": "item-shop",
+                "value": "item-shop"
+              },
+              {
+                "name": "events",
+                "value": "events"
+              },
+              {
+                "name": "squad-hub",
+                "value": "squad-hub"
+              },
+              {
+                "name": "staff-audit",
+                "value": "staff-audit"
+              },
+              {
+                "name": "ai-staff-alerts",
+                "value": "ai-staff-alerts"
+              },
+              {
+                "name": "mod-cases",
+                "value": "mod-cases"
+              },
+              {
+                "name": "staff-briefing",
+                "value": "staff-briefing"
+              },
+              {
+                "name": "staff-tasks",
+                "value": "staff-tasks"
+              }
+            ],
+            "name": "funktion",
+            "description": "Bot-Funktion",
+            "required": true
+          },
+          {
+            "name": "kanal",
+            "description": "Kanal",
+            "required": true,
+            "type": 7
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "clear",
+        "description": "Entfernt eine manuelle Zuordnung.",
+        "options": [
+          {
+            "type": 3,
+            "choices": [
+              {
+                "name": "announcements",
+                "value": "announcements"
+              },
+              {
+                "name": "invite-log",
+                "value": "invite-log"
+              },
+              {
+                "name": "counting",
+                "value": "counting"
+              },
+              {
+                "name": "teamsearch",
+                "value": "teamsearch"
+              },
+              {
+                "name": "support",
+                "value": "support"
+              },
+              {
+                "name": "support-logs",
+                "value": "support-logs"
+              },
+              {
+                "name": "ticket-transcripts",
+                "value": "ticket-transcripts"
+              },
+              {
+                "name": "welcome",
+                "value": "welcome"
+              },
+              {
+                "name": "daily-quests",
+                "value": "daily-quests"
+              },
+              {
+                "name": "coin-shop",
+                "value": "coin-shop"
+              },
+              {
+                "name": "choose-roles",
+                "value": "choose-roles"
+              },
+              {
+                "name": "suggestions",
+                "value": "suggestions"
+              },
+              {
+                "name": "best-moments",
+                "value": "best-moments"
+              },
+              {
+                "name": "clip-of-the-week",
+                "value": "clip-of-the-week"
+              },
+              {
+                "name": "birthdays",
+                "value": "birthdays"
+              },
+              {
+                "name": "community-fragen",
+                "value": "community-fragen"
+              },
+              {
+                "name": "fortnite-news",
+                "value": "fortnite-news"
+              },
+              {
+                "name": "item-shop",
+                "value": "item-shop"
+              },
+              {
+                "name": "events",
+                "value": "events"
+              },
+              {
+                "name": "squad-hub",
+                "value": "squad-hub"
+              },
+              {
+                "name": "staff-audit",
+                "value": "staff-audit"
+              },
+              {
+                "name": "ai-staff-alerts",
+                "value": "ai-staff-alerts"
+              },
+              {
+                "name": "mod-cases",
+                "value": "mod-cases"
+              },
+              {
+                "name": "staff-briefing",
+                "value": "staff-briefing"
+              },
+              {
+                "name": "staff-tasks",
+                "value": "staff-tasks"
+              }
+            ],
+            "name": "funktion",
+            "description": "Bot-Funktion",
+            "required": true
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "list",
+        "description": "Zeigt manuelle Setup-Zuordnungen.",
+        "options": []
+      }
+    ],
+    "name": "setupmap",
+    "description": "Korrigiert eine Kanal-Zuordnung von /setup manuell.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "feedback",
+    "description": "Gib Feedback zum Bot: was gut ist, was nervt und was verbessert werden soll.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "serversetup",
+    "description": "Erstellt eine komplette Gaming-Community-Serverstruktur mit Chat, Support, Voice und Staff.",
+    "default_member_permissions": "8",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "ticketpanel",
+    "description": "Sendet das Ticket-Panel.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 3,
+        "choices": [
+          {
+            "name": "Fortnite",
+            "value": "fortnite"
+          },
+          {
+            "name": "Roblox",
+            "value": "roblox"
+          },
+          {
+            "name": "Brawl Stars",
+            "value": "brawl-stars"
+          },
+          {
+            "name": "GTA V / GTA Online / GTA VI",
+            "value": "gta"
+          },
+          {
+            "name": "Minecraft",
+            "value": "minecraft"
+          },
+          {
+            "name": "VALORANT",
+            "value": "valorant"
+          },
+          {
+            "name": "Rocket League",
+            "value": "rocket-league"
+          },
+          {
+            "name": "Marvel Rivals",
+            "value": "marvel-rivals"
+          },
+          {
+            "name": "Call of Duty / Warzone",
+            "value": "cod"
+          },
+          {
+            "name": "EA SPORTS FC 27",
+            "value": "fc27"
+          },
+          {
+            "name": "League of Legends",
+            "value": "lol"
+          },
+          {
+            "name": "Counter-Strike 2",
+            "value": "cs2"
+          },
+          {
+            "name": "Apex Legends",
+            "value": "apex"
+          },
+          {
+            "name": "Overwatch",
+            "value": "overwatch"
+          },
+          {
+            "name": "Dead by Daylight",
+            "value": "dead-by-daylight"
+          },
+          {
+            "name": "World of Warcraft",
+            "value": "wow"
+          },
+          {
+            "name": "Clash Royale",
+            "value": "clash-royale"
+          },
+          {
+            "name": "Anderes Spiel / Multi-Game",
+            "value": "other"
+          }
+        ],
+        "name": "spiel",
+        "description": "Für welches Spiel suchst du Mitspieler?",
+        "required": true
+      },
+      {
+        "type": 3,
+        "name": "modus",
+        "description": "Modus / Playlist / Aktivität",
+        "required": true,
+        "max_length": 60
+      },
+      {
+        "max_value": 10,
+        "min_value": 1,
+        "type": 4,
+        "name": "spieler",
+        "description": "Wie viele Mitspieler suchst du?",
+        "required": true
+      },
+      {
+        "type": 3,
+        "choices": [
+          {
+            "name": "PC",
+            "value": "PC"
+          },
+          {
+            "name": "PlayStation",
+            "value": "PlayStation"
+          },
+          {
+            "name": "Xbox",
+            "value": "Xbox"
+          },
+          {
+            "name": "Switch",
+            "value": "Switch"
+          },
+          {
+            "name": "Mobile",
+            "value": "Mobile"
+          },
+          {
+            "name": "Crossplay / Egal",
+            "value": "Crossplay / Egal"
+          }
+        ],
+        "name": "plattform",
+        "description": "Deine Plattform",
+        "required": true
+      },
+      {
+        "name": "mikro",
+        "description": "Mikrofon erforderlich?",
+        "required": true,
+        "type": 5
+      },
+      {
+        "type": 3,
+        "choices": [
+          {
+            "name": "EU",
+            "value": "EU"
+          },
+          {
+            "name": "NA East",
+            "value": "NA East"
+          },
+          {
+            "name": "NA Central",
+            "value": "NA Central"
+          },
+          {
+            "name": "NA West",
+            "value": "NA West"
+          },
+          {
+            "name": "OCE",
+            "value": "OCE"
+          },
+          {
+            "name": "Asia",
+            "value": "Asia"
+          },
+          {
+            "name": "Middle East",
+            "value": "Middle East"
+          },
+          {
+            "name": "Brazil",
+            "value": "Brazil"
+          },
+          {
+            "name": "Other",
+            "value": "Other"
+          }
+        ],
+        "name": "region",
+        "description": "Region",
+        "required": false
+      },
+      {
+        "type": 3,
+        "name": "rank",
+        "description": "Optional: Rank / Liga / Skill-Level",
+        "required": false,
+        "max_length": 40
+      },
+      {
+        "type": 3,
+        "choices": [
+          {
+            "name": "Deutsch",
+            "value": "Deutsch"
+          },
+          {
+            "name": "English",
+            "value": "English"
+          },
+          {
+            "name": "Deutsch + English",
+            "value": "Deutsch + English"
+          }
+        ],
+        "name": "sprache",
+        "description": "Sprache",
+        "required": false
+      },
+      {
+        "type": 3,
+        "choices": [
+          {
+            "name": "Casual",
+            "value": "Casual"
+          },
+          {
+            "name": "Competitive",
+            "value": "Competitive"
+          },
+          {
+            "name": "Chill",
+            "value": "Chill"
+          },
+          {
+            "name": "Ranked",
+            "value": "Ranked"
+          },
+          {
+            "name": "Roleplay",
+            "value": "Roleplay"
+          },
+          {
+            "name": "Creative",
+            "value": "Creative"
+          }
+        ],
+        "name": "stil",
+        "description": "Spielstil",
+        "required": false
+      },
+      {
+        "type": 3,
+        "choices": [
+          {
+            "name": "13-15",
+            "value": "13-15"
+          },
+          {
+            "name": "16-17",
+            "value": "16-17"
+          },
+          {
+            "name": "18+",
+            "value": "18+"
+          }
+        ],
+        "name": "alter",
+        "description": "Optional: Altersgruppe",
+        "required": false
+      }
+    ],
+    "name": "teamsearch",
+    "description": "Erstellt eine Multi-Game-Teamsuche.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "games",
+    "description": "Zeigt die voreingestellten Spiele des Multi-Game-Bots.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 3,
+        "name": "frage",
+        "description": "Was möchtest du die KI fragen?",
+        "required": true,
+        "max_length": 1500
+      }
+    ],
+    "name": "ai",
+    "description": "Frage die Gemini-KI des Gaming-Bots.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "max_value": 100,
+        "min_value": 15,
+        "type": 4,
+        "name": "nachrichten",
+        "description": "Wie viele Nachrichten analysieren? (15-100)",
+        "required": false
+      }
+    ],
+    "name": "aipulse",
+    "description": "Analysiert die letzten Nachrichten dieses Channels mit AI.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 1,
+        "name": "add",
+        "description": "Bringt der AI etwas bei – Ziel und Art können automatisch erkannt werden.",
+        "options": [
+          {
+            "type": 3,
+            "name": "wissen",
+            "description": "Was soll die AI lernen? z.B. 'Kling lockerer' oder eine Serverregel",
+            "required": true,
+            "max_length": 1500
+          },
+          {
+            "type": 3,
+            "choices": [
+              {
+                "name": "🤖 /ai",
+                "value": "ai"
+              },
+              {
+                "name": "🎫 Support AI",
+                "value": "support"
+              },
+              {
+                "name": "🔁 Beide",
+                "value": "both"
+              }
+            ],
+            "name": "ziel",
+            "description": "Optional: Welche AI? Leer lassen = automatisch erkennen",
+            "required": false
+          },
+          {
+            "type": 3,
+            "choices": [
+              {
+                "name": "🎨 Verhalten / Stil",
+                "value": "instruction"
+              },
+              {
+                "name": "📚 Wissen / Fakt",
+                "value": "knowledge"
+              }
+            ],
+            "name": "art",
+            "description": "Optional: Stil oder Wissen? Leer lassen = automatisch erkennen",
+            "required": false
+          },
+          {
+            "type": 3,
+            "choices": [
+              {
+                "name": "🏠 Nur dieser Server",
+                "value": "server"
+              },
+              {
+                "name": "🌍 Alle Server (nur Bot-Owner)",
+                "value": "global"
+              }
+            ],
+            "name": "bereich",
+            "description": "Standard: nur dieser Server",
+            "required": false
+          },
+          {
+            "type": 3,
+            "name": "thema",
+            "description": "Optionaler Name, z.B. Tonfall oder Serverregel",
+            "required": false,
+            "max_length": 100
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "list",
+        "description": "Zeigt das aktuell Gelernte.",
+        "options": [
+          {
+            "type": 3,
+            "choices": [
+              {
+                "name": "🤖 /ai",
+                "value": "ai"
+              },
+              {
+                "name": "🎫 Support AI",
+                "value": "support"
+              },
+              {
+                "name": "🔁 Beide",
+                "value": "both"
+              }
+            ],
+            "name": "ziel",
+            "description": "Optional nach AI filtern",
+            "required": false
+          },
+          {
+            "type": 3,
+            "choices": [
+              {
+                "name": "🏠 Dieser Server",
+                "value": "server"
+              },
+              {
+                "name": "🌍 Alle Server",
+                "value": "global"
+              }
+            ],
+            "name": "bereich",
+            "description": "Optional nach Geltungsbereich filtern",
+            "required": false
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "delete",
+        "description": "Löscht einen gelernten Eintrag.",
+        "options": [
+          {
+            "type": 3,
+            "name": "id",
+            "description": "ID, z.B. K-3",
+            "required": true
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "clear",
+        "description": "Löscht Learn-Einträge für einen gewählten Bereich.",
+        "options": [
+          {
+            "type": 3,
+            "choices": [
+              {
+                "name": "🏠 Dieser Server",
+                "value": "server"
+              },
+              {
+                "name": "🌍 Alle Server (nur Bot-Owner)",
+                "value": "global"
+              }
+            ],
+            "name": "bereich",
+            "description": "Was soll gelöscht werden?",
+            "required": true
+          }
+        ]
+      }
+    ],
+    "name": "learn",
+    "description": "Bringt /ai oder der Support-AI Wissen oder Verhalten bei.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "verbesserung",
+    "description": "Prueft letzte AI-Antworten und bringt der AI bessere Antworten bei. Nur Admins.",
+    "default_member_permissions": "8",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 1,
+        "name": "list",
+        "description": "Zeigt offene Server-Anfragen.",
+        "options": []
+      },
+      {
+        "type": 1,
+        "name": "approve",
+        "description": "Gibt einen Server frei.",
+        "options": [
+          {
+            "type": 3,
+            "name": "server_id",
+            "description": "Discord Server-ID",
+            "required": true
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "reject",
+        "description": "Lehnt einen Server ab und verlässt ihn.",
+        "options": [
+          {
+            "type": 3,
+            "name": "server_id",
+            "description": "Discord Server-ID",
+            "required": true
+          }
+        ]
+      }
+    ],
+    "name": "serverfreigabe",
+    "description": "Bot-Owner: neue Server freigeben oder ablehnen.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "level",
+    "description": "Zeigt dein Level.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "invites",
+    "description": "Zeigt deine gezählten Einladungen.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "counting",
+    "description": "Setzt den aktuellen Kanal als Counting-Kanal.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 3,
+        "name": "preis",
+        "description": "Gewinn",
+        "required": true
+      },
+      {
+        "type": 3,
+        "name": "dauer",
+        "description": "z.B. 10m, 2h, 1d",
+        "required": true
+      },
+      {
+        "max_value": 10,
+        "min_value": 1,
+        "type": 4,
+        "name": "gewinner",
+        "description": "Anzahl Gewinner",
+        "required": false
+      },
+      {
+        "type": 3,
+        "name": "claim_zeit",
+        "description": "Zeit zum Claimen, z.B. 10m, 2h, 1d (Standard 30m)",
+        "required": false
+      }
+    ],
+    "name": "giveaway",
+    "description": "Startet ein Giveaway.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "name": "user",
+        "description": "Mitglied",
+        "required": true,
+        "type": 6
+      },
+      {
+        "type": 3,
+        "name": "dauer",
+        "description": "z.B. 10m, 2h, 1d",
+        "required": true
+      },
+      {
+        "type": 3,
+        "name": "grund",
+        "description": "Grund",
+        "required": false
+      }
+    ],
+    "name": "timeout",
+    "description": "Gibt einem Mitglied einen Timeout.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "name": "user",
+        "description": "Mitglied",
+        "required": true,
+        "type": 6
+      },
+      {
+        "type": 3,
+        "name": "grund",
+        "description": "Grund",
+        "required": false
+      }
+    ],
+    "name": "ban",
+    "description": "Bannt ein Mitglied.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 3,
+        "choices": [
+          {
+            "name": "Fortnite",
+            "value": "fortnite"
+          },
+          {
+            "name": "Roblox",
+            "value": "roblox"
+          },
+          {
+            "name": "Brawl Stars",
+            "value": "brawl-stars"
+          },
+          {
+            "name": "GTA V / GTA Online / GTA VI",
+            "value": "gta"
+          },
+          {
+            "name": "Minecraft",
+            "value": "minecraft"
+          },
+          {
+            "name": "VALORANT",
+            "value": "valorant"
+          },
+          {
+            "name": "Rocket League",
+            "value": "rocket-league"
+          },
+          {
+            "name": "Marvel Rivals",
+            "value": "marvel-rivals"
+          },
+          {
+            "name": "Call of Duty / Warzone",
+            "value": "cod"
+          },
+          {
+            "name": "EA SPORTS FC 27",
+            "value": "fc27"
+          },
+          {
+            "name": "League of Legends",
+            "value": "lol"
+          },
+          {
+            "name": "Counter-Strike 2",
+            "value": "cs2"
+          },
+          {
+            "name": "Apex Legends",
+            "value": "apex"
+          },
+          {
+            "name": "Overwatch",
+            "value": "overwatch"
+          },
+          {
+            "name": "Dead by Daylight",
+            "value": "dead-by-daylight"
+          },
+          {
+            "name": "World of Warcraft",
+            "value": "wow"
+          },
+          {
+            "name": "Clash Royale",
+            "value": "clash-royale"
+          },
+          {
+            "name": "Anderes Spiel / Multi-Game",
+            "value": "other"
+          }
+        ],
+        "name": "spiel",
+        "description": "Spiel",
+        "required": true
+      },
+      {
+        "type": 3,
+        "choices": [
+          {
+            "name": "Drop / Spawn RNG",
+            "value": "drop"
+          },
+          {
+            "name": "Challenge RNG",
+            "value": "challenge"
+          },
+          {
+            "name": "Rules RNG",
+            "value": "loadout"
+          },
+          {
+            "name": "Schnellfrage",
+            "value": "quiz"
+          },
+          {
+            "name": "🌊 Element Seas RPG",
+            "value": "elementseas"
+          }
+        ],
+        "name": "game",
+        "description": "Minigame",
+        "required": true
+      }
+    ],
+    "name": "minigame",
+    "description": "Startet ein kleines Gaming-Minispiel.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "commandsync",
+    "description": "Bot-Owner: synchronisiert alle Slash-Commands sofort auf allen freigegebenen Servern.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "links",
+    "description": "Bot-Owner: zeigt Einladungslinks zu allen Servern, auf denen der Bot ist.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "supportstats",
+    "description": "Zeigt Support-Statistiken des Servers.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "statuspanel",
+    "description": "Owner-Panel für Restart / Off / On.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 3,
+        "name": "text",
+        "description": "Ankündigung",
+        "required": true
+      }
+    ],
+    "name": "announce",
+    "description": "Sendet eine globale Ankündigung in alle eingerichteten Server.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "name": "user",
+        "description": "Optional: anderes Mitglied",
+        "required": false,
+        "type": 6
+      }
+    ],
+    "name": "profile",
+    "description": "Zeigt dein Community-Profil.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "member",
+    "description": "Öffnet deinen persönlichen Member Hub.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "name": "user",
+        "description": "Mitglied, bei dem du dich bedanken willst",
+        "required": true,
+        "type": 6
+      },
+      {
+        "type": 3,
+        "name": "grund",
+        "description": "Optional: Wofür möchtest du dich bedanken?",
+        "required": false,
+        "max_length": 200
+      }
+    ],
+    "name": "thanks",
+    "description": "Bedankt dich bei einem hilfreichen Community-Mitglied.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "balance",
+    "description": "Zeigt deine Community Coins.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "coinshop",
+    "description": "Öffnet den Community Coin Shop.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "quests",
+    "description": "Zeigt deine Daily Quests.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 3,
+        "choices": [
+          {
+            "name": "Coins",
+            "value": "coins"
+          },
+          {
+            "name": "Level",
+            "value": "level"
+          },
+          {
+            "name": "Season XP",
+            "value": "season"
+          },
+          {
+            "name": "Invites",
+            "value": "invites"
+          },
+          {
+            "name": "Event Wins",
+            "value": "eventwins"
+          },
+          {
+            "name": "Helpful",
+            "value": "helpful"
+          }
+        ],
+        "name": "typ",
+        "description": "Leaderboard",
+        "required": true
+      }
+    ],
+    "name": "leaderboard",
+    "description": "Zeigt ein Community-Leaderboard.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 1,
+        "name": "create",
+        "description": "Erstellt ein Squad.",
+        "options": [
+          {
+            "type": 3,
+            "name": "name",
+            "description": "Squad-Name",
+            "required": true,
+            "max_length": 24,
+            "min_length": 2
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "invite",
+        "description": "Lädt jemanden in dein Squad ein.",
+        "options": [
+          {
+            "name": "user",
+            "description": "Mitglied",
+            "required": true,
+            "type": 6
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "join",
+        "description": "Tritt mit einem Code bei.",
+        "options": [
+          {
+            "type": 3,
+            "name": "code",
+            "description": "Squad-Code",
+            "required": true
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "leave",
+        "description": "Verlässt dein Squad.",
+        "options": []
+      },
+      {
+        "type": 1,
+        "name": "info",
+        "description": "Zeigt dein Squad.",
+        "options": []
+      },
+      {
+        "type": 1,
+        "name": "leaderboard",
+        "description": "Zeigt die besten Squads.",
+        "options": []
+      }
+    ],
+    "name": "squad",
+    "description": "Squads / Clans verwalten.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 1,
+        "name": "create",
+        "description": "Erstellt ein Community Event.",
+        "options": [
+          {
+            "type": 3,
+            "name": "name",
+            "description": "Event-Name",
+            "required": true,
+            "max_length": 60
+          },
+          {
+            "type": 3,
+            "choices": [
+              {
+                "name": "Fortnite",
+                "value": "fortnite"
+              },
+              {
+                "name": "Roblox",
+                "value": "roblox"
+              },
+              {
+                "name": "Brawl Stars",
+                "value": "brawl-stars"
+              },
+              {
+                "name": "GTA V / GTA Online / GTA VI",
+                "value": "gta"
+              },
+              {
+                "name": "Minecraft",
+                "value": "minecraft"
+              },
+              {
+                "name": "VALORANT",
+                "value": "valorant"
+              },
+              {
+                "name": "Rocket League",
+                "value": "rocket-league"
+              },
+              {
+                "name": "Marvel Rivals",
+                "value": "marvel-rivals"
+              },
+              {
+                "name": "Call of Duty / Warzone",
+                "value": "cod"
+              },
+              {
+                "name": "EA SPORTS FC 27",
+                "value": "fc27"
+              },
+              {
+                "name": "League of Legends",
+                "value": "lol"
+              },
+              {
+                "name": "Counter-Strike 2",
+                "value": "cs2"
+              },
+              {
+                "name": "Apex Legends",
+                "value": "apex"
+              },
+              {
+                "name": "Overwatch",
+                "value": "overwatch"
+              },
+              {
+                "name": "Dead by Daylight",
+                "value": "dead-by-daylight"
+              },
+              {
+                "name": "World of Warcraft",
+                "value": "wow"
+              },
+              {
+                "name": "Clash Royale",
+                "value": "clash-royale"
+              },
+              {
+                "name": "Anderes Spiel / Multi-Game",
+                "value": "other"
+              }
+            ],
+            "name": "spiel",
+            "description": "Spiel / Multi-Game",
+            "required": true
+          },
+          {
+            "type": 3,
+            "choices": [
+              {
+                "name": "Game Night",
+                "value": "Game Night"
+              },
+              {
+                "name": "Ranked / Competitive",
+                "value": "Ranked / Competitive"
+              },
+              {
+                "name": "Casual / Chill",
+                "value": "Casual / Chill"
+              },
+              {
+                "name": "Hide & Seek",
+                "value": "Hide & Seek"
+              },
+              {
+                "name": "1v1 / Duell",
+                "value": "1v1 / Duell"
+              },
+              {
+                "name": "Challenge",
+                "value": "Challenge"
+              },
+              {
+                "name": "Zero Build Night",
+                "value": "Zero Build Night"
+              },
+              {
+                "name": "Build Night",
+                "value": "Build Night"
+              },
+              {
+                "name": "Creative Night",
+                "value": "Creative Night"
+              },
+              {
+                "name": "Other",
+                "value": "Other"
+              }
+            ],
+            "name": "typ",
+            "description": "Event-Typ",
+            "required": true
+          },
+          {
+            "max_value": 10080,
+            "min_value": 5,
+            "type": 4,
+            "name": "start_in",
+            "description": "Start in Minuten",
+            "required": true
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "winner",
+        "description": "Setzt den Gewinner eines Events.",
+        "options": [
+          {
+            "type": 3,
+            "name": "id",
+            "description": "Event-ID",
+            "required": true
+          },
+          {
+            "name": "user",
+            "description": "Gewinner",
+            "required": true,
+            "type": 6
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "end",
+        "description": "Beendet ein Event.",
+        "options": [
+          {
+            "type": 3,
+            "name": "id",
+            "description": "Event-ID",
+            "required": true
+          }
+        ]
+      }
+    ],
+    "name": "event",
+    "description": "Community Events verwalten.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "events",
+    "description": "Zeigt den Event-Kalender.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 3,
+        "name": "frage",
+        "description": "Frage",
+        "required": true,
+        "max_length": 180
+      },
+      {
+        "type": 3,
+        "name": "option1",
+        "description": "Option 1",
+        "required": true,
+        "max_length": 60
+      },
+      {
+        "type": 3,
+        "name": "option2",
+        "description": "Option 2",
+        "required": true,
+        "max_length": 60
+      },
+      {
+        "type": 3,
+        "name": "option3",
+        "description": "Option 3",
+        "required": false,
+        "max_length": 60
+      },
+      {
+        "type": 3,
+        "name": "option4",
+        "description": "Option 4",
+        "required": false,
+        "max_length": 60
+      }
+    ],
+    "name": "poll",
+    "description": "Erstellt eine Community-Umfrage.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 3,
+        "name": "text",
+        "description": "Dein Vorschlag",
+        "required": true,
+        "max_length": 1000
+      }
+    ],
+    "name": "suggest",
+    "description": "Sendet einen Community-Vorschlag.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "suggestions",
+    "description": "Öffnet das Suggestions-Menü.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "suggestionspanel",
+    "description": "Postet/aktualisiert das öffentliche Suggestions-Menü (Admin).",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 3,
+        "name": "message_id",
+        "description": "Discord Nachrichten-ID",
+        "required": true
+      },
+      {
+        "type": 3,
+        "choices": [
+          {
+            "name": "Accepted",
+            "value": "Accepted"
+          },
+          {
+            "name": "Planned",
+            "value": "Planned"
+          },
+          {
+            "name": "Denied",
+            "value": "Denied"
+          },
+          {
+            "name": "Review",
+            "value": "Under Review"
+          }
+        ],
+        "name": "status",
+        "description": "Status",
+        "required": true
+      }
+    ],
+    "name": "suggeststatus",
+    "description": "Ändert den Status eines Vorschlags.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 3,
+        "name": "url",
+        "description": "Link zum Clip",
+        "required": true,
+        "max_length": 500
+      },
+      {
+        "type": 3,
+        "name": "beschreibung",
+        "description": "Kurze Beschreibung",
+        "required": false,
+        "max_length": 300
+      }
+    ],
+    "name": "clip",
+    "description": "Reicht einen Clip für Clip of the Week ein.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 1,
+        "name": "set",
+        "description": "Speichert Monat und Tag, kein Geburtsjahr.",
+        "options": [
+          {
+            "max_value": 12,
+            "min_value": 1,
+            "type": 4,
+            "name": "monat",
+            "description": "1-12",
+            "required": true
+          },
+          {
+            "max_value": 31,
+            "min_value": 1,
+            "type": 4,
+            "name": "tag",
+            "description": "1-31",
+            "required": true
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "remove",
+        "description": "Entfernt deinen Geburtstag.",
+        "options": []
+      }
+    ],
+    "name": "birthday",
+    "description": "Geburtstagssystem.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "roles",
+    "description": "Öffnet die Self-Role-Auswahl.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "season",
+    "description": "Zeigt die aktuelle Community-Season.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 3,
+        "name": "name",
+        "description": "Season-Name",
+        "required": true,
+        "max_length": 50
+      },
+      {
+        "max_value": 180,
+        "min_value": 7,
+        "type": 4,
+        "name": "tage",
+        "description": "Dauer in Tagen",
+        "required": true
+      }
+    ],
+    "name": "seasonstart",
+    "description": "Startet eine neue Community-Season.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 1,
+        "name": "heute",
+        "description": "Zeigt die aktuelle Community-Frage.",
+        "options": []
+      },
+      {
+        "type": 1,
+        "name": "neu",
+        "description": "Erstellt eine neue Community-Frage (Admin).",
+        "options": [
+          {
+            "type": 3,
+            "name": "thema",
+            "description": "Optionales Thema, z. B. Roblox, GTA oder allgemein",
+            "required": false,
+            "max_length": 100
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "ergebnis",
+        "description": "Erstellt eine AI-Zusammenfassung der Antworten (Admin).",
+        "options": []
+      }
+    ],
+    "name": "communityfrage",
+    "description": "Frage des Tages für die Community.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 1,
+        "name": "news",
+        "description": "Zeigt aktuelle Fortnite-News.",
+        "options": []
+      },
+      {
+        "type": 1,
+        "name": "shop",
+        "description": "Zeigt eine Zusammenfassung des aktuellen Shops.",
+        "options": []
+      },
+      {
+        "type": 1,
+        "name": "favorite-add",
+        "description": "Merkt sich einen Skin/Cosmetic-Namen.",
+        "options": [
+          {
+            "type": 3,
+            "name": "name",
+            "description": "Cosmetic-Name",
+            "required": true,
+            "max_length": 80
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "favorite-remove",
+        "description": "Entfernt einen Favoriten.",
+        "options": [
+          {
+            "type": 3,
+            "name": "name",
+            "description": "Cosmetic-Name",
+            "required": true,
+            "max_length": 80
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "favorites",
+        "description": "Zeigt deine Shop-Favoriten.",
+        "options": []
+      }
+    ],
+    "name": "fortnite",
+    "description": "Fortnite News, Shop und Favoriten.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "name": "user",
+        "description": "Staff-Mitglied",
+        "required": false,
+        "type": 6
+      },
+      {
+        "max_value": 90,
+        "min_value": 1,
+        "type": 4,
+        "name": "tage",
+        "description": "Zeitraum in Tagen",
+        "required": false
+      }
+    ],
+    "name": "staffstats",
+    "description": "Zeigt professionelle Staff-Aktivitätswerte.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "max_value": 90,
+        "min_value": 1,
+        "type": 4,
+        "name": "tage",
+        "description": "Zeitraum in Tagen",
+        "required": false
+      }
+    ],
+    "name": "staffleaderboard",
+    "description": "Staff-Aktivitätsübersicht ohne Spam-Zählen.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 1,
+        "name": "view",
+        "description": "Zeigt einen Fall.",
+        "options": [
+          {
+            "type": 3,
+            "name": "id",
+            "description": "z.B. CASE-00001",
+            "required": true
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "user",
+        "description": "Zeigt Fälle eines Users.",
+        "options": [
+          {
+            "name": "user",
+            "description": "Mitglied",
+            "required": true,
+            "type": 6
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "note",
+        "description": "Fügt eine Staff-Notiz hinzu.",
+        "options": [
+          {
+            "type": 3,
+            "name": "id",
+            "description": "Fall-ID",
+            "required": true
+          },
+          {
+            "type": 3,
+            "name": "text",
+            "description": "Notiz",
+            "required": true,
+            "max_length": 1500
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "close",
+        "description": "Schließt einen Fall.",
+        "options": [
+          {
+            "type": 3,
+            "name": "id",
+            "description": "Fall-ID",
+            "required": true
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "summarize",
+        "description": "Erstellt eine AI-Fallzusammenfassung.",
+        "options": [
+          {
+            "type": 3,
+            "name": "id",
+            "description": "Fall-ID",
+            "required": true
+          }
+        ]
+      }
+    ],
+    "name": "case",
+    "description": "Moderationsfälle verwalten.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "max_value": 30,
+        "min_value": 1,
+        "type": 4,
+        "name": "tage",
+        "description": "Zeitraum",
+        "required": false
+      }
+    ],
+    "name": "serverhealth",
+    "description": "Zeigt Server- und Moderationszustand.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 3,
+        "name": "frage",
+        "description": "Interne Staff-Frage",
+        "required": true,
+        "max_length": 3000
+      }
+    ],
+    "name": "staffai",
+    "description": "Interne AI für Regeln, Fälle und Staff-Fragen.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "name": "user",
+        "description": "Mitglied",
+        "required": true,
+        "type": 6
+      }
+    ],
+    "name": "punishmenthistory",
+    "description": "Zeigt gespeicherte Moderationshistorie eines Users.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 1,
+        "name": "start",
+        "description": "Startet deine Staff-Schicht.",
+        "options": []
+      },
+      {
+        "type": 1,
+        "name": "end",
+        "description": "Beendet deine Staff-Schicht.",
+        "options": []
+      },
+      {
+        "type": 1,
+        "name": "status",
+        "description": "Zeigt deine aktuelle Schicht.",
+        "options": []
+      }
+    ],
+    "name": "shift",
+    "description": "Staff-Schicht starten, beenden oder ansehen.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 1,
+        "name": "create",
+        "description": "Erstellt eine Staff-Aufgabe.",
+        "options": [
+          {
+            "name": "user",
+            "description": "Zuständig",
+            "required": true,
+            "type": 6
+          },
+          {
+            "type": 3,
+            "name": "aufgabe",
+            "description": "Aufgabe",
+            "required": true,
+            "max_length": 1200
+          },
+          {
+            "type": 3,
+            "name": "deadline",
+            "description": "Optional z.B. 2h, 1d, 3d",
+            "required": false
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "list",
+        "description": "Zeigt offene Staff-Aufgaben.",
+        "options": []
+      },
+      {
+        "type": 1,
+        "name": "done",
+        "description": "Markiert eine Aufgabe als erledigt.",
+        "options": [
+          {
+            "type": 3,
+            "name": "id",
+            "description": "Task-ID",
+            "required": true
+          }
+        ]
+      }
+    ],
+    "name": "stafftask",
+    "description": "Staff-Aufgaben verwalten.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 3,
+        "name": "text",
+        "description": "Bewerbungstext",
+        "required": true,
+        "max_length": 4000
+      }
+    ],
+    "name": "staffapplication",
+    "description": "AI-Review einer Staff-Bewerbung, ohne Auto-Annahme/Ablehnung.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "staffbrief",
+    "description": "Erstellt sofort ein AI Staff-Briefing.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 3,
+        "name": "message_id",
+        "description": "Nachrichten-ID im aktuellen Kanal",
+        "required": true
+      }
+    ],
+    "name": "modassist",
+    "description": "AI analysiert eine konkrete Nachricht und gibt nur eine Staff-Empfehlung.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "elementseas",
+    "description": "Öffnet Element Seas – dein persistentes Discord-RPG.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "sea",
+    "description": "Öffnet Element Seas – Kurzcommand für das RPG.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "name": "user",
+        "description": "Optional: anderes Mitglied",
+        "required": false,
+        "type": 6
+      }
+    ],
+    "name": "seaprofile",
+    "description": "Zeigt ein Element-Seas-Profil.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "name": "user",
+        "description": "Gegner",
+        "required": true,
+        "type": 6
+      }
+    ],
+    "name": "seaduel",
+    "description": "Fordert ein Mitglied zu einem Element-Seas-Duell heraus.",
+    "type": 1
+  },
+  {
+    "options": [],
+    "name": "sealeaderboard",
+    "description": "Zeigt die stärksten Element-Seas-Spieler dieses Servers.",
+    "type": 1
+  },
+  {
+    "options": [
+      {
+        "type": 1,
+        "name": "connect",
+        "description": "Verbindet ein Spotify-Premium-Konto mit diesem Server.",
+        "options": []
+      },
+      {
+        "type": 1,
+        "name": "status",
+        "description": "Zeigt Verbindung, Gerät und aktuellen Player-Status.",
+        "options": []
+      },
+      {
+        "type": 1,
+        "name": "diagnose",
+        "description": "Prüft Spotify-Konfiguration, Login, Premium und Geräte.",
+        "options": []
+      },
+      {
+        "type": 1,
+        "name": "devices",
+        "description": "Zeigt alle verfügbaren Spotify-Geräte.",
+        "options": []
+      },
+      {
+        "type": 1,
+        "name": "device",
+        "description": "Wählt das bevorzugte Spotify-Gerät.",
+        "options": [
+          {
+            "max_value": 20,
+            "min_value": 1,
+            "type": 4,
+            "name": "nummer",
+            "description": "Nummer aus /spotify devices",
+            "required": true
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "disconnect",
+        "description": "Trennt das Spotify-Konto dieses Servers.",
+        "options": []
+      },
+      {
+        "type": 1,
+        "name": "start",
+        "description": "Startet die feste Playlist und öffnet den Party-Player.",
+        "options": []
+      },
+      {
+        "type": 1,
+        "name": "now",
+        "description": "Zeigt den aktuell laufenden Spotify-Track.",
+        "options": []
+      },
+      {
+        "type": 1,
+        "name": "playlist",
+        "description": "Zeigt die Titel der festen Community-Playlist.",
+        "options": [
+          {
+            "max_value": 3,
+            "min_value": 1,
+            "type": 4,
+            "name": "seite",
+            "description": "Seite 1-3",
+            "required": false
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "play",
+        "description": "Spielt einen bestimmten Titel der Community-Playlist.",
+        "options": [
+          {
+            "max_value": 45,
+            "min_value": 1,
+            "type": 4,
+            "name": "nummer",
+            "description": "Tracknummer aus /spotify playlist",
+            "required": true
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "pause",
+        "description": "Pausiert Spotify.",
+        "options": []
+      },
+      {
+        "type": 1,
+        "name": "resume",
+        "description": "Setzt Spotify fort.",
+        "options": []
+      },
+      {
+        "type": 1,
+        "name": "next",
+        "description": "Springt zum nächsten Track.",
+        "options": []
+      },
+      {
+        "type": 1,
+        "name": "previous",
+        "description": "Springt zum vorherigen Track.",
+        "options": []
+      },
+      {
+        "type": 1,
+        "name": "volume",
+        "description": "Setzt die Spotify-Lautstärke.",
+        "options": [
+          {
+            "max_value": 100,
+            "min_value": 0,
+            "type": 4,
+            "name": "prozent",
+            "description": "0-100",
+            "required": true
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "seek",
+        "description": "Springt im aktuellen Track zu einer Position.",
+        "options": [
+          {
+            "max_value": 3600,
+            "min_value": 0,
+            "type": 4,
+            "name": "sekunden",
+            "description": "Position in Sekunden",
+            "required": true
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "shuffle",
+        "description": "Schaltet Shuffle um.",
+        "options": []
+      },
+      {
+        "type": 1,
+        "name": "repeat",
+        "description": "Setzt den Repeat-Modus.",
+        "options": [
+          {
+            "type": 3,
+            "choices": [
+              {
+                "name": "Aus",
+                "value": "off"
+              },
+              {
+                "name": "Playlist",
+                "value": "context"
+              },
+              {
+                "name": "Ein Track",
+                "value": "track"
+              }
+            ],
+            "name": "modus",
+            "description": "Repeat-Modus",
+            "required": true
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "name": "stop",
+        "description": "Pausiert Spotify und beendet die Party.",
+        "options": []
+      }
+    ],
+    "name": "spotify",
+    "description": "Spotify Connect Party – Player, Geräte, Playlist und Diagnose.",
+    "type": 1
+  }
+]
