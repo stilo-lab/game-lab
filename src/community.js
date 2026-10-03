@@ -797,8 +797,8 @@ function createCommunity(ctx) {
       if (Date.now() - at > 60 * 60 * 1000 || suggestionAiSeen.size > 1000) suggestionAiSeen.delete(id);
     }
     try {
-      await sendAiAnimation(payload => message.reply(payload));
-      let answer;
+      const petResponse = await sendAiAnimation(payload => message.reply(payload));
+      let answer, responseState = "all";
       try {
         const response = await generateGeminiContent({
           model: GEMINI_MODEL,
@@ -813,10 +813,11 @@ function createCommunity(ctx) {
         answer = String(response.text || "").trim();
         if (!answer) throw new Error("AI_EMPTY_RESPONSE");
       } catch (error) {
+        responseState = "failed";
         answer = typeof ctx.chatAiErrorMessage === "function" ? ctx.chatAiErrorMessage(error) : "Die KI-Einschätzung ist gerade nicht verfügbar.";
         answer += " Dein Vorschlag bleibt für die Community und das Serverteam sichtbar.";
       }
-      const reply = await message.reply(aiTextPayload(answer.slice(0, 1800)));
+      const reply = await petResponse.finish(answer.slice(0, 1800), responseState);
       if (suggestion) { suggestion.aiReplyId = reply.id; saveDB(); }
     } finally {
       suggestionAiPending.delete(message.id);

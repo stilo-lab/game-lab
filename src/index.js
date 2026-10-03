@@ -2,7 +2,7 @@ require("dotenv").config();
 
 const fs = require("fs");
 const path = require("path");
-const { AI_NAME, sendAiAnimation, aiTextPayload } = require("./pixel_gojo");
+const { AI_NAME, initializePet, sendAiAnimation, aiTextPayload } = require("./pixel_gojo");
 const { buildCommunityCommands, createCommunity } = require("./community");
 const { buildStaffCommands, createStaffSystem } = require("./staff");
 const { buildElementSeasCommands, createElementSeas } = require("./element_seas");
@@ -2728,27 +2728,31 @@ async function runTicketAi(message) {
     return true;
   }
 
+  let petResponse;
+  const sendTicketAiError = text => petResponse
+    ? petResponse.finish(text, "failed")
+    : sendEditableTicketContent(message.channel, aiTextPayload(text, "failed"), { replyTo: message });
   try {
-    await sendAiAnimation(payload => message.channel.send(payload));
+    petResponse = await sendAiAnimation(payload => sendEditableTicketContent(message.channel, payload, { replyTo: message }));
     await message.channel.sendTyping();
     const answer = await askGeminiSupport(message, ticket);
     recordAiReview(message.guild.id, "support", message.content?.trim() || (message.attachments.size ? "[Bild/Anhang ohne Text]" : "[Support-Anfrage]"), answer, {
       userId: message.author.id,
       channelId: message.channel.id
     });
-    if (!db.tickets[message.channel.id]?.aiEnabled) return true;
+    if (!db.tickets[message.channel.id]?.aiEnabled) { await petResponse.cancel(); return true; }
     const chunks = splitDiscordText(answer);
-    await sendEditableTicketContent(message.channel, aiTextPayload(chunks[0]), { replyTo: message });
+    await petResponse.finish(chunks[0]);
     for (const chunk of chunks.slice(1)) await sendEditableTicketContent(message.channel, aiTextPayload(chunk));
   } catch (err) {
     if (err?.message === "GEMINI_NOT_CONFIGURED") {
-      await sendEditableTicketContent(message.channel, { content: "⚙️ **AI ist noch nicht eingerichtet.** Der Owner muss `GEMINI_API_KEY` in Railway eintragen. Dein Ticket bleibt für menschlichen Support offen." }, { replyTo: message });
+      await sendTicketAiError("⚙️ **AI ist noch nicht eingerichtet.** Der Owner muss `GEMINI_API_KEY` in Railway eintragen. Dein Ticket bleibt für menschlichen Support offen.");
     } else if (String(err?.message || "").includes("TIMEOUT")) {
       console.error("Ticket AI timeout:", err?.message || err);
-      await sendEditableTicketContent(message.channel, { content: "⏱️ **Die AI antwortet gerade zu langsam.** Ich habe die Anfrage abgebrochen, damit das Ticket nicht hängen bleibt. Bitte versuche es erneut oder nutze **Get Human Support**." }, { replyTo: message }).catch(() => {});
+      await sendTicketAiError("⏱️ **Die AI antwortet gerade zu langsam.** Ich habe die Anfrage abgebrochen, damit das Ticket nicht hängen bleibt. Bitte versuche es erneut oder nutze **Get Human Support**.").catch(() => {});
     } else {
       console.error("Ticket AI error:", err);
-      await sendEditableTicketContent(message.channel, { content: "❌ **Die AI hatte ein technisches Problem.** Dein Ticket bleibt offen. Bitte versuche es erneut oder nutze **Get Human Support**." }, { replyTo: message }).catch(() => {});
+      await sendTicketAiError("❌ **Die AI hatte ein technisches Problem.** Dein Ticket bleibt offen. Bitte versuche es erneut oder nutze **Get Human Support**.").catch(() => {});
     }
   }
   return true;
@@ -3087,6 +3091,7 @@ async function snapshotInvites(guild) {
 
 client.once("clientReady", async () => {
   console.log(`${BOT_NAME} ist online als ${client.user.tag}`);
+  void initializePet(client).catch(err => console.warn("Pixel Gojo startup:", err?.code || err?.name));
   await bootstrapGuildApprovals().catch(err => console.error("Guild approval bootstrap failed:", err?.message || err));
   try { youtubeUploads?.start(); } catch (err) { console.warn("YouTube uploads startup failed:", err?.message || err); }
   try {
@@ -3323,16 +3328,18 @@ client.on("messageCreate", async message => {
     }
 
     startAiCooldown(message.author.id);
+    let petResponse;
     try {
-      await sendAiAnimation(payload => message.reply(payload));
+      petResponse = await sendAiAnimation(payload => message.reply(payload));
       await message.channel.sendTyping();
       const answer = await askGemini(question, message.author.tag, message.guild?.id, message.author.id, message.channel.id);
       const chunks = splitDiscordText(answer);
-      await message.reply(aiTextPayload(chunks[0]));
+      await petResponse.finish(chunks[0]);
       for (const chunk of chunks.slice(1)) await message.channel.send(aiTextPayload(chunk));
     } catch (err) {
       console.error("Gemini mention error:", geminiStatus(err) || err?.name);
-      await message.reply(aiTextPayload(chatAiErrorMessage(err)));
+      if (petResponse) await petResponse.finish(chatAiErrorMessage(err), "failed");
+      else await message.reply(aiTextPayload(chatAiErrorMessage(err), "failed"));
     }
   }
 });
@@ -4874,18 +4881,20 @@ client.on("interactionCreate", async interaction => {
           startAiCooldown(interaction.user.id);
           await interaction.deferReply();
 
+          let petResponse;
           try {
-            await sendAiAnimation(payload => interaction.editReply(payload));
+            petResponse = await sendAiAnimation(payload => interaction.editReply(payload), { edit: payload => interaction.editReply(payload) });
             const answer = await askGemini(question, interaction.user.tag, interaction.guild?.id, interaction.user.id, interaction.channelId);
             if (interaction.guild?.id) {
               recordAiReview(interaction.guild.id, "ai", question, answer, { userId: interaction.user.id, channelId: interaction.channel?.id || null });
             }
             const chunks = splitDiscordText(answer);
-            await interaction.followUp(aiTextPayload(chunks[0]));
+            await petResponse.finish(chunks[0]);
             for (const chunk of chunks.slice(1)) await interaction.followUp(aiTextPayload(chunk));
           } catch (err) {
             console.error("Gemini slash error:", geminiStatus(err) || err?.name);
-            return interaction.followUp(aiTextPayload(chatAiErrorMessage(err)));
+            if (petResponse) return petResponse.finish(chatAiErrorMessage(err), "failed");
+            return interaction.editReply(aiTextPayload(chatAiErrorMessage(err), "failed"));
           }
           return;
         }
