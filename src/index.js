@@ -2072,18 +2072,18 @@ function chatAiErrorMessage(error) {
   return "❌ Gemini konnte gerade nicht antworten. Bitte versuche es gleich erneut.";
 }
 
-async function askGemini(question, userTag = "Discord user", guildId = null, userId = null, channelId = null) {
+async function askGemini(question, userTag = "Discord user", guildId = null, userId = null, channelId = null, style = null) {
   const key = aiConversationKey(guildId, userId, channelId);
   if (aiConversationRequests.has(key)) throw new Error("AI_BUSY");
   aiConversationRequests.add(key);
   try {
-    return await generateAiChatAnswer(question, userTag, guildId, userId, channelId);
+    return await generateAiChatAnswer(question, userTag, guildId, userId, channelId, style);
   } finally {
     aiConversationRequests.delete(key);
   }
 }
 
-async function generateAiChatAnswer(question, userTag, guildId, userId, channelId) {
+async function generateAiChatAnswer(question, userTag, guildId, userId, channelId, style = null) {
   const learnedContext = getGuildLearnContext(guildId, "ai", 4000, 5000);
   const adminFeedback = getAiFeedbackText(guildId, "ai", 4500);
   const history = getAiConversation(guildId, userId, channelId);
@@ -2117,7 +2117,17 @@ async function generateAiChatAnswer(question, userTag, guildId, userId, channelI
       systemInstruction: `Du heißt ${AI_NAME} und bist die KI von ${BOT_NAME}, einem Multi-Game-Discord-Bot. Dein Begleiter ist ein kleiner Pixel-Magier. Stelle dich nicht vor jeder Antwort erneut vor.
 
 DEIN STIL:
-- Schreib locker, warm und natürlich – eher wie ein guter Kumpel im Discord-Chat als wie ein steifer Support-Bot.
+${style === "senz-de" ? `- Antworte auf Deutsch, kurz und locker wie ein Kumpel im Discord-Chat. Gewünschte Übersetzungen, Zitate und Code dürfen natürlich ihre passende Sprache behalten.
+- Bei normalem Chat reichen meist ein bis drei kurze Sätze; auf einen Witz oder eine Reaktion manchmal nur wenige Wörter. Erkläre komplizierte Fragen trotzdem verständlich und gib auf Wunsch alle nötigen Schritte.
+- Sei spontan, humorvoll und ein bisschen frech, aber nicht beleidigend. Bei ernsten Anliegen bleib respektvoll und lass Witze weg.
+- Gelegentlich passt ein "bro", "oha" oder "fühl ich". Erzwinge keinen Slang und beginne nicht jede Antwort gleich.
+- Nutze höchstens ein passendes Reaktions-Emoji wie 😭, 💀 oder 😂; oft passt auch gar keins.
+- Steig direkt ein. Keine förmliche Begrüßung, Standard-Einleitung, unnötigen Überschriften oder angehängten Hilfsangebote. Listen nur, wenn sie wirklich helfen.
+- Greife den Gesprächsverlauf auf. Wiederhole weder die Frage noch frühere Antworten; ergänze bei Nachfragen neue Erklärungen oder Beispiele.
+- Stelle höchstens eine Rückfrage, wenn du ohne sie nicht sinnvoll antworten kannst.
+- Erfinde keine Fakten, aktuellen Spielstände, Shops, Spawn-Zeiten oder anderen Live-Daten. Sag knapp und ehrlich, wenn du etwas nicht weißt.
+- Beispiele für den Ton, nicht als feste Antworten: "bro, das sieht echt gut aus 😭", "kann ich dir nicht vorhersagen, ich seh auch nur die aktuellen Meldungen", "oha, das war knapp 💀". Passe deine Antwort immer an die tatsächliche Frage an.
+- Behalte deinen eigenen Namen und die bestehende Bot-Identität. Dieser Stil gilt nur für diese /ai-Antwort.` : `- Schreib locker, warm und natürlich – eher wie ein guter Kumpel im Discord-Chat als wie ein steifer Support-Bot.
 - Passe dich der Sprache des Nutzers an. Wenn er kurz, locker oder mit Slang schreibt, darfst du ebenfalls locker antworten, ohne ihn nachzuäffen.
 - Kleine humorvolle Reaktionen und gelegentliche Emojis sind okay, aber übertreib nicht und erzwinge keine künstliche Begeisterung.
 - Antworte direkt auf die eigentliche Frage und nicht mit immer derselben Standard-Einleitung.
@@ -2130,7 +2140,7 @@ DEIN STIL:
 - Wenn der Nutzer dieselbe Frage erneut stellt, liefere eine neue Erklärung, andere Beispiele oder einen besseren Lösungsweg statt dieselbe Antwort umzuschreiben.
 - Stelle höchstens eine Rückfrage und nur dann, wenn ohne sie keine sinnvolle Antwort möglich ist.
 - Erfinde keine Fakten, Live-Spielerdaten, aktuellen Shops, Patchnotes oder Statistiken.
-- Wenn du etwas nicht sicher weißt, sage das knapp und konkret.
+- Wenn du etwas nicht sicher weißt, sage das knapp und konkret.`}
 
 THEMEN:
 Hilf besonders bei Gaming, Discord, Teamsuche, Community- und Bot-Fragen, unter anderem zu Fortnite, Roblox, Brawl Stars, GTA, Minecraft, VALORANT, Rocket League, Marvel Rivals, Call of Duty/Warzone, EA SPORTS FC, League of Legends, Counter-Strike, Apex und Overwatch.
@@ -4884,7 +4894,7 @@ client.on("interactionCreate", async interaction => {
           let petResponse;
           try {
             petResponse = await sendAiAnimation(payload => interaction.editReply(payload), { edit: payload => interaction.editReply(payload) });
-            const answer = await askGemini(question, interaction.user.tag, interaction.guild?.id, interaction.user.id, interaction.channelId);
+            const answer = await askGemini(question, interaction.user.tag, interaction.guild?.id, interaction.user.id, interaction.channelId, "senz-de");
             if (interaction.guild?.id) {
               recordAiReview(interaction.guild.id, "ai", question, answer, { userId: interaction.user.id, channelId: interaction.channel?.id || null });
             }
