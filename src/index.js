@@ -3873,149 +3873,48 @@ ${options.serverSetupSummary}` : ""}${supportRole ? `
 👉 Weise deinen Mods jetzt die Rolle **${supportRole.name}** zu.` : ""}`);
 }
 
-async function runServerSetup(interaction) {
-  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ content: "❌ Dafür brauchst du Administrator-Rechte.", flags: MessageFlags.Ephemeral });
+let serverSetupDesigner = null;
+function getServerSetupDesigner() {
+  if (!serverSetupDesigner) {
+    // Loaded only when the new setup is used; a missing update module cannot stop other commands.
+    const { createServerSetupDesigner, purposeChannelIds } = require("./server_setup_designs");
+    serverSetupDesigner = createServerSetupDesigner({
+      guildData, saveDB, generateGeminiContent,
+      model: GEMINI_MODEL,
+      aiConfigured: () => Boolean(GEMINI_API_KEY),
+      purposeAliases: SMART_SETUP_PURPOSES,
+      getStaffChannels: guildId => db.staff?.[guildId]?.channels || {},
+      setupLocks: setupInProgress,
+      findSupportRole: async guild => {
+        const gd = guildData(guild.id);
+        return (gd.supportRoleId && guild.roles.cache.get(gd.supportRoleId)) || await findOrCreateRole(guild, "Support Team");
+      },
+      upsertPanel: upsertSetupPanel,
+      isMaintenance: interaction => db.maintenance && interaction.user.id !== OWNER_ID,
+      configure: async guild => {
+        const gd = guildData(guild.id);
+        const selected = [], used = new Set();
+        for (const purpose of SMART_SETUP_PURPOSES) {
+          const channel = purposeChannelIds(gd, purpose.canonical, db.staff?.[guild.id]?.channels).map(id => guild.channels.cache.get(id)).find(channel =>
+            channel && !used.has(channel.id) && [ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type) &&
+            (!PRIVATE_SETUP_PURPOSES.has(purpose.canonical) || channelIsPrivateForEveryone(channel))
+          );
+          if (!channel) continue;
+          selected.push({ canonical: purpose.canonical, channelId: channel.id, source: "Design", score: 999 });
+          used.add(channel.id);
+        }
+        return configureFoundSetupChannels(guild, {
+          scanned: guild.channels.cache.size, reused: selected.length, selected, aiUsed: false,
+          suggestionChannelIds: gd.suggestionChannelIds || []
+        });
+      }
+    });
   }
+  return serverSetupDesigner;
+}
 
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-  await interaction.editReply("🏗️ **Server Setup:** Ich erstelle jetzt die komplette Grundstruktur. Vorhandene passende Kanäle bleiben erhalten und werden wiederverwendet.");
-
-  const guild = interaction.guild;
-  const gd = guildData(guild.id);
-  const beforeIds = new Set(guild.channels.cache.keys());
-  let created = 0;
-  let reused = 0;
-  const touched = new Map();
-  const track = (key, channel) => {
-    if (!channel) return channel;
-    touched.set(key, channel.id);
-    if (beforeIds.has(channel.id)) reused += 1;
-    else { created += 1; beforeIds.add(channel.id); }
-    return channel;
-  };
-
-  const supportRole = await findOrCreateRole(guild, "Support Team");
-  if (supportRole) gd.supportRoleId = supportRole.id;
-
-  const infoCat = track("catInfo", await findOrCreateCategory(guild, "GAMING • INFO"));
-  const communityCat = track("catCommunity", await findOrCreateCategory(guild, "GAMING • COMMUNITY"));
-  const teamCat = track("catTeam", await findOrCreateCategory(guild, "GAMING • TEAMSEARCH"));
-  const eventCat = track("catEvents", await findOrCreateCategory(guild, "GAMING • EVENTS"));
-  const squadCat = track("catSquads", await findOrCreateCategory(guild, "GAMING • SQUADS"));
-  const supportCat = track("catSupport", await findOrCreateCategory(guild, "GAMING • SUPPORT"));
-  const voiceCat = track("catVoice", await findOrCreateCategory(guild, "GAMING • VOICE"));
-  const staffCat = track("catStaff", await findOrCreateCategory(guild, "STAFF • MANAGEMENT"));
-
-  const meId = guild.members.me?.id || client.user.id;
-  const readOnlyPerms = [
-    { id: guild.roles.everyone.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory], deny: [PermissionsBitField.Flags.SendMessages] },
-    { id: meId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ManageMessages] }
-  ];
-  const staffPerms = [
-    { id: guild.roles.everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-    ...(supportRole ? [{ id: supportRole.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.AttachFiles, PermissionsBitField.Flags.EmbedLinks] }] : []),
-    { id: meId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.ManageMessages, PermissionsBitField.Flags.ManageChannels] }
-  ];
-
-  // START / INFO
-  const welcome = track("welcome", await findOrCreateText(guild, "welcome", infoCat, readOnlyPerms));
-  const rules = track("rules", await findOrCreateText(guild, "rules", infoCat, readOnlyPerms));
-  const announcements = track("announcements", await findOrCreateText(guild, "announcements", infoCat, readOnlyPerms));
-  const serverInfo = track("serverInfo", await findOrCreateText(guild, "server-info", infoCat, readOnlyPerms));
-  const changelog = track("changelog", await findOrCreateText(guild, "changelog", infoCat, readOnlyPerms));
-
-  // COMMUNITY / CHAT
-  const general = track("general", await findOrCreateText(guild, "general-chat", communityCat));
-  const gaming = track("gaming", await findOrCreateText(guild, "gaming-chat", communityCat));
-  const offTopic = track("offTopic", await findOrCreateText(guild, "off-topic", communityCat));
-  const media = track("media", await findOrCreateText(guild, "media", communityCat));
-  const clips = track("clips", await findOrCreateText(guild, "clips", communityCat));
-  const memes = track("memes", await findOrCreateText(guild, "memes", communityCat));
-  const botCommands = track("botCommands", await findOrCreateText(guild, "bot-commands", communityCat));
-
-  // BOT / GAMING HUBS. The normal Smart Setup will fill these with the actual panels.
-  const teamsearch = track("teamsearch", await findOrCreateText(guild, "teamsearch", teamCat));
-  const events = track("events", await findOrCreateText(guild, "events", eventCat));
-  const squads = track("squads", await findOrCreateText(guild, "squad-hub", squadCat));
-  const support = track("support", await findOrCreateText(guild, "support", supportCat));
-  const faq = track("faq", await findOrCreateText(guild, "faq", supportCat, readOnlyPerms));
-
-  // VOICE
-  track("voiceGeneral", await findOrCreateVoice(guild, "🔊 General", voiceCat));
-  track("voiceGaming1", await findOrCreateVoice(guild, "🎮 Gaming 1", voiceCat));
-  track("voiceGaming2", await findOrCreateVoice(guild, "🎮 Gaming 2", voiceCat));
-  track("voiceChill", await findOrCreateVoice(guild, "😌 Chill", voiceCat));
-  track("voiceSpotify", await findOrCreateVoice(guild, "🎧 Spotify Party", voiceCat));
-  track("voiceAfk", await findOrCreateVoice(guild, "😴 AFK", voiceCat));
-
-  // PRIVATE STAFF
-  const staffChat = track("staffChat", await findOrCreatePrivateText(guild, "staff-chat", staffCat, staffPerms));
-  const staffCommands = track("staffCommands", await findOrCreatePrivateText(guild, "staff-commands", staffCat, staffPerms));
-
-  gd.serverStructure = {
-    version: "1.4.2",
-    configuredAt: Date.now(),
-    channels: Object.fromEntries(touched)
-  };
-  saveDB();
-
-  const rulesEmbed = footer(new EmbedBuilder()
-    .setTitle("📜 Server-Regeln • Vorlage")
-    .setDescription(`Diese Regeln sind eine **Startvorlage** und können von deinem Team an den Server angepasst werden.
-
-**1.** Behandle andere respektvoll.
-**2.** Kein Spam, Scam oder schädliche Links.
-**3.** Keine privaten Daten anderer veröffentlichen.
-**4.** Nutze die passenden Channels für dein Thema.
-**5.** Halte dich an die Discord-Regeln und die zusätzlichen Regeln dieses Servers.`));
-  await upsertSetupPanel(rules, guild.id, "server_rules_template", { embeds: [rulesEmbed] }, "Server-Regeln");
-
-  const welcomeEmbed = footer(new EmbedBuilder()
-    .setTitle(`👋 Willkommen auf ${guild.name}`)
-    .setDescription("Schau zuerst in **#rules** und **#server-info**. Danach kannst du im Community-Chat loslegen, Mitspieler suchen, Events finden oder bei Support ein Ticket öffnen."));
-  await upsertSetupPanel(welcome, guild.id, "server_welcome_template", { embeds: [welcomeEmbed] }, "Willkommen");
-
-  const infoEmbed = footer(new EmbedBuilder()
-    .setTitle("ℹ️ Server-Übersicht")
-    .setDescription(`💬 **Community:** allgemeiner Chat, Gaming, Media, Clips & Memes
-🎮 **Gaming:** Teamsearch, Events & Squads
-🎫 **Support:** Tickets & FAQ
-🔊 **Voice:** General, Gaming und Chill
-🤖 **Bot:** `/ai`, `/teamsearch`, `/suggestions`, `/communityfrage`, `/profile`, `/quests` und mehr`));
-  await upsertSetupPanel(serverInfo, guild.id, "server_info_template", { embeds: [infoEmbed] }, "Server-Übersicht");
-
-  const commandsEmbed = footer(new EmbedBuilder()
-    .setTitle("🤖 Bot Commands")
-    .setDescription(`Nutze diesen Channel für Bot-Commands, damit die normalen Chats sauber bleiben.
-
-\`/ai\` • AI fragen
-\`/teamsearch\` • Mitspieler suchen
-\`/suggestions\` • Vorschläge
-\`/communityfrage\` • Community-Frage
-\`/profile\` • Profil
-\`/quests\` • Daily Quests
-\`/games\` • unterstützte Games`));
-  await upsertSetupPanel(botCommands, guild.id, "server_commands_template", { embeds: [commandsEmbed] }, "Bot Commands");
-
-  const faqEmbed = footer(new EmbedBuilder()
-    .setTitle("❓ Hilfe & FAQ")
-    .setDescription("Wenn deine Frage hier nicht beantwortet wird, öffne im **#support**-Channel ein Ticket. Dort kannst du zuerst AI-Hilfe nutzen und bei Bedarf an einen menschlichen Supporter übergeben."));
-  await upsertSetupPanel(faq, guild.id, "server_faq_template", { embeds: [faqEmbed] }, "Hilfe & FAQ");
-
-  // Keep useful ids immediately; runSetup/community/staff setup will add the remaining bot-specific ones.
-  gd.channels = {
-    ...gd.channels,
-    announcements: announcements.id,
-    teamsearch: teamsearch.id,
-    support: support.id,
-    ticketCategory: supportCat.id,
-    teamCategory: teamCat.id
-  };
-  saveDB();
-
-  const summary = `🏗️ **Server-Grundstruktur:** **${created}** neu erstellt • **${reused}** wiederverwendet\n💬 Chats, Gaming, Media, Support, Voice und private Staff-Bereiche sind angelegt.`;
-  return runSetupInstall(interaction, { serverSetupSummary: summary });
+async function runServerSetup(interaction) {
+  return getServerSetupDesigner().open(interaction);
 }
 
 async function startTicketWizard(interaction) {
@@ -4750,6 +4649,11 @@ client.on("interactionCreate", async interaction => {
 
     if (interaction.isChatInputCommand() && db.maintenance && interaction.user.id !== OWNER_ID && interaction.commandName !== "statuspanel") {
       return interaction.reply({ content: "🔧 Der Bot ist gerade im Wartungsmodus.", flags: MessageFlags.Ephemeral });
+    }
+
+    if (String(interaction.customId || "").startsWith("ssd:")) {
+      await getServerSetupDesigner().handleInteraction(interaction);
+      return;
     }
 
     if (interaction.isStringSelectMenu() && interaction.customId === "settings_toggle") {
