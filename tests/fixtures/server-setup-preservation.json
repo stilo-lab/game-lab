@@ -1,0 +1,13 @@
+{
+  "sections": [
+    [
+      "let serverSetupDesigner = null;",
+      "async function startTicketWizard("
+    ],
+    [
+      "    if (String(interaction.customId || \"\").startsWith(\"ssd:\")) {",
+      "    if (interaction.isStringSelectMenu() && interaction.customId === \"settings_toggle\") {"
+    ]
+  ],
+  "sha256": "a6d7c8e8431e48c5b9ba876068fcc70a62120eb3b744381f8c3e3c50db738b1f"
+}

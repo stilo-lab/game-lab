@@ -10,15 +10,27 @@
         "function enqueueTicketAi("
       ],
       [
-        "  // Gemini AI: Antwortet, wenn der Bot direkt erwähnt wird.",
+        "  // Gemini AI: Antwortet, wenn der Bot direkt erw\u00e4hnt wird.",
         "async function upsertSetupPanel("
       ],
       [
         "        case \"ai\": {",
         "        case \"aipulse\": {"
+      ],
+      [
+        "async function askGemini(",
+        "const ticketAiQueues"
+      ],
+      [
+        "let serverSetupDesigner = null;",
+        "async function startTicketWizard("
+      ],
+      [
+        "    if (String(interaction.customId || \"\").startsWith(\"ssd:\")) {",
+        "    if (interaction.isStringSelectMenu() && interaction.customId === \"settings_toggle\") {"
       ]
     ],
-    "sha256": "f6c3e371073b372e3f40d7458687c765d277e847c8876a2be7efdb3001ab021b"
+    "sha256": "962584adbf3e24a77d49e2109491b00472ec0c046408ec8ed1b16c87e06cb06f"
   },
   "community.js": {
     "omitLines": [],
