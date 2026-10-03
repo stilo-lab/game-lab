@@ -1,0 +1,112 @@
+{
+  "source": "Pixel-Gojo-Pet.zip: final/spritesheet-extended.png; original Pixel-Zauberer arbeitet am Laptop.png",
+  "native_pet_changed": false,
+  "excluded_source_cells": {
+    "row": 7,
+    "columns": [
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  "all_animation_order": [
+    "idle",
+    "waving",
+    "jumping",
+    "running-right",
+    "running-left",
+    "waiting",
+    "laptop",
+    "review",
+    "blue-red",
+    "look",
+    "failed"
+  ],
+  "animations": {
+    "idle": {
+      "frames": 6,
+      "width": 128,
+      "height": 128,
+      "bytes": 35443,
+      "sha256": "92d186504e2897fe89f46f3d4f5c341cac9ad61129ce12be67a28b7015ba764f"
+    },
+    "running-right": {
+      "frames": 8,
+      "width": 128,
+      "height": 128,
+      "bytes": 46903,
+      "sha256": "e9dbba41b914a07ead5b8b84e3a9a1ea84ba14b5920497692efa1fb849284c7c"
+    },
+    "running-left": {
+      "frames": 8,
+      "width": 128,
+      "height": 128,
+      "bytes": 47917,
+      "sha256": "5efd1d9f74fc82faf8e70fa909899dfde9d40e78b9d08ae9b4c128976edd645d"
+    },
+    "waving": {
+      "frames": 4,
+      "width": 128,
+      "height": 128,
+      "bytes": 24305,
+      "sha256": "84fc6302f96e85e3ad4c766800e55f4a0822ae07f1c5fa128ff0cb42bae99b1b"
+    },
+    "jumping": {
+      "frames": 5,
+      "width": 128,
+      "height": 128,
+      "bytes": 23757,
+      "sha256": "c4137b7db8dab616a62d513bfe2e3fce034b01144143fc3f0b28fe21819daedb"
+    },
+    "failed": {
+      "frames": 8,
+      "width": 128,
+      "height": 128,
+      "bytes": 44993,
+      "sha256": "86078b75c577b8d0b166cecbfd186b8c704ac66204f5062bb76b34d546b971f4"
+    },
+    "waiting": {
+      "frames": 6,
+      "width": 128,
+      "height": 128,
+      "bytes": 34882,
+      "sha256": "cfdb003d5d06e8f5580b6f2f8398a240e662dca584cc477095c16a32e8a43431"
+    },
+    "review": {
+      "frames": 6,
+      "width": 128,
+      "height": 128,
+      "bytes": 34105,
+      "sha256": "b88f7759685efbda2ad82c70004ee53bfef3f4ee53b10394bb0e5a9f74531f4d"
+    },
+    "laptop": {
+      "frames": 6,
+      "width": 128,
+      "height": 128,
+      "bytes": 34489,
+      "sha256": "a6f51b77e3b31de826feac5929fccd1b4116ecb0ce97eb914ef56244141abb51"
+    },
+    "look": {
+      "frames": 16,
+      "width": 128,
+      "height": 128,
+      "bytes": 94101,
+      "sha256": "9ffc956ed415813bf7ac02ad3c9eae6df8298035fb6876f49e4fedf06c0b7997"
+    },
+    "blue-red": {
+      "frames": 2,
+      "width": 128,
+      "height": 128,
+      "bytes": 10699,
+      "sha256": "30ee324c4af75489240b03c21020ac9e244c7a26df6bda6f6e20e791620e7ddd"
+    },
+    "all": {
+      "frames": 75,
+      "width": 80,
+      "height": 80,
+      "bytes": 224765,
+      "sha256": "a4a8e49f456243d380a6ea5c38d48db2ba8c3969605579299a0102f67fe76a4c"
+    }
+  }
+}
