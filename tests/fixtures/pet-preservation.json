@@ -1,0 +1,33 @@
+{
+  "index.js": {
+    "omitLines": [
+      "require(\"./pixel_gojo\")",
+      "void initializePet(client)"
+    ],
+    "omitSections": [
+      [
+        "async function runTicketAi(",
+        "function enqueueTicketAi("
+      ],
+      [
+        "  // Gemini AI: Antwortet, wenn der Bot direkt erwähnt wird.",
+        "async function upsertSetupPanel("
+      ],
+      [
+        "        case \"ai\": {",
+        "        case \"aipulse\": {"
+      ]
+    ],
+    "sha256": "f6c3e371073b372e3f40d7458687c765d277e847c8876a2be7efdb3001ab021b"
+  },
+  "community.js": {
+    "omitLines": [],
+    "omitSections": [
+      [
+        "  async function respondToSuggestion(",
+        "  async function postSuggestion("
+      ]
+    ],
+    "sha256": "9734186c44ea3944b1942301d77b98c5e35b35b0bbf406b1c943d3d999992957"
+  }
+}
