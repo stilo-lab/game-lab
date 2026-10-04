@@ -12,14 +12,14 @@ function section(start, end) {
 }
 function chat(generate) {
   const ctx = {
-    Date, Map, Set, JSON, console, AI_NAME: pet.AI_NAME, BOT_NAME: 'Unchanged Bot', GEMINI_MODEL: 'configured-model',
+    Date, Map, Set, JSON, console, require: require('node:module').createRequire(path.join(__dirname, '../src/index.js')), AI_NAME: pet.AI_NAME, BOT_NAME: 'Unchanged Bot', GEMINI_MODEL: 'configured-model',
     generateGeminiContent: generate,
     getGuildLearnContext: () => ({ instructions: 'Antworte kurz', knowledge: 'Serverevent am Freitag' }),
     getAiFeedbackText: () => 'Beispiele nennen', geminiStatus: e => e?.status || null
   };
   vm.createContext(ctx);
   vm.runInContext(section('const aiConversationHistory', 'const geminiSerialByModel') +
-    section('function aiConversationKey(', 'function splitDiscordText(') +
+    section('function aiQuality()', 'function splitDiscordText(') +
     section('function chatAiErrorMessage(', 'const ticketAiQueues') + '\nthis.history = aiConversationHistory;', ctx);
   return ctx;
 }
@@ -111,7 +111,7 @@ test('The actual /ai handler updates its original reply and only sends extra mes
     followUp: async p => { assert.match(p.content, /Pixel Gojo/); events.push('overflow'); } };
   const ctx = { interaction, serverSettings: () => ({ aiEnabled: true }), aiCooldownRemaining: () => 0,
     startAiCooldown() {}, sendAiAnimation: pet.sendAiAnimation, aiTextPayload: pet.aiTextPayload,
-    askGemini: async (...args) => { assert.equal(args[4], 'c'); events.push('generate'); return 'Antwort'; },
+    askGemini: async (...args) => { assert.equal(args[4], 'c'); assert.equal(args[5], 'senz-de'); events.push('generate'); return 'Antwort'; },
     recordAiReview() {}, splitDiscordText: () => ['Teil eins', 'Teil zwei'], console };
   await vm.runInNewContext('(async () => { switch ("ai") { ' + section('        case "ai": {', '        case "aipulse": {') + ' } })()', ctx);
   assert.deepEqual(events, ['defer', 'thinking', 'generate', 'first answer', 'overflow']);
@@ -131,12 +131,26 @@ test('Chat retains admin knowledge and follow-ups, isolated by channel and user'
   assert.equal(requests[2].contents.length, 1);
   assert.equal(requests[3].contents.length, 1);
 });
+test('/ai keeps the German casual style and the default tone while adding shared reasoning guidance', async () => {
+  const requests = [];
+  const ctx = chat(async r => { requests.push(r); return { text: 'Antwort' }; });
+  await ctx.askGemini('Frage', 'User', 'g', 'u', 'c', 'senz-de');
+  await ctx.askGemini('Frage', 'User', 'g', 'u', 'c');
+  assert.match(requests[0].config.systemInstruction, /Antworte auf Deutsch, kurz und locker/);
+  assert.match(requests[0].config.systemInstruction, /Serverevent am Freitag/);
+  assert.match(requests[0].config.systemInstruction, /Beispiele nennen/);
+  assert.equal(require('node:crypto').createHash('sha256').update(requests[1].config.systemInstruction.split('\n\nANTWORTQUALITÄT:')[0]).digest('hex'),
+    '428ecef8fa4f513b827d894202e86dad7899b4e5f5c1010b2d9de9b51e8a8de1');
+});
 test('Repeated answers trigger a fresh attempt, failures do not become history', async () => {
   const repeated = 'Eine lange identische Antwort auf eine Frage, die hier nicht einfach wiederholt werden soll.';
   const answers = [repeated, repeated, 'Eine neue konkrete Erklärung mit einem anderen Beispiel.'];
-  const ctx = chat(async () => ({ text: answers.shift() }));
-  await ctx.askGemini('Frage', 'User', 'g', 'u', 'c');
-  const response = await ctx.askGemini('Genauer?', 'User', 'g', 'u', 'c');
+  const ctx = chat(async r => {
+    assert.match(r.config.systemInstruction, /Antworte auf Deutsch, kurz und locker/);
+    return { text: answers.shift() };
+  });
+  await ctx.askGemini('Frage', 'User', 'g', 'u', 'c', 'senz-de');
+  const response = await ctx.askGemini('Genauer?', 'User', 'g', 'u', 'c', 'senz-de');
   assert.match(response, /neue konkrete/);
   ctx.generateGeminiContent = async () => ({ text: '' });
   await assert.rejects(ctx.askGemini('Weiter?', 'User', 'g', 'u', 'c'), /AI_EMPTY_RESPONSE/);
@@ -304,7 +318,7 @@ test('Turning ticket AI off during generation removes the pending indicator and 
   assert.equal(sent, 1); assert.equal(deleted, 1); assert.equal(edits, 0);
 });
 
-test('All index/community code outside the pet integration is identical to the uploaded ZIP', () => {
+test('All index/community code outside the pet integration and /ai style is identical to the uploaded ZIP', () => {
   const expected = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/pet-preservation.json')));
   for (const [file, spec] of Object.entries(expected)) {
     let text = fs.readFileSync(path.join(__dirname, '../src', file), 'utf8');
