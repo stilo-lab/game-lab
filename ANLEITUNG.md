@@ -1,69 +1,62 @@
-# Pixel · Server-Setup mit drei Designs und KI-Wünschen
+# Pixel · Schlauere Chat-KI und Support-KI
 
-## Installieren
-
-Dieses Update gehört zu deinem bestehenden Bot mit dem zuletzt gelieferten AI-Stil-Update.
+## Einbauen
 
 1. ZIP entpacken.
-2. Im Bot-Projekt `src/index.js` durch die Datei aus diesem ZIP ersetzen.
-3. Die neue Datei `src/server_setup_designs.js` ebenfalls in den vorhandenen Ordner `src` legen.
-4. Änderungen auf GitHub hochladen und den Bot bei Railway neu deployen bzw. neu starten.
-5. In Discord als Server-Administrator `/serversetup` ausführen.
+2. Die drei Dateien aus `src` in den vorhandenen `src`-Ordner deines Bots hochladen:
+   - `index.js` ersetzen.
+   - `ai_quality.js` hinzufügen.
+   - `server_setup_designs.js` hinzufügen oder ersetzen. Das ist unverändert das Modul aus deinem letzten Server-Setup-Update; es ist für eine vollständige Installation ebenfalls dabei.
+3. Änderungen auf GitHub speichern und den Bot bei Railway neu deployen bzw. neu starten.
 
-Es werden keine neuen Pakete benötigt. Die bisherigen Bot-Dateien, Einstellungen und Assets weiterverwenden. Gojo-Grafiken sind deshalb nicht erneut enthalten. Der Bot-Token und andere Schlüssel gehören weiterhin in die vorhandenen Umgebungsvariablen.
+Deine vorhandenen übrigen Bot-Dateien, Daten, Gojo-Assets und Umgebungsvariablen weiterverwenden. Keine neuen Pakete, kein neuer Schlüssel und keine neuen Slash-Befehle nötig. Das Update baut auf dem zuletzt gelieferten Server-Setup mit drei Designs auf.
 
-## Die Auswahl
+## Was verbessert wurde
 
-Die Vorlagen übernehmen die drei Schrift- und Emoji-Stile aus deinen Bildern:
+### Chat-KI: /ai und direkte Erwähnung
 
-| Variante | Beispiele |
-| --- | --- |
-| 1 · Klammern & fette Schrift | `『💬』𝐂𝐡𝐚𝐭` · `『📜』𝐑𝐞𝐠𝐞𝐥𝐧` |
-| 2 · Schlicht mit Emojis | `💬│chat` · `🎫│tickets` |
-| 3 · Schmuckschrift & Gaming | `💬ℂ𝕙𝕒𝕥` · `💬 \| COMMUNITY \| 💬` |
-| Eigenes Design mit KI | Beschreibe Schrift, Emojis, Kategorien, Kanalnamen und Umfang selbst. |
+- Bis zu zwölf statt fünf Frage-Antwort-Paare im Kontext, mit einem zusätzlichen Größenlimit. Der Verlauf bleibt nach der letzten erfolgreichen Antwort bis zu zwei Stunden im Arbeitsspeicher. Bei einem Neustart wird er zurückgesetzt.
+- Gespräche bleiben nach Server, Kanal und Nutzer getrennt.
+- Die KI soll Korrekturen und schon genannte Details berücksichtigen, bei Folgefragen beim Thema bleiben und auf „geht nicht“ gezielt reagieren.
+- Passendes älteres Serverwissen aus `/learn` kann jetzt vor neueren, unpassenden Einträgen ausgewählt werden. Gleiches gilt für Feedback aus `/verbesserung`.
+- Bei technischen Fragen stehen mehr Ausgabetokens und eine niedrigere Zufälligkeit zur Verfügung. Smalltalk behält den kurzen, lockeren Stil; die deutschen SenZ-artigen Tonbeispiele für `/ai` bleiben erhalten.
+- Klarere Vorgaben gegen erfundene Live-Daten, unnötige Rückfragen und falsche Behauptungen über ausgeführte Aktionen. Die normale Chat-KI erhält durch dieses Update keinen Internetzugriff.
 
-Die drei fertigen Vorlagen enthalten jeweils 39 Kanäle in acht Kategorien: Infos, Community, Bot, Games, Giveaways, Support, Voice und Team. Sie verwenden die vorhandenen Funktionen deines Bots. Persönliche Shop-Namen aus den Screenshots werden nicht übernommen.
+### Support-KI
 
-## Eigenen Wunsch eingeben
+- Der aktuelle Ticket-Verlauf enthält auch frühere KI-Lösungsvorschläge. Dadurch kann die KI erkennen, welcher Schritt bereits erfolglos versucht wurde.
+- Konkrete nächste Prüfschritte, erwartete Ergebnisse und höchstens eine entscheidende Rückfrage auf einmal. Eine vollständige Anleitung bleibt auf Wunsch möglich.
+- Screenshots werden weiterhin mitgesendet; sichtbare Angaben und nicht lesbare Details sollen klar unterschieden werden. Alte Dateinamen gelten nicht als aktuell sichtbare Bilder.
+- Wenn ein gespeicherter Gemini-Verlauf abgelaufen ist, wird die Anfrage einmal mit dem lokalen Ticket-Kontext neu versucht.
+- Bei Ausfall des primären Support-Modells verwendet der Ersatzweg die normale Content-API. Er erhält dieselben Bilder, FAQ, Serverinformationen, Admin-Hinweise und bisherigen Lösungsschritte. Im alten Ersatzweg gingen Teile davon verloren.
+- Google-Suche bleibt im primären Support-Weg verfügbar. Der Ersatzweg arbeitet ohne Suche und wird ausdrücklich angewiesen, keine aktuelle Recherche zu behaupten.
+- Leere Antworten gelten als Fehler; sie werden nicht als erfolgreiche Lösung gespeichert. Quellen werden aus tatsächlich zurückgegebenen Quellenangaben gelesen.
+- Die Zusammenfassung für Menschen berücksichtigt auch bereits vorgeschlagene KI-Schritte. Wird die KI während einer laufenden Antwort ausgeschaltet oder das Ticket geschlossen, wird ihre Antwort nicht nachträglich angezeigt und der alte Gesprächsstatus nicht wiederhergestellt.
 
-Wähle **Eigenes Design mit KI** und beschreibe beispielsweise:
+Moderationsentscheidungen bleiben bei Menschen. Die KI erhält keine neuen Rechte zum Ändern von Konten, Kanälen oder Servereinstellungen.
 
-> Mach einen kleinen blauen Gaming-Server ohne Schmuckschrift. Ich möchte Regeln, Chat, Clips, Tickets, zwei Sprachkanäle und einen privaten Team-Bereich. Nimm 🌊 als Kategorie-Emoji.
+## Kurz ausprobieren
 
-Du bekommst erst einen Entwurf. Über **KI: Wunsch ändern** kannst du danach beispielsweise schreiben: „Nenn den Chat pixel-lounge und füge einen Kanal für Ideen hinzu.“
+**Chat:** „Mein YouTube-Link meldet 404, ich nutze Railway.“ Danach: „Hab ich schon gemacht, geht trotzdem nicht.“ Die Antwort sollte beim YouTube-Problem bleiben und nach dem konkreten Ergebnis fragen oder einen anderen sinnvollen Prüfschritt nennen.
 
-Dafür wird die schon vorhandene Gemini-Konfiguration (`GEMINI_API_KEY` und das konfigurierte Modell) verwendet. Ohne KI-Schlüssel bleiben die drei fertigen Vorlagen verfügbar. Die KI bekommt deinen Gestaltungswunsch und den aktuellen Entwurf, keine Chatverläufe.
+**Support:** In einem Ticket die KI einschalten, Fehlertext oder Screenshot schicken und nach einem vorgeschlagenen Schritt das Ergebnis melden. Sie sollte frühere Angaben berücksichtigen. „Get Human Support“ und „Continue“ bleiben verfügbar.
 
-## Vorschau und Anwenden
+**Serverwissen:** Mit `/learn` einen konkreten Fakt für die passende KI hinterlegen und später dazu fragen. `/verbesserung` bleibt für die Korrektur echter Antworten nutzbar.
 
-- Mit den Pfeilen alle Seiten ansehen. Die Vorschau markiert neue, umbenannte und übernommene Kanäle.
-- **Bestehende gestalten: AN** benennt eindeutig zugeordnete Kanäle um und verschiebt sie in die vorgesehenen Kategorien. Ihre IDs, Chatverläufe und bestehenden Kanalrechte bleiben erhalten.
-- **Bestehende gestalten: AUS** behält Name und Kategorie vorhandener Kanäle bei. Fehlende Kanäle werden ergänzt.
-- **Anwenden** führt den Entwurf aus. **Abbrechen** verändert den Server nicht.
+## Prüfung und Grenzen
 
-Vorhandene Kanäle werden nicht gelöscht. Kanäle außerhalb des Entwurfs bleiben bestehen, auch wenn du einen kleineren Aufbau wünschst. Neue Team- und Logkanäle sind privat; aktive Tickets werden nicht als Vorlagenkanäle wiederverwendet. Bei bestehenden Kanälen gelten weiterhin ihre bisherigen Rechte, auch wenn der Entwurf einen anderen Schreibzugriff vorschlägt.
+92 automatisierte Tests bestanden: neue Prüfungen für Kontext, relevante Wissensauswahl, Support-Fallback, Bilder, abgelaufene Interaktionen und Übergaben sowie die bisherigen Tests für Gojo/KI, Server-Setup und YouTube. Die beiden geänderten Quelldateien wurden auf Syntax geprüft. Quelltext außerhalb der freigegebenen KI-Bereiche und die bestehenden Funktionsmodule wurden gegen das letzte Update verglichen.
 
-Vorhandene Zuordnungen für Tickets, Community und Team werden übernommen. Die üblichen Bot-Panels werden eingerichtet oder aktualisiert; Regeln und FAQ erhalten erkennbare Vorlagen. Ein Kanalname allein aktiviert keine zusätzliche Funktion: YouTube-Abos zum Beispiel weiterhin über das vorhandene YouTube-System einrichten.
+Die Modellaufrufe wurden in Tests simuliert; keine Live-Prüfung auf Discord oder gegen Gemini. Das Update verbessert Kontext und Antwortvorgaben, wechselt aber nicht automatisch auf ein anderes Modell. Die tatsächliche Antwortqualität hängt weiterhin vom eingestellten Modell und den verfügbaren Informationen ab. Mehr Gesprächskontext kann mehr API-Tokens verbrauchen.
 
-Der Bot benötigt passende Kanal-, Nachrichten-, Thread- und Sprachrechte. Zum Erstellen fehlender Bot-Rollen braucht er außerdem „Rollen verwalten“ und eine ausreichend hohe Rolle. Fehlende Rechte werden beim Anwenden gemeldet.
-
-Eine Vorschau läuft nach 20 Minuten oder einem Bot-Neustart ab. Dann `/serversetup` erneut starten. Nach einem teilweise fehlgeschlagenen Setup werden erfolgreich erstellte Kanal-IDs gespeichert und beim nächsten Versuch wiederverwendet.
-
-`/setup` behält seine bisherige Funktion zum Erkennen und Verbinden vorhandener Bot-Kanäle.
-
-## Prüfung
-
-76 automatisierte Tests bestanden: 18 für das neue Setup, 23 für Gojo/KI und 35 für YouTube und bestehende Integration. Außerdem Syntaxprüfung der beiden geänderten Bot-Dateien. Die neuen Tests prüfen unter anderem KI-Wünsche, Administratorrechte, Vorschau, Abbruch, Umbenennen ohne Änderung bestehender Rechte, ältere Kanalzuordnungen und Wiederholungen nach Teilfehlern.
-
-Die übrigen Bereiche der zentralen Bot-Datei sowie die vorhandenen Funktionsmodule wurden gegen das letzte Update verglichen. Keine Live-Prüfung auf Discord oder gegen Gemini durchgeführt.
-
-Optional im bestehenden Projekt nach Installation der vorhandenen Abhängigkeiten:
+Optional nach Installation der vorhandenen Projekt-Abhängigkeiten:
 
 ```sh
 node --check src/index.js
-node --check src/server_setup_designs.js
-node tests/server_setup_designs.test.js
+node --check src/ai_quality.js
+node tests/ai_quality.test.js
 ```
 
-Der Ordner `tests` enthält die neuen Tests sowie aktualisierte Vergleichsdaten für die vorhandenen Gojo-Tests; er wird für den laufenden Bot nicht benötigt.
+Der mitgelieferte `tests`-Ordner aktualisiert außerdem die vorhandenen Vergleichsdaten und den Gojo-KI-Test für den erweiterten KI-Kontext. Für den laufenden Bot werden die Tests nicht benötigt.
+
+Technische Referenz für die verwendeten Antwort- und Bildformate: [offizielle Gemini-Migrationsdokumentation](https://ai.google.dev/gemini-api/docs/migrate-to-interactions) und [Interactions-Verlauf](https://ai.google.dev/gemini-api/docs/interactions-overview).
