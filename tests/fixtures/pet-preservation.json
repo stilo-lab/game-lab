@@ -28,9 +28,37 @@
       [
         "    if (String(interaction.customId || \"\").startsWith(\"ssd:\")) {",
         "    if (interaction.isStringSelectMenu() && interaction.customId === \"settings_toggle\") {"
+      ],
+      [
+        "const AI_HISTORY_MAX_MESSAGES",
+        "const geminiSerialByModel"
+      ],
+      [
+        "function aiQuality()",
+        "function splitDiscordText("
+      ],
+      [
+        "function getGuildLearnContext(",
+        "function recordAiReview("
+      ],
+      [
+        "function getAiFeedbackText(",
+        "function isAiReviewAdmin("
+      ],
+      [
+        "async function localTicketSummary(",
+        "async function summarizeTicketForHuman("
+      ],
+      [
+        "async function discordImageParts(",
+        "const aiPulseCache"
+      ],
+      [
+        "async function askGeminiSupport(",
+        "function enqueueTicketAi("
       ]
     ],
-    "sha256": "962584adbf3e24a77d49e2109491b00472ec0c046408ec8ed1b16c87e06cb06f"
+    "sha256": "4d9714f321cf280bd4d741e4728f6858bf19d519b7a6ad36d89e855e300a29cb"
   },
   "community.js": {
     "omitLines": [],

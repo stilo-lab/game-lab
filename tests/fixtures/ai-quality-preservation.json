@@ -1,14 +1,6 @@
 {
   "sections": [
     [
-      "let serverSetupDesigner = null;",
-      "async function startTicketWizard("
-    ],
-    [
-      "    if (String(interaction.customId || \"\").startsWith(\"ssd:\")) {",
-      "    if (interaction.isStringSelectMenu() && interaction.customId === \"settings_toggle\") {"
-    ],
-    [
       "const AI_HISTORY_MAX_MESSAGES",
       "const geminiSerialByModel"
     ],
@@ -41,5 +33,5 @@
       "function enqueueTicketAi("
     ]
   ],
-  "sha256": "5d035c0e953aa29ee511518e10225d2d789b77d46c33ea8f688eabc272983958"
+  "sha256": "82d5b46f1707f20949d980b61a4757e4ba8f858cf4c30693dea9844ae4ba4d8a"
 }
