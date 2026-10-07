@@ -1,0 +1,68 @@
+{
+  "streamers": [
+    ["Chat-Moment", "Chat, habt ihr das gesehen?!", "normal", "de-DE-ConradNeural"],
+    ["Clip das!", "Clip das! Clip das!", "easy", "de-DE-ConradNeural"],
+    ["Komplett lost", "Junge, komplett lost!", "easy", "de-DE-KatjaNeural"],
+    ["Letzte Runde", "Okay, wirklich die letzte Runde!", "normal", "de-DE-ConradNeural"],
+    ["Lag-Ausrede", "Ich schwöre, der laggt!", "normal", "de-DE-ConradNeural"],
+    ["Weltrekord", "Chat! Das ist ein Weltrekord!", "hard", "de-DE-KatjaNeural"],
+    ["Das zählt nicht", "Nein, nein! Das zählt nicht!", "normal", "de-DE-ConradNeural"],
+    ["Nicht sauer", "Ich bin nicht sauer. Überhaupt nicht!", "hard", "de-DE-ConradNeural"],
+    ["Raus!", "Raus! Sofort raus!", "easy", "de-DE-KatjaNeural"],
+    ["Was macht der?", "Bruder, was macht der?!", "normal", "de-DE-ConradNeural"],
+    ["Noch ein Versuch", "Nur noch ein Versuch. Ganz ehrlich!", "hard", "de-DE-ConradNeural"],
+    ["Wer hat das geclippt?", "Wer hat das bitte geclippt?!", "normal", "de-DE-KatjaNeural"],
+    ["Let's go!", "Let's go! Let's go!", "easy", "en-US-GuyNeural"],
+    ["Kompletter Rage", "Nein! Nicht schon wieder!", "hard", "de-DE-ConradNeural"],
+    ["Aim oder Glück", "Das war kein Aim. Das war Glück!", "hard", "de-DE-KatjaNeural"],
+    ["Chat entscheidet", "Chat, entscheidet ihr! Ich bin raus!", "normal", "de-DE-ConradNeural"]
+  ],
+  "memes": [
+    ["Bruder muss los", "Bruder muss los!", "easy", "de-DE-ConradNeural"],
+    ["Ja moin", "Ja, moin!", "easy", "de-DE-ConradNeural"],
+    ["Nein Doch Oh", "Nein! Doch! Oh!", "normal", "de-DE-KatjaNeural"],
+    ["Emotional damage", "Emotional damage!", "normal", "en-US-GuyNeural"],
+    ["Skill issue", "Skill issue!", "easy", "en-US-AriaNeural"],
+    ["Unser Tisch", "Oh nein! Unser Tisch!", "hard", "de-DE-KatjaNeural"],
+    ["Sus", "Das ist aber sus!", "easy", "de-DE-ConradNeural"],
+    ["Side eye", "Bombastic side eye!", "normal", "en-US-AriaNeural"],
+    ["Nicht normal", "Das ist doch nicht normal!", "normal", "de-DE-ConradNeural"],
+    ["Bonk", "Bonk! Bonk! Bonk!", "normal", "en-US-GuyNeural"],
+    ["Offline", "Das war's. Ich geh offline!", "normal", "de-DE-ConradNeural"],
+    ["Einfach machen", "Einfach machen. Wird schon!", "easy", "de-DE-KatjaNeural"],
+    ["Ganz entspannt", "Alles gut. Ganz entspannt!", "normal", "de-DE-ConradNeural"],
+    ["Moment mal", "Moment mal. Was?!", "hard", "de-DE-KatjaNeural"],
+    ["Aha", "Aha. Aha! Aha?!", "hard", "de-DE-ConradNeural"],
+    ["Wo bin ich?", "Wo bin ich hier gelandet?!", "normal", "de-DE-KatjaNeural"]
+  ],
+  "gaming": [
+    ["Clutch", "Ein HP! Ein HP! Push ihn!", "hard", "de-DE-ConradNeural"],
+    ["GG", "GG! Gut gespielt!", "easy", "de-DE-ConradNeural"],
+    ["Der Klassiker", "Das ist hundert Prozent ein Hacker!", "normal", "de-DE-ConradNeural"],
+    ["Minecraft-Moment", "Nicht die Diamanten! Nein!", "hard", "de-DE-KatjaNeural"],
+    ["AFK", "Bin kurz AFK. Gleich wieder da!", "normal", "de-DE-ConradNeural"],
+    ["Respawn", "Okay. Neuer Versuch!", "easy", "de-DE-KatjaNeural"],
+    ["Lobby", "Wer hat die Lobby verlassen?!", "normal", "de-DE-ConradNeural"],
+    ["Teamwork", "Links! Nein, dein anderes links!", "hard", "de-DE-KatjaNeural"]
+  ],
+  "anime": [
+    ["Nani", "Nani?!", "easy", "de-DE-ConradNeural"],
+    ["Finale Form", "Das ist meine finale Form!", "normal", "de-DE-ConradNeural"],
+    ["Zu langsam", "Du bist viel zu langsam!", "normal", "de-DE-KatjaNeural"],
+    ["Unmöglich", "Nein! Das ist unmöglich!", "hard", "de-DE-ConradNeural"],
+    ["Letzter Angriff", "Mein letzter Angriff!", "normal", "de-DE-ConradNeural"],
+    ["Warm-up", "Das war erst mein Warm-up!", "normal", "de-DE-KatjaNeural"],
+    ["Wahre Kraft", "Du kennst meine wahre Kraft nicht!", "hard", "de-DE-ConradNeural"],
+    ["Jetzt geht es los", "Jetzt. Geht. Es. Los!", "hard", "de-DE-KatjaNeural"],
+    ["Kampfschrei", "Hah! Hah! Haaah!", "hard", "de-DE-ConradNeural"],
+    ["Senpai", "Senpai! Warte auf mich!", "normal", "de-DE-KatjaNeural"],
+    ["Power-Up", "Mehr! Mehr! Noch mehr Kraft!", "hard", "de-DE-ConradNeural"],
+    ["Blickduell", "Du wagst es?!", "easy", "de-DE-ConradNeural"]
+  ],
+  "horror": [
+    ["Hinter dir", "Dreh dich nicht um!", "normal", "de-DE-ConradNeural"],
+    ["Buh", "Buh!", "easy", "de-DE-KatjaNeural"],
+    ["Klopfen", "Wer ist da?!", "normal", "de-DE-ConradNeural"],
+    ["Nicht allein", "Wir sind nicht allein!", "hard", "de-DE-KatjaNeural"]
+  ]
+}
