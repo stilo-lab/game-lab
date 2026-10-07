@@ -68,7 +68,7 @@ function controllerFixture({botQuietDenied=false}={}){
   const {createMimicParty}=require('../src/mimic_party'),{ChannelType,PermissionFlagsBits:P}=require('discord.js');const messages=[],outputs=[];let voiceCalls=0;
   const members=new Map();const guild={id:'123',members:{fetch:async id=>members.get(id),fetchMe:async()=>({id:'bot'})}},vc={id:'vc',type:ChannelType.GuildVoice,guild,permissionsFor:()=>({has:flag=>!botQuietDenied||flag!==P.ManageChannels})};
   for(const id of ['A','B'])members.set(id,{id,displayName:id,user:{bot:false},voice:{channel:vc,channelId:'vc'}});
-  const party=createMimicParty({client:{guilds:{cache:new Map([['123',guild]])}},db:{},saveDB(){},dataDirectory:'/tmp',isGuildApproved:()=>true,OWNER_ID:'owner',voiceFactory:()=>({busy:()=>false,connect:async(_,signal)=>{voiceCalls++;return new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(Error('aborted')),{once:true}));}})});
+  const party=createMimicParty({client:{guilds:{cache:new Map([['123',guild]])}},db:{},saveDB(){},dataDirectory:'/tmp',isGuildApproved:()=>true,OWNER_ID:'owner',voiceSource:'all',voiceFactory:()=>({busy:()=>false,connect:async(_,signal)=>{voiceCalls++;return new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(Error('aborted')),{once:true}));}})});
   function interaction(user='A',command='lobby',values={},customId){
     const message={id:'panel',edit:async payload=>{messages.push(payload);return message;}};
     const i={guild,user:{id:user},memberPermissions:{has:flag=>user==='A'&&[P.ManageGuild,P.ManageChannels].includes(flag)},commandName:'mimic',customId,values:values.selection,isChatInputCommand:()=>!customId,

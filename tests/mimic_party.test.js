@@ -53,7 +53,7 @@ test('External voice lock, game capacity and stale session controls are enforced
   const h=harness({maxSessions:1}),s=h.create();assert.throws(()=>h.create(),/schon/);assert.throws(()=>h.engine.create({...s,guildId:'456'}),/belegt/);await h.engine.stop('123');assert.throws(()=>h.engine.ready(s,'A'),/beendet/);
 });
 test('Panel has Discord-valid components, no mass mentions, and explicit consent',async()=>{
-  const h=harness(),s=h.create();s.host.name='@everyone';s.players.get('A').name='@everyone';const p=panel(s);const json=p.embeds[0].toJSON();assert.ok(JSON.stringify(json).includes('RAM'));assert.ok(!JSON.stringify(json).includes('@everyone'));assert.deepEqual(p.allowedMentions,{parse:[]});for(const row of p.components)for(const button of row.toJSON().components)assert.ok(button.custom_id.length<100);await h.engine.stop('123');assert.equal(panel(s).components.length,0);
+  const h=harness(),s=h.create();s.host.name='@everyone';s.players.get('A').name='@everyone';const p=panel(s);const json=p.embeds[0].toJSON();assert.ok(JSON.stringify(json).includes('RAM'));assert.ok(!JSON.stringify(json).includes('@everyone'));assert.deepEqual(p.allowedMentions,{parse:[]});for(const row of p.components)for(const button of row.toJSON().components)assert.ok(button.custom_id.length<100);await h.engine.stop('123');const ended=panel(s);assert.equal(ended.components.length,1);assert.match(ended.components[0].toJSON().components[0].custom_id,/:rematch$/);
 });
 test('Completed leaderboard save failures preserve previous records',async()=>{
   const h=harness({saveDB(){throw Error('full');}}),s=h.create();h.engine.ready(s,'A');await h.engine.start(s,'A');assert.equal(h.db.mimic.stats['123'],undefined);assert.match(s.note,/full/);

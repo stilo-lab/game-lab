@@ -43,7 +43,9 @@ function appFixture(existing = []) {
   return { state, client: { application: { emojis: {
     fetch: async () => { state.fetches++; return existing; },
     create: async ({ name, attachment }) => {
-      assert.ok(Buffer.isBuffer(attachment)); state.creates++;
+      assert.match(attachment, /^data:image\/gif;base64,/);
+      assert.match(Buffer.from(attachment.split(',')[1], 'base64').subarray(0,6).toString(), /^GIF8[79]a$/);
+      state.creates++;
       const emoji = { name, id: String(100000000000000000n + BigInt(state.creates)), animated: true }; existing.push(emoji); return emoji;
     }
   } } } };
