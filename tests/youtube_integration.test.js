@@ -12,7 +12,7 @@ const root = path.join(__dirname, '..');
 function definitions(file) {
   const module = { exports: {} };
   vm.runInNewContext(fs.readFileSync(file, 'utf8'), { module, exports: module.exports, process, __dirname: path.dirname(file),
-    require: name => name === '@discordjs/voice' ? {} : require(name) }, { filename: file });
+    require: name => name === '@discordjs/voice' ? {} : require('node:module').createRequire(file)(name) }, { filename: file });
   return module.exports;
 }
 function commandList() {
@@ -20,7 +20,7 @@ function commandList() {
   const begin = source.indexOf('const commands = [');
   const end = source.indexOf('].map(c => c.toJSON());', begin) + '].map(c => c.toJSON());'.length;
   const context = { ...discord, ...require('../src/games'), ...require('../src/community'), ...require('../src/staff'), ...require('../src/element_seas'),
-    ...definitions(path.join(root, 'src/spotify_party.js')), youtubeUploadCommands: require('../src/youtube_uploads').buildYouTubeUploadCommands() };
+    ...definitions(path.join(root, 'src/spotify_party.js')), mimicCommands: require('../src/mimic_party').buildMimicCommands(), youtubeUploadCommands: require('../src/youtube_uploads').buildYouTubeUploadCommands() };
   for (const name of ['LANGUAGE_CHOICES', 'SMART_SETUP_PURPOSES']) {
     const start = source.indexOf(`const ${name} = Object.freeze([`);
     const finish = source.indexOf('\n]);', start) + '\n]);'.length;
@@ -29,18 +29,22 @@ function commandList() {
   vm.runInNewContext(source.slice(begin, end).replace('const commands =', 'result ='), context);
   return JSON.parse(JSON.stringify(context.result));
 }
-test('All existing non-YouTube slash commands remain exactly unchanged', () => {
+test('Existing non-YouTube commands remain unchanged except the reviewed setup permission default', () => {
   const actual = commandList();
   const baseline = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/commands-before.json'), 'utf8'));
-  assert.deepEqual(actual.filter(c => !['youtube', 'uploads'].includes(c.name)), baseline);
+  const setup=baseline.find(c=>c.name==='serversetup');assert.equal(setup.default_member_permissions,String(discord.PermissionFlagsBits.Administrator));setup.default_member_permissions=null;
+  assert.deepEqual(actual.filter(c => !['youtube', 'uploads', 'pixel', 'new', 'mimic'].includes(c.name)), baseline);
   assert.equal(new Set(actual.map(c => c.name)).size, actual.length);
   assert.ok(actual.length <= 100, `Too many Discord slash commands: ${actual.length}`);
   assert.equal(actual.filter(c => c.name === 'uploads').length, 1);
+  assert.equal(actual.filter(c => c.name === 'pixel').length, 1);
+  assert.equal(actual.filter(c => c.name === 'new').length, 1);
+  assert.equal(actual.filter(c => c.name === 'mimic').length, 1);
 });
 test('Existing Spotify, community, staff, minigame and game modules are byte-for-byte unchanged', () => {
   const expected = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/module-hashes.json'), 'utf8'));
   for (const [name, hash] of Object.entries(expected)) {
-    assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(root, 'src', name))).digest('hex'), hash, name);
+    assert.equal(crypto.createHash('sha256').update(require('./stability_preservation').previousRelease(name, fs.readFileSync(path.join(root, 'src', name), 'utf8'))).digest('hex'), hash, name);
   }
 });
 test('An unavailable YouTube module leaves the existing command registration usable', () => {

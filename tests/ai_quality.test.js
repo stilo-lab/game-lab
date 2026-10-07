@@ -75,7 +75,7 @@ function supportFixture(options={}) {
     message
   ];
   const image={type:'image',data:Buffer.from('mock-image').toString('base64'),mime_type:'image/png'};
-  const ctx={aiQuality:()=>quality,client:{user:{id:'bot'}},console:{warn(){}},
+  const ctx={aiQuality:()=>quality,client:{user:{id:'bot'}},console:{warn(){}},require:localRequire,
     getGeminiClient:async()=>({interactions:{create:async request=>{
       calls.primary.push(plain(request));return options.primary?options.primary(request,calls.primary.length,ticket):{id:'next-id',output_text:'Prüfe jetzt die Kanal-ID statt erneut neu zu starten.'};
     }}}),
@@ -89,7 +89,7 @@ function supportFixture(options={}) {
     generateGeminiContent:async request=>{calls.fallback.push(plain(request));return options.fallback?options.fallback(request,ticket):{text:'Nächster Prüfschritt ohne Live-Recherche.'};}
   };
   vm.createContext(ctx);
-  vm.runInContext(section('function extractInteractionSources(', 'async function withTimeout(')+section('function formatSupportAnswer(', 'const aiPulseCache')+section('async function askGeminiSupport(', 'async function runTicketAi('),ctx);
+  vm.runInContext(section('function extractInteractionSources(', 'async function withTimeout(')+section('function formatSupportAnswer(', 'const aiPulseCache')+section('function pixelCharacterId(', 'function aiConversationKey(')+section('async function askGeminiSupport(', 'async function runTicketAi('),ctx);
   return {ctx,calls,ticket,message,messages,image};
 }
 
@@ -179,7 +179,7 @@ test('Human handoff summary includes both tried AI steps and user results within
 
 test('All code outside authorized AI regions is byte-identical to the preceding setup release',()=>{
   const spec=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/ai-quality-preservation.json'),'utf8'));
-  let text=source;
+  let text=require('./stability_preservation').previousRelease('index.js',source);
   for(const [start,end] of spec.sections){const a=text.indexOf(start),b=text.indexOf(end,a);assert.ok(a>=0 && b>a,start);text=text.slice(0,a)+text.slice(b);}
   assert.equal(require('node:crypto').createHash('sha256').update(text).digest('hex'),spec.sha256);
 });

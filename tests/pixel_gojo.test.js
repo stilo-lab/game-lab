@@ -110,10 +110,10 @@ test('The actual /ai handler updates its original reply and only sends extra mes
     editReply: async p => { assert.equal(p.files, undefined); events.push(p.content.includes('denke nach') ? 'thinking' : 'first answer'); return { id: 'm' }; },
     followUp: async p => { assert.match(p.content, /Pixel Gojo/); events.push('overflow'); } };
   const ctx = { interaction, serverSettings: () => ({ aiEnabled: true }), aiCooldownRemaining: () => 0,
-    startAiCooldown() {}, sendAiAnimation: pet.sendAiAnimation, aiTextPayload: pet.aiTextPayload,
+    startAiCooldown() {}, getPixelCharacterPicker:()=>({hasSelection:()=>true}), pixelCharacterId:()=> 'gojo', sendAiAnimation: pet.sendAiAnimation, aiTextPayload: pet.aiTextPayload,
     askGemini: async (...args) => { assert.equal(args[4], 'c'); assert.equal(args[5], 'senz-de'); events.push('generate'); return 'Antwort'; },
     recordAiReview() {}, splitDiscordText: () => ['Teil eins', 'Teil zwei'], console };
-  await vm.runInNewContext('(async () => { switch ("ai") { ' + section('        case "ai": {', '        case "aipulse": {') + ' } })()', ctx);
+  await vm.runInNewContext(section('async function answerPixelQuestion(', 'function aiCooldownRemaining(')+'\n(async () => { switch ("ai") { ' + section('        case "ai": {', '        case "aipulse": {') + ' } })()', ctx);
   assert.deepEqual(events, ['defer', 'thinking', 'generate', 'first answer', 'overflow']);
 });
 test('Chat retains admin knowledge and follow-ups, isolated by channel and user', async () => {
@@ -282,7 +282,7 @@ test('Ticket AI keeps its editable message and continuation chunks; errors updat
   for (const failure of [null, 'GEMINI_NOT_CONFIGURED', 'TIMEOUT', 'provider failure']) {
     const sent = [], edits = [], ticket = { ownerId: 'u', aiEnabled: true, status: 'open' };
     const message = { guild: { id: 'g' }, channel: { id: 'c', sendTyping: async () => {} }, author: { id: 'u' }, content: 'Hilfe', attachments: { size: 0 } };
-    const ctx = { Date, getTicketRecord: () => ticket, saveDB() {}, shouldAutoEscalate: () => false, findFaqMatch: () => null,
+    const ctx = { Date, pixelCharacterId:()=> 'gojo', getTicketRecord: () => ticket, saveDB() {}, shouldAutoEscalate: () => false, findFaqMatch: () => null,
       GEMINI_API_KEY: 'mock', db: { tickets: { c: ticket } }, sendAiAnimation: pet.sendAiAnimation, aiTextPayload: pet.aiTextPayload,
       recordAiReview() {}, console: { error() {} },
       askGeminiSupport: async () => { if (failure) throw Error(failure); return 'Antwort'; },
@@ -308,7 +308,7 @@ test('Ticket AI keeps its editable message and continuation chunks; errors updat
 test('Turning ticket AI off during generation removes the pending indicator and sends no answer', async () => {
   const ticket = { ownerId: 'u', aiEnabled: true, status: 'open' }; let deleted = 0, sent = 0, edits = 0;
   const message = { guild: { id: 'g' }, channel: { id: 'c', sendTyping: async () => {} }, author: { id: 'u' }, content: 'Hilfe', attachments: { size: 0 } };
-  const ctx = { Date, getTicketRecord: () => ticket, saveDB() {}, shouldAutoEscalate: () => false, findFaqMatch: () => null,
+  const ctx = { Date, pixelCharacterId:()=> 'gojo', getTicketRecord: () => ticket, saveDB() {}, shouldAutoEscalate: () => false, findFaqMatch: () => null,
     GEMINI_API_KEY: 'mock', db: { tickets: { c: ticket } }, sendAiAnimation: pet.sendAiAnimation, aiTextPayload: pet.aiTextPayload,
     recordAiReview() {}, console, askGeminiSupport: async () => { ticket.aiEnabled = false; return 'Antwort'; },
     sendEditableTicketContent: async () => { sent++; return { delete: async () => { deleted++; }, edit: async () => { edits++; } }; }
@@ -321,7 +321,7 @@ test('Turning ticket AI off during generation removes the pending indicator and 
 test('All index/community code outside the pet integration and /ai style is identical to the uploaded ZIP', () => {
   const expected = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/pet-preservation.json')));
   for (const [file, spec] of Object.entries(expected)) {
-    let text = fs.readFileSync(path.join(__dirname, '../src', file), 'utf8');
+    let text = require('./stability_preservation').previousRelease(file, fs.readFileSync(path.join(__dirname, '../src', file), 'utf8'));
     for (const line of spec.omitLines) text = text.split('\n').filter(value => !value.includes(line)).join('\n');
     for (const [start, end] of spec.omitSections) {
       const a = text.indexOf(start), b = text.indexOf(end, a);

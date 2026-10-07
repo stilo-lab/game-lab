@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { UploadStore, createUploadMonitor, parseFeed, channelInput, channelIdFromPage, fetchYoutubeText, resolveChannel } = require('../src/youtube_uploads_core');
 const { createYouTubeUploads, buildYouTubeUploadCommands } = require('../src/youtube_uploads');
+const { createYouTubeApi } = require('../src/youtube_uploads_api');
 const { PermissionsBitField, Collection, EmbedBuilder } = require('discord.js');
 const CHANNEL = 'UC' + 'a'.repeat(22);
 const OTHER = 'UC' + 'b'.repeat(22);
@@ -58,6 +59,104 @@ test('Network helper rejects external redirects and oversized responses', async 
   await assert.rejects(fetchYoutubeText('https://www.youtube.com/@x', { fetchImpl: async () => { calls++; return new Response('', { status: 302, headers: { location: 'http://127.0.0.1/secret' } }); } }));
   assert.equal(calls, 1);
   await assert.rejects(fetchYoutubeText('https://www.youtube.com/@x', { maxBytes: 5, fetchImpl: async () => new Response('0123456789') }));
+});
+const apiChannel = (id = CHANNEL) => ({ id, snippet: { title: 'Torpedo' }, contentDetails: { relatedPlaylists: { uploads: 'UU' + id.slice(2) } } });
+const apiVideo = (n, privacyStatus = 'public') => ({
+  snippet: { title: `Video ${n}`, channelId: CHANNEL, videoOwnerChannelId: CHANNEL, resourceId: { videoId: vid(n).id } },
+  contentDetails: { videoId: vid(n).id, videoPublishedAt: new Date(vid(n).publishedAt).toISOString() },
+  status: { privacyStatus }
+});
+function apiFor(overrides = {}) {
+  const state = { now: TIME, calls: [], items: [apiVideo(1)], ...overrides };
+  const client = createYouTubeApi({ apiKey: 'test-key-never-print', now: () => state.now, fetchImpl: async (url, options) => {
+    const u = new URL(url); state.calls.push(u);
+    assert.equal(u.origin, 'https://www.googleapis.com'); assert.equal(options.redirect, 'manual');
+    return Response.json({ items: u.pathname.endsWith('/channels') ? [apiChannel()] : state.items });
+  } });
+  return { state, client };
+}
+test('Exact shared @torpedo456 URL resolves through forHandle, without HTML or RSS requests', async () => {
+  const h = apiFor();
+  const result = await resolveChannel('https://youtube.com/@torpedo456?si=IkfEuHKRDuOjJj3w', { apiClient: h.client });
+  assert.equal(result.channelId, CHANNEL);
+  assert.equal(h.state.calls[0].searchParams.get('forHandle'), '@torpedo456');
+  assert.equal(h.state.calls[0].searchParams.has('si'), false);
+  assert.equal(h.state.calls.length, 2);
+  assert.equal(h.state.calls[1].searchParams.get('playlistId'), 'UU' + 'a'.repeat(22));
+  assert.deepEqual(result.videos, [vid(1)]);
+});
+test('YOUTUBE_API_KEY enables the production resolver and polling path automatically', async t => {
+  const oldKey = process.env.YOUTUBE_API_KEY, oldFetch = globalThis.fetch;
+  t.after(() => { if (oldKey === undefined) delete process.env.YOUTUBE_API_KEY; else process.env.YOUTUBE_API_KEY = oldKey; globalThis.fetch = oldFetch; });
+  process.env.YOUTUBE_API_KEY = 'test-runtime-key';
+  let requests = 0;
+  globalThis.fetch = async url => {
+    const u = new URL(url); requests++;
+    assert.equal(u.origin, 'https://www.googleapis.com');
+    return Response.json({ items: u.pathname.endsWith('/channels') ? [apiChannel()] : [apiVideo(1)] });
+  };
+  assert.equal((await resolveChannel('@torpedo456')).channelId, CHANNEL);
+  assert.equal((await require('../src/youtube_uploads_core').readFeed(CHANNEL)).videos.length, 1);
+  assert.equal(requests, 2);
+});
+test('API handles channel IDs, old /user names and encoded handles', async () => {
+  for (const [input, name, expected] of [[CHANNEL, 'id', CHANNEL], ['https://youtube.com/user/oldname', 'forUsername', 'oldname'], ['https://youtube.com/@T%C3%B6rpedo', 'forHandle', '@Törpedo']]) {
+    const h = apiFor(); await resolveChannel(input, { apiClient: h.client });
+    assert.equal(h.state.calls[0].searchParams.get(name), expected);
+  }
+});
+test('API cache limits requests, expires and does not expose mutable cached results', async () => {
+  const h = apiFor();
+  const initial = await h.client.readFeed(CHANNEL); initial.videos.length = 0;
+  h.state.items.push(apiVideo(2));
+  assert.equal((await h.client.readFeed(CHANNEL)).videos.length, 1);
+  assert.equal(h.state.calls.length, 2);
+  h.state.now += 300_001;
+  const results = await Promise.all([h.client.readFeed(CHANNEL), h.client.readFeed(CHANNEL)]);
+  assert.equal(h.state.calls.length, 3); assert.equal(results[0].videos.length, 2);
+});
+test('API skips private items, deduplicates public videos and rejects foreign/malformed public uploads', async () => {
+  const h = apiFor({ items: [apiVideo(2), apiVideo(1), apiVideo(1), apiVideo(3, 'private')] });
+  assert.deepEqual((await h.client.readFeed(CHANNEL)).videos.map(v => v.id), [vid(1).id, vid(2).id]);
+  for (const item of [{ ...apiVideo(1), contentDetails: {} }, { ...apiVideo(1), snippet: { ...apiVideo(1).snippet, videoOwnerChannelId: OTHER } }]) {
+    await assert.rejects(apiFor({ items: [item] }).client.readFeed(CHANNEL), /zugeordnet/);
+  }
+  assert.deepEqual((await apiFor({ items: [] }).client.readFeed(CHANNEL)).videos, []);
+});
+test('API missing or mismatched channels fail without creating an incorrect subscription', async () => {
+  for (const items of [[], [apiChannel(OTHER)], [{}]]) {
+    const client = createYouTubeApi({ apiKey: 'test', fetchImpl: async () => Response.json({ items }) });
+    await assert.rejects(client.readFeed(CHANNEL));
+  }
+});
+test('API errors are actionable and never reveal the key or upstream error text', async () => {
+  const secret = 'SENSITIVE-test-key';
+  for (const [status, reason, expected] of [[403, 'quotaExceeded', /Tageskontingent/], [400, 'keyInvalid', /YOUTUBE_API_KEY/], [403, 'accessNotConfigured', /API-Freischaltung/], [404, 'playlistNotFound', /HTTP 404/], [503, 'backendError', /HTTP 503/]]) {
+    const client = createYouTubeApi({ apiKey: secret, fetchImpl: async () => Response.json({ error: { message: secret, errors: [{ reason }] } }, { status }) });
+    await assert.rejects(client.readFeed(CHANNEL), err => expected.test(err.message) && !err.message.includes(secret));
+  }
+  const client = createYouTubeApi({ apiKey: secret, fetchImpl: async url => { throw Error(url); } });
+  await assert.rejects(client.readFeed(CHANNEL), err => /erreicht/.test(err.message) && !err.message.includes(secret));
+});
+test('API rejects redirects, malformed JSON and oversized replies without following external URLs', async () => {
+  for (const response of [new Response('', { status: 302, headers: { location: 'https://evil.test' } }), new Response('not json'), new Response('x'.repeat(2_000_001))]) {
+    let calls = 0;
+    const client = createYouTubeApi({ apiKey: 'test', fetchImpl: async () => { calls++; return response; } });
+    await assert.rejects(client.readFeed(CHANNEL)); assert.equal(calls, 1);
+  }
+});
+test('RSS 404 and consent redirects explain the specific problem without claiming YouTube is offline', async () => {
+  await assert.rejects(fetchYoutubeText(`https://www.youtube.com/feeds/videos.xml?channel_id=${CHANNEL}`, { fetchImpl: async () => new Response('', { status: 404 }) }), /Upload-Feed liefert HTTP 404/);
+  await assert.rejects(fetchYoutubeText('https://www.youtube.com/@torpedo456', { fetchImpl: async () => new Response('', { status: 302, headers: { location: 'https://consent.youtube.com/m' } }) }), /Browser-Bestätigung/);
+});
+test('Switching an existing RSS subscription to API retains seen videos and sends a new upload once', async t => {
+  const h = monitorFor(t), api = apiFor({ items: [apiVideo(0)] });
+  api.state.items[0].contentDetails.videoPublishedAt = new Date(TIME - 1000).toISOString();
+  const monitor = createUploadMonitor({ ...h.options, store: new UploadStore(h.file), fetchFeed: id => api.client.readFeed(id) });
+  await monitor.tick(); assert.equal(h.state.sent.length, 0);
+  api.state.now += 300_001; api.state.items.push(apiVideo(1));
+  await monitor.tick(); await monitor.tick();
+  assert.deepEqual(h.state.sent.map(v => v.id), [vid(1).id]);
 });
 test('Initial setup never announces old videos; new uploads send once across restarts', async t => {
   const h = monitorFor(t);

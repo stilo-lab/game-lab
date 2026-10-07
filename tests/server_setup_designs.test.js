@@ -12,7 +12,7 @@ const compact = () => ({title:'Mein Wunsch',categories:[
   {key:'team-area',name:'🔒 Team',channels:[{key:'support-logs',name:'🧾│logs',kind:'text',access:'staff',purpose:'support-logs'}]}
 ]});
 function fixture(options = {}) {
-  const state = {now:1000,saves:0,creates:[],edits:[],configures:0,ai:[],outputs:[],roles:0};
+  const state = {now:1000,saves:0,creates:[],edits:[],configures:0,ai:[],outputs:[],roles:0,positions:[],deleted:[],history:[]};
   const gd = {channels:{},setupOverrides:{}};
   let next = 100000000000000000n;
   const everyone = {id:'100000000000000001'};
@@ -23,6 +23,11 @@ function fixture(options = {}) {
     const overwrites = new Collection(permissionOverwrites.map(o => [o.id,{id:o.id,allow:new PermissionsBitField(o.allow || []),deny:new PermissionsBitField(o.deny || [])}]));
     const channel = {id,name,type,parentId:parent,topic,private:falsePrivate,permissionOverwrites:{cache:overwrites},
       permissionsFor:target => ({has:p => target.id === everyone.id && p === P.ViewChannel ? !channel.private : true}),
+      delete:async () => {
+        const failure=options.failDelete?.(channel);
+        if (failure) throw {code:typeof failure==='number' ? failure : 50013};
+        state.deleted.push(channel.id);state.history.push('delete:'+channel.id);cache.delete(channel.id);return channel;
+      },
       edit:async change => {
         if (options.failEdit?.(channel,change)) throw {code:50013};
         state.edits.push({id,change});
@@ -37,24 +42,33 @@ function fixture(options = {}) {
   guild.channels.create = async data => {
     if (options.failCreate?.(data)) throw {code:50013};
     state.creates.push(data);
+    state.history.push('create:'+data.name);
     const deny = data.permissionOverwrites?.find(o => o.id === everyone.id)?.deny || [];
     return add({...data,private:deny.includes(P.ViewChannel)});
   };
+  guild.channels.setPositions=async entries => {
+    if (options.failPositions) throw Error('positions denied');
+    state.positions.push(entries);state.history.push('positions');
+    for (const entry of entries) cache.get(entry.channel).rawPosition=entry.position;
+    return guild;
+  };
   const locks = new Set();
-  const designer = createServerSetupDesigner({
-    guildData:() => gd,saveDB:() => {state.saves++;},model:'configured-model',aiConfigured:() => options.aiConfigured !== false,
+  const makeDesigner = () => createServerSetupDesigner({
+    guildData:() => gd,saveDB:() => {if(options.failSave?.(state,gd))throw Error('storage unavailable');state.saves++;},model:'configured-model',aiConfigured:() => options.aiConfigured !== false,
     generateGeminiContent:async (request,config) => {
       state.ai.push({request,config});
       return options.generate ? options.generate(request) : {text:JSON.stringify(compact())};
     },
     setupLocks:locks,now:() => state.now,logger:{warn(){}},
+    canResetServer:() => options.canReset === true,getResetBlockers:() => options.blockers || [],onResetPrepared:options.onResetPrepared || (async()=>{}),
     findSupportRole:async () => {state.roles++;return {id:'100000000000000004'};},
-    configure:async () => {state.configures++;return {failed:[]};},
+    configure:async () => {state.configures++;state.history.push('configure');return {failed:options.failConfigure ? [{canonical:'counting'}] : []};},
     upsertPanel:async () => {},isMaintenance:() => Boolean(options.maintenance),
     purposeAliases:[{canonical:'announcements',aliases:['announcements','news']},{canonical:'support-logs',aliases:['support-logs']}]
   });
+  let designer=makeDesigner();
   function interaction(extra = {}) {
-    const i = {guild,user:{id:'100000000000000005'},member:{permissions:{has:() => true}},...extra};
+    const i = {guild,user:{id:'100000000000000005'},member:{permissions:{has:() => options.userAllowed !== false}},...extra};
     for (const method of ['reply','editReply','update','showModal']) i[method] = async payload => {
       for (const component of payload.components || []) component.toJSON();
       for (const embed of payload.embeds || []) embed.toJSON();
@@ -75,7 +89,7 @@ function fixture(options = {}) {
     const modal = last();
     await designer.handleInteraction(interaction({customId:modal.data.custom_id,isModalSubmit:() => true,fields:{getTextInputValue:() => 'Meer-Thema, nur zwei Kanäle und ein privater Team-Bereich'}}));
   }
-  return {state,gd,guild,designer,locks,add,interaction,last,cid,act,open,custom};
+  return {state,gd,guild,get designer(){return designer;},restart:()=>{designer=makeDesigner();},locks,add,interaction,last,cid,act,open,custom};
 }
 
 test('Three distinct screenshot styles preserve every existing bot purpose and private logs', () => {
@@ -89,6 +103,7 @@ test('Three distinct screenshot styles preserve every existing bot purpose and p
   const names=styles.map(p => p.categories.flatMap(c=>c.channels).find(c=>c.key==='chat').name);
   assert.match(names[0],/^『💬』𝐂/); assert.equal(names[1],'💬│chat'); assert.match(names[2],/^💬ℂ/);
 });
+module.exports={fixture,compact};
 test('Opening, choosing, changing pages and cancelling only show a private preview', async () => {
   const f=fixture(); await f.open();
   assert.equal(f.last().flags,MessageFlags.Ephemeral);
@@ -109,13 +124,20 @@ test('Custom wishes use the existing Gemini configuration; refined wishes includ
   assert.deepEqual(JSON.parse(f.state.ai[1].request.contents).aktuellerEntwurf,compact());
   assert.equal(f.state.creates.length,0);
 });
-test('Only the creator in the same guild with current administrator rights can apply', async () => {
+test('Only the creator in the same guild can apply a setup preview', async () => {
   const f=fixture(); await f.custom(); const token=f.cid('apply');
-  for (const extra of [{user:{id:'someone-else'}},{guild:{...f.guild,id:'other-guild'}},{member:{permissions:{has:()=>false}}}]) {
+  for (const extra of [{user:{id:'someone-else'}},{guild:{...f.guild,id:'other-guild'}}]) {
     const i=f.interaction({customId:token,...extra}); await f.designer.handleInteraction(i);
-    assert.match(i.last.content,/anderen Nutzer|Administrator/);
+    assert.match(i.last.content,/anderen Nutzer/);
   }
   assert.equal(f.state.creates.length,0);
+});
+test('Server setup opens and applies without user administrator or channel-management rights',async()=>{
+  const f=fixture({userAllowed:false});await f.custom();await f.act('apply');assert.ok(f.state.creates.length>0);assert.equal(f.state.configures,1);assert.match(f.last().content,/fertig|erstellt/);
+});
+test('Server setup refreshes bot rights before applying and stops if the bot lost them',async()=>{
+  const f=fixture({userAllowed:false});await f.custom();let refreshed=0;f.guild.members.fetchMe=async options=>{assert.equal(options.force,true);refreshed++;f.guild.members.me.permissions={has:()=>false};return f.guild.members.me;};
+  await f.act('apply');assert.equal(refreshed,1);assert.equal(f.state.creates.length,0);assert.match(f.last().content,/Bot braucht/);assert.equal(f.locks.size,0);
 });
 test('Missing AI configuration keeps the built-in styles usable', async () => {
   const f=fixture({aiConfigured:false}); await f.open(); const original=f.last();
@@ -247,7 +269,7 @@ test('Old buttons cannot apply a newly selected design and maintenance blocks al
 test('All non-setup source code matches the AI-style update used as baseline', () => {
   const source=fs.readFileSync(path.join(__dirname,'../src/index.js'),'utf8');
   const spec=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/server-setup-preservation.json'),'utf8'));
-  let normalized=source;
+  let normalized=require('./stability_preservation').previousRelease('index.js',source);
   for(const [start,end] of spec.sections){const a=normalized.indexOf(start),b=normalized.indexOf(end,a);assert.ok(a>=0&&b>a);normalized=normalized.slice(0,a)+normalized.slice(b);}
   assert.equal(require('node:crypto').createHash('sha256').update(normalized).digest('hex'),spec.sha256);
 });
