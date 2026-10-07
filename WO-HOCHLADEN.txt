@@ -1,0 +1,29 @@
+PIXEL /NEW + MIMIC PARTY – UPDATE 1.10.0
+
+1. ZIP entpacken.
+2. Deinen vorhandenen GitHub-Ordner src öffnen.
+3. Alle 12 Dateien aus dem ZIP-Ordner src direkt dort hochladen.
+   Gleichnamige Dateien ersetzen. Neue Dateien hinzufügen.
+4. Im Hauptordner package.json und package-lock.json ersetzen.
+5. Bot neu deployen / neu starten.
+
+Die Dateien gehören direkt in den vorhandenen src-Ordner.
+Für dieses Update brauchst du keine neuen assets-Ordner.
+Alle bisherigen Dateien und Ordner behalten.
+
+Nur wenn du automatische Tests nutzt:
+Auch die Dateien aus tests an ihren jeweiligen Pfaden übernehmen.
+
+Zum Ausprobieren:
+/new wunsch:Erstelle eine Rolle Helfer, gib ihr Nachrichten verwalten
+und weise sie @DEIN-MITGLIED zu.
+
+In einen Voice-Chat gehen und /mimic lobby verwenden.
+Pixel lädt dann die vorgeschlagenen Originalclips aus dem Internet.
+Mit /mimic originals erneut laden, mit /mimic preview vorhören.
+Weitere echte Aufnahmen kannst du mit /mimic upload hochladen.
+/mimic mic prüft dein Mikrofon.
+
+Die Streamer-Audiodateien sind nicht in der ZIP; der Bot lädt sie nach.
+Die bisherigen KI-Sprachvorlagen sind im normalen Spiel ausgeschaltet.
+Weitere Infos und Clip-Quellen: README-NEW-MIMIC.md

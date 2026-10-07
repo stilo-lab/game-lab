@@ -1,0 +1,158 @@
+{
+  "name": "Pixel /new + Mimic Party Update",
+  "version": "1.10.0",
+  "baseVersion": "1.9.4",
+  "baseArchiveSha256": "b636b0052092228495f47852e210553f4d654711c6e728ee19e4bc108ac1cdaa",
+  "includesPixelDisplayFix": true,
+  "changedSourceFiles": 12,
+  "changedTestFiles": 12,
+  "sourceModulesAfterUpdate": 37,
+  "automatedTestsPassed": 357,
+  "unchangedAssetFiles": 198,
+  "liveDiscordVerified": false,
+  "streamerAudioBundled": false,
+  "streamerAudioDelivery": "Downloaded and cached by the bot from the documented Myinstants sources on first lobby; no synthesized speech fallback",
+  "install": "Overlay onto the existing bot: src files in src, package.json/package-lock.json at root; tests optional for development. Keep all other existing files. Restart the bot.",
+  "files": [
+    {
+      "path": "src/index.js",
+      "sha256": "66ac5dfe0deba207da09c0b29e4342bb6c85fb50ce353c2fe36145009cf24b28",
+      "bytes": 298158
+    },
+    {
+      "path": "src/mimic_engine.js",
+      "sha256": "e8b9a8f72cf5c1d791fe29f226b0dcec5358f6c8cb90d3162d93e778a4b2cd7a",
+      "bytes": 15560
+    },
+    {
+      "path": "src/mimic_media.js",
+      "sha256": "92cc8559368a37d1a1c83a488f5f4d2a3b17c7c35bbea21a2ea717f504cc2316",
+      "bytes": 2821
+    },
+    {
+      "path": "src/mimic_originals.js",
+      "sha256": "97a80908e33de612b655a999b99ba91775771fddfc22d5048743aaf9a8109bef",
+      "bytes": 5112
+    },
+    {
+      "path": "src/mimic_party.js",
+      "sha256": "24247dd1218f235b51b2427bc72c4eacf7d29a1e8f65e3ad46e577bfc79c129d",
+      "bytes": 30927
+    },
+    {
+      "path": "src/mimic_sounds.js",
+      "sha256": "2f4700671db19e0a3905649b5b1ced0a1dbb39d2ba9b40d90b23a188975c3578",
+      "bytes": 7790
+    },
+    {
+      "path": "src/mimic_stock.js",
+      "sha256": "7db9f6080e8a063bea4aa52e830bf50a85a3cbe889d3446b327d7e71438680db",
+      "bytes": 1051979
+    },
+    {
+      "path": "src/new_actions.js",
+      "sha256": "81ed1abee155b6e6fa7ee11231781326ca078eda5b7e039caa57c3df22739c75",
+      "bytes": 14729
+    },
+    {
+      "path": "src/new_assistant.js",
+      "sha256": "59044a56ff177d62bd53f43062cfbb87857a5e985367136d061bb3647dda907c",
+      "bytes": 23203
+    },
+    {
+      "path": "src/pixel_assets.js",
+      "sha256": "d66b30587ecfa2c3649870917afdf724719996ba0516ba90cb9e2a4d15bbe97a",
+      "bytes": 1155831
+    },
+    {
+      "path": "src/pixel_characters.js",
+      "sha256": "8f680b60c3aed6908f48859116212c55284a934f8e9c84f691945a4febd0acf2",
+      "bytes": 8023
+    },
+    {
+      "path": "src/pixel_gojo.js",
+      "sha256": "c96b10e970c71774b98b70252818bdad931ae4ba5874c0fbc15b7f71b6692556",
+      "bytes": 7883
+    },
+    {
+      "path": "tests/fixtures/new-mimic-preservation.json",
+      "sha256": "762323ee30ebe219a268933f205d0726908af1e7da97dec082f606112124934f",
+      "bytes": 118078
+    },
+    {
+      "path": "tests/fixtures/pixel-display-preservation.json",
+      "sha256": "f9a82ef6cca5dbcfc17f33938916457b55fce9594a554898fe5d089095c4c7b1",
+      "bytes": 22492
+    },
+    {
+      "path": "tests/general_preservation.js",
+      "sha256": "3e5679e39d4b465d9f32a8d7c6c36285f0a6c9d66ad01b2bdad578036fcfe885",
+      "bytes": 538
+    },
+    {
+      "path": "tests/mimic_categories.test.js",
+      "sha256": "15037e2d520920e9fd7ea001b36320d663c76fcbcc30e6ceb9ff606600f5c650",
+      "bytes": 15183
+    },
+    {
+      "path": "tests/mimic_party.test.js",
+      "sha256": "f80d3faa562afc9cf95019fd75e95acd29ec8e8596a0a5c2a671c66c134a32d3",
+      "bytes": 14316
+    },
+    {
+      "path": "tests/mimic_upgrade.test.js",
+      "sha256": "66143f25e4463612e441160468082bac59da0df60faa9fc64b2c665a4f596186",
+      "bytes": 19022
+    },
+    {
+      "path": "tests/new_actions.test.js",
+      "sha256": "32caaf446667aedee6d5b229626ec6b9cc3ef99bf374b7638e166c93f7da4017",
+      "bytes": 14132
+    },
+    {
+      "path": "tests/new_mimic_preservation.js",
+      "sha256": "eeaf7d3fb1dd966796def84cfb64f4227bd1e6cbe6ddb8787743cda8be8fb44e",
+      "bytes": 421
+    },
+    {
+      "path": "tests/pixel_display_fix.test.js",
+      "sha256": "e191f1e8e5645dea649e082d20a188705bf6214f2c885d5f85ef8f221151e3b8",
+      "bytes": 12214
+    },
+    {
+      "path": "tests/pixel_fix_preservation.js",
+      "sha256": "0257c7af2cf33dc0df06ab7b4504e8c1e07ddaf51d0814d2a4f6e21b38954671",
+      "bytes": 542
+    },
+    {
+      "path": "tests/pixel_gojo.test.js",
+      "sha256": "fd632182e27a68c7925b17be1f28d65ac49c07cf74f8447c54e3ba98564af729",
+      "bytes": 21909
+    },
+    {
+      "path": "tests/run.js",
+      "sha256": "e58c0bd36ddf90b65c60d7cdedcb3ea0644a7a741de07b96343f6ef1bb1e61e5",
+      "bytes": 567
+    },
+    {
+      "path": "package.json",
+      "sha256": "a4f6f1932b5ac5d481aee02ae8065ceec6dcf0648f2b3f2f3416d4b104c97aa0",
+      "bytes": 2371
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "7474a3d6bbb4bf827e1e20726a15a2c6a8dec6224ed71dc7b0725c4c010551a8",
+      "bytes": 48208
+    },
+    {
+      "path": "README-NEW-MIMIC.md",
+      "sha256": "26c652f8b47d6bcae4bc2a2fe56c889c0655e1cd1ecab77889fe366e2108ea4b",
+      "bytes": 8133
+    },
+    {
+      "path": "WO-HOCHLADEN.txt",
+      "sha256": "eeed7b260c1e2cbf3df40dbab039b5b6188ef8a8316ca058024953f97863f6cf",
+      "bytes": 1207
+    }
+  ]
+}
