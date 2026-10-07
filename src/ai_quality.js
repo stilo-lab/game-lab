@@ -87,8 +87,9 @@ function ticketContext(messages, current, botId, maxChars=18000) {
       let content=String(m.content || '').trim();
       if(m.author?.bot) {
         // Exclude ticket panels and thinking/error indicators from diagnostic history.
-        if(!/\*\*Pixel Gojo\*\*/.test(content)) return null;
-        content=content.replace(/^.*?\*\*Pixel Gojo\*\*\s*/s,'');
+        const header=content.match(/\*\*(Pixel [^*\n]{1,50})\*\*/);
+        if(!header||!require('./pixel_characters').CHARACTERS.some(c=>c.name===header[1])) return null;
+        content=content.slice(content.indexOf(header[0])+header[0].length).trim();
         if(/^(?:Ich denke nach|Ich arbeite noch|Ich schaue|⚙️|⏳|❌|⏱️)/i.test(content)) return null;
       }
       const attachments=[...(m.attachments?.values?.() || [])].map(a=>String(a.name || 'Anhang')).slice(0,4);
@@ -128,4 +129,23 @@ function interactionSources(response) {
   return [...sources.values()].slice(0,4);
 }
 
-module.exports={CHAT_GUIDANCE,SUPPORT_GUIDANCE,selectKnowledge,trimConversation,chatGenerationSettings,ticketContext,interactionText,interactionSources};
+function conversationSignals(history,current){
+  const userRows=history.filter(m=>m.role==='user').slice(-8).map(m=>String(m.parts?.[0]?.text||'').slice(0,1200));
+  return JSON.stringify({latest_request:String(current).slice(0,4000),
+    reported_attempts:userRows.filter(t=>/versucht|probiert|getestet|gemacht|bereits|schon|wieder|weiterhin|tried|still/i.test(t)),
+    corrections:userRows.filter(t=>/nein|nee|nicht .*sondern|meine|korrig|falsch|actually/i.test(t)),
+    latest_is_feedback:/^(?:ne|nein|geht|klappt|immer|still|hä|ok|danke|passt|gelöst|funktioniert)\b/i.test(String(current).trim())});
+}
+function needsResearch(question){return /\b(heute|aktuell\w*|neueste\w*|neuste\w*|latest|today|jetzt.*(?:shop|preis)|patchnotes|patch.?notes|morgen|dies(?:e|er|es) woche|live.?status)\b/i.test(String(question));}
+function chatGuidance(research){return research?CHAT_GUIDANCE.replace('- Behaupte keine ausgeführten Aktionen und keinen Internetzugriff. Für diese Chat-Antwort ist keine Websuche angeschlossen. Unverifizierte aktuelle Spielwerte, Updates oder Live-Status klar als unbekannt behandeln.',
+  '- Du kannst für diese Antwort Google-Suche verwenden. Recherchiere veränderliche externe Fakten und beziehe dich nur auf tatsächlich gefundene Belege. Ohne passende Suchergebnisse keine aktuelle Prüfung behaupten. Serverwissen ist keine Webquelle. Keine ausgeführten Bot-Aktionen behaupten.'):CHAT_GUIDANCE;}
+function researchSources(response){
+  const found=new Map();
+  for(const c of response?.candidates||[])for(const chunk of c.groundingMetadata?.groundingChunks||[]){
+    try{const u=new URL(chunk.web?.uri||'');if(u.protocol!=='https:'||u.username||u.password)continue;
+      found.set(u.href,{url:u.href,title:String(chunk.web.title||u.hostname).replace(/[\r\n\[\]]/g,'').slice(0,100)});
+    }catch{}
+  }
+  return [...found.values()].slice(0,4);
+}
+module.exports={CHAT_GUIDANCE,SUPPORT_GUIDANCE,selectKnowledge,trimConversation,chatGenerationSettings,ticketContext,interactionText,interactionSources,conversationSignals,needsResearch,chatGuidance,researchSources};

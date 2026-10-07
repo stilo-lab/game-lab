@@ -164,7 +164,7 @@ function createStaffSystem(ctx) {
     const s = ensureGuild(guild.id);
     const channelId = kind === "alerts" ? s.channels.alerts : kind === "briefing" ? s.channels.briefing : kind === "cases" ? s.channels.cases : s.channels.audit;
     const ch = channelId && guild.channels.cache.get(channelId);
-    if (!ch) return;
+    if (!ch || ch.permissionsFor?.(guild.roles.everyone)?.has(PermissionsBitField.Flags.ViewChannel) !== false) return;
     await ch.send({ embeds: [footer(new EmbedBuilder().setTitle(title).setDescription(description).setTimestamp())] }).catch(() => {});
   }
 
@@ -225,15 +225,19 @@ function createStaffSystem(ctx) {
       "staff-tasks": "tasks"
     };
     for (const [canonical, key] of Object.entries(map)) {
-      const id = gd.channels?.[canonical];
-      if (id && guild.channels.cache.get(id)) s.channels[key] = id;
-      else delete s.channels[key];
+      const id = gd.channels?.[canonical] || s.channels[key];
+      // Missing cache entries/permissions must not erase a working saved assignment.
+      if (id && guild.channels.cache.get(id)) { s.channels[key] = id; gd.channels[canonical] = id; }
     }
     if (!gd.setupPanels) gd.setupPanels = {};
 
     async function staffReadyPanel(canonical, key, title, description) {
       const channel = guild.channels.cache.get(s.channels[key]);
       if (!channel) return;
+      if (channel.permissionsFor?.(guild.roles.everyone)?.has(PermissionsBitField.Flags.ViewChannel) !== false) {
+        failed.push({ canonical, channelId: channel.id, error: "Staff-Kanal muss privat sein" });
+        return;
+      }
       const perms = channel.permissionsFor(guild.members.me);
       const missing = [];
       if (!perms?.has(PermissionsBitField.Flags.ViewChannel)) missing.push("Kanal ansehen");

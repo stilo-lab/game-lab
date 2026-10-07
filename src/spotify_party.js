@@ -23,7 +23,7 @@ const DEFAULT_PLAYLIST_ID = extractPlaylistId(DEFAULT_PLAYLIST_URL) || '3oVDosIU
 const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID || '';
 const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET || '';
 const SPOTIFY_MARKET = String(process.env.SPOTIFY_MARKET || 'DE').toUpperCase();
-const DATA_DIR = path.join(__dirname, '..', 'data');
+const DATA_DIR = require('./bot_runtime').dataDirectory(__dirname);
 const AUTH_PATH = path.join(DATA_DIR, 'spotify_auth.json');
 const TRACK_CACHE_PATH = path.join(DATA_DIR, 'spotify_track_cache.json');
 
@@ -219,8 +219,9 @@ function buildSpotifyPartyCommands() {
   ];
 }
 
-function createSpotifyParty({ client, footer, isGuildApproved }) {
+function createSpotifyParty({ client, footer, isGuildApproved, isVoiceBusy = () => false }) {
   const sessions = new Map();
+  const starting = new Set();
   const authStore = loadAuthStore();
   const pendingStates = new Map();
   let appTokenCache = { token: null, expiresAt: 0 };
@@ -702,6 +703,17 @@ function createSpotifyParty({ client, footer, isGuildApproved }) {
 
 
   async function startParty(interaction) {
+    const guildId = interaction.guild.id;
+    const existing = getVoiceConnection(guildId);
+    if (isVoiceBusy(guildId) || (existing && sessions.get(guildId)?.connection !== existing)) {
+      return interaction.reply({ content:'❌ Eine andere Voice-Party läuft. Beende sie zuerst; Spotify trennt sie nicht.', flags:MessageFlags.Ephemeral });
+    }
+    if (starting.has(guildId)) return interaction.reply({ content:'⏳ Spotify wird bereits gestartet.', flags:MessageFlags.Ephemeral });
+    starting.add(guildId);
+    try { return await startPartyCore(interaction); } finally { starting.delete(guildId); }
+  }
+
+  async function startPartyCore(interaction) {
     const voice = interaction.member?.voice?.channel;
     if (!voice) return interaction.reply({ content:'❌ Geh zuerst in einen Voice-Channel und starte dann `/spotify start`.', flags:MessageFlags.Ephemeral });
     if (!authRecord(interaction.guild.id)?.refreshToken) {
@@ -717,13 +729,13 @@ function createSpotifyParty({ client, footer, isGuildApproved }) {
       if (!device) return interaction.editReply('❌ Kein Spotify-Gerät gefunden. **Öffne Spotify auf PC oder Handy**, starte kurz irgendeinen Song und nutze danach `/spotify start` erneut.');
       const playResult = await playPlaylist(interaction.guild.id, device.id, 0);
       const old = sessions.get(interaction.guild.id);
-      if (old) { try { getVoiceConnection(interaction.guild.id)?.destroy(); } catch {} sessions.delete(interaction.guild.id); }
+      if (old) { try { if (old.connection && getVoiceConnection(interaction.guild.id) === old.connection) old.connection.destroy(); } catch {} sessions.delete(interaction.guild.id); }
       let connection;
       try {
         connection = joinVoiceChannel({ channelId:voice.id, guildId:interaction.guild.id, adapterCreator:interaction.guild.voiceAdapterCreator, selfDeaf:true, selfMute:false });
         await entersState(connection, VoiceConnectionStatus.Ready, 15_000);
       } catch (err) { try { connection?.destroy(); } catch {} console.warn('Spotify party VC join failed:', err?.message || err); }
-      const session = { guildId:interaction.guild.id, voiceChannelId:voice.id, textChannelId:interaction.channel.id, messageId:null, hostId:interaction.user.id, playlist, index:0, isPlaying:true, shuffle:false, repeat:'context', deviceId:device.id, deviceName:device.name, liveTrack:playResult?.track || null, progressMs:0, playMode:playResult?.mode || 'context' };
+      const session = { connection, guildId:interaction.guild.id, voiceChannelId:voice.id, textChannelId:interaction.channel.id, messageId:null, hostId:interaction.user.id, playlist, index:0, isPlaying:true, shuffle:false, repeat:'context', deviceId:device.id, deviceName:device.name, liveTrack:playResult?.track || null, progressMs:0, playMode:playResult?.mode || 'context' };
       sessions.set(interaction.guild.id, session);
       await syncSession(session);
       const sent = await interaction.editReply({ embeds:[partyEmbed(session, 'Spotify Connect aktiv')], components:partyRows(session) });
@@ -740,7 +752,7 @@ function createSpotifyParty({ client, footer, isGuildApproved }) {
     if (pause) await playerAction(guildId, '/me/player/pause', 'PUT').catch(() => {});
     session.isPlaying = false;
     await updatePanel(session, note).catch(() => {});
-    try { getVoiceConnection(guildId)?.destroy(); } catch {}
+    try { if (session.connection && getVoiceConnection(guildId) === session.connection) session.connection.destroy(); } catch {}
     sessions.delete(guildId);
     return true;
   }
@@ -908,12 +920,12 @@ function createSpotifyParty({ client, footer, isGuildApproved }) {
   }
 
   function onShutdown() {
-    for (const guildId of sessions.keys()) { try { getVoiceConnection(guildId)?.destroy(); } catch {} }
+    for (const [guildId, session] of sessions) { try { if (session.connection && getVoiceConnection(guildId) === session.connection) session.connection.destroy(); } catch {} }
     sessions.clear();
     try { oauthServer?.close(); } catch {}
   }
 
-  return { handleInteraction, handleVoiceState, onShutdown, defaultPlaylistUrl:DEFAULT_PLAYLIST_URL, redirectUri:SPOTIFY_REDIRECT_URI };
+  return { handleInteraction, handleVoiceState, onShutdown, isActiveOrStarting:guildId => sessions.has(guildId) || starting.has(guildId), defaultPlaylistUrl:DEFAULT_PLAYLIST_URL, redirectUri:SPOTIFY_REDIRECT_URI };
 }
 
 module.exports = { buildSpotifyPartyCommands, createSpotifyParty };
