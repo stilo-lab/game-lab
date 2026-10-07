@@ -1,0 +1,31 @@
+{
+  "name": "Pixel-Anzeige-Fix",
+  "version": "1.9.4-display-fix.1",
+  "base_version": "1.9.4",
+  "base_zip_sha256": "b636b0052092228495f47852e210553f4d654711c6e728ee19e4bc108ac1cdaa",
+  "install_source_files": [
+    "src/pixel_gojo.js",
+    "src/pixel_characters.js",
+    "src/pixel_assets.js"
+  ],
+  "validation": {
+    "tests_passed": 319,
+    "new_tests": 16,
+    "source_syntax_checked": 34,
+    "baseline_modules_preserved": 33,
+    "live_discord_tested": false
+  },
+  "files": {
+    "src/pixel_gojo.js": "c96b10e970c71774b98b70252818bdad931ae4ba5874c0fbc15b7f71b6692556",
+    "src/pixel_characters.js": "8f680b60c3aed6908f48859116212c55284a934f8e9c84f691945a4febd0acf2",
+    "src/pixel_assets.js": "d66b30587ecfa2c3649870917afdf724719996ba0516ba90cb9e2a4d15bbe97a",
+    "tests/pixel_gojo.test.js": "fd632182e27a68c7925b17be1f28d65ac49c07cf74f8447c54e3ba98564af729",
+    "tests/general_preservation.js": "3e5679e39d4b465d9f32a8d7c6c36285f0a6c9d66ad01b2bdad578036fcfe885",
+    "tests/run.js": "c640ad546d5ffedd48a087edd1cb26215c7f4f3c71a0702e875afe21cd9bdfe0",
+    "tests/pixel_fix_preservation.js": "9783139c2ffeb1c3bf1365b3ffe77f31f223a73e589a65a455375e38235ae138",
+    "tests/pixel_display_fix.test.js": "e191f1e8e5645dea649e082d20a188705bf6214f2c885d5f85ef8f221151e3b8",
+    "tests/fixtures/pixel-display-preservation.json": "f9a82ef6cca5dbcfc17f33938916457b55fce9594a554898fe5d089095c4c7b1",
+    "PIXEL-ANZEIGE-FIX-README.md": "73336f1723c2e665d9b648e0d266e82ada768f697f9218d591214767c07a560d",
+    "WO-HOCHLADEN.txt": "7304fefa7e1b48aa281fdf8a457009886294b6f5f179114a904737bbff269ae6"
+  }
+}
