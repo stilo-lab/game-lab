@@ -21,7 +21,7 @@ const validCharacter=id=>CHARACTERS.some(c=>c.id===id);
 const selectedCharacter=record=>characterById(record?.pixelCharacterId).id;
 const hasSelection=record=>validCharacter(record?.pixelCharacterId);
 
-function createCharacterPicker({getUserRecord,saveDB,answerQuestion,isAiEnabled=()=>true,isMaintenance=()=>false,now=Date.now,ttlMs=15*60000,maxSessions=200,previewPath=path.join(ASSET_ROOT,'auswahl.png')}={}){
+function createCharacterPicker({getUserRecord,saveDB,answerQuestion,isAiEnabled=()=>true,isMaintenance=()=>false,now=Date.now,ttlMs=15*60000,maxSessions=200,previewPath=path.join(ASSET_ROOT,'auswahl.png'),getDisplay=()=>require('./pixel_gojo')}={}){
   if(typeof getUserRecord!=='function'||typeof saveDB!=='function')throw Error('Character storage missing');
   const sessions=new Map();
   function cleanup(){for(const [token,s] of sessions)if(now()-s.createdAt>ttlMs)sessions.delete(token);}
@@ -72,12 +72,15 @@ function createCharacterPicker({getUserRecord,saveDB,answerQuestion,isAiEnabled=
       try{saveDB();}catch(error){if(had)record.pixelCharacterId=previous;else delete record.pixelCharacterId;session.busy=false;await interaction.followUp({content:'⚠️ Deine Auswahl konnte nicht gespeichert werden. Bitte erneut versuchen.',flags:MessageFlags.Ephemeral});return true;}
       sessions.delete(token);
       const character=characterById(id);
+      let display;
+      try { display=getDisplay();await display.ensureCharacter?.(id); } catch {}
+      const selectedText=text=>display?.aiTextPayload?.(text,'all',id)||{content:`${character.symbol} **${character.name}**\n${text}`,allowedMentions:{parse:[],repliedUser:false}};
       if(session.question&&isAiEnabled(session.guildId)&&answerQuestion){
         // Remove the picker and its attachment before starting the ordinary AI handler.
-        await interaction.editReply({content:`${character.symbol} **${character.name}** ist ausgewählt.`,embeds:[],components:[],attachments:[]});
+        await interaction.editReply({...selectedText('ist ausgewählt.'),embeds:[],components:[],attachments:[]});
         await answerQuestion(interaction,session.question);return true;
       }
-      await interaction.editReply({content:`${character.symbol} **${character.name}** begleitet dich jetzt. Du kannst mit /pixel wechseln.`+(session.question?'\nDie AI wurde inzwischen ausgeschaltet. Deine Auswahl ist trotzdem gespeichert.':''),embeds:[],components:[],attachments:[],allowedMentions:{parse:[]}});
+      await interaction.editReply({...selectedText('begleitet dich jetzt. Du kannst mit /pixel wechseln.'+(session.question?'\nDie AI wurde inzwischen ausgeschaltet. Deine Auswahl ist trotzdem gespeichert.':'')),embeds:[],components:[],attachments:[]});
       return true;
     }catch(error){if(sessions.has(token))session.busy=false;throw error;}
   }

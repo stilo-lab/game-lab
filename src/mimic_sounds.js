@@ -3,22 +3,52 @@ const fs=require('node:fs/promises'),path=require('node:path'),crypto=require('n
 const {wavDecode,wavEncode}=require('./mimic_audio');
 const {PACKS,CATEGORIES,categoriesFor,matchDifficulty}=require('./mimic_categories');
 const {decodeMedia}=require('./mimic_media');
-function createSoundStore({db,saveDB,dataDirectory,fetchImpl=fetch}){
-  const catalog=require('../assets/mimic/catalog.json');
-  const locks=new Set();
+const {ORIGINALS,fetchOriginal,isOriginalVoice}=require('./mimic_originals');
+function createSoundStore({db,saveDB,dataDirectory,fetchImpl=fetch,assetDirectory=path.join(__dirname,'../assets/mimic')}){
+  let catalog;
+  try{catalog=require(path.join(assetDirectory,'catalog.json'));}
+  catch(error){if(error.code!=='MODULE_NOT_FOUND')throw error;catalog=require('./mimic_stock').catalog();}
+  const locks=new Set(),originalTasks=new Map();
   const records=guildId=>{db.mimic??={};db.mimic.sounds??={};return db.mimic.sounds[guildId]??=[];};
   const file=(guildId,id)=>{if(!/^\d{1,22}$/.test(guildId)||! /^[a-f0-9]{24}$/.test(id))throw Error('Ungültige Sound-ID.');return path.join(dataDirectory,'mimic-sounds',guildId,`${id}.wav`);};
-  const list=(guildId,pack='mixed',difficulty='mixed')=>{
+  const list=(guildId,pack='mixed',difficulty='mixed',voiceSource='all')=>{
     const selected=categoriesFor(pack),allCustom=selected.includes('custom');
     const builtins=catalog.filter(x=>selected.includes(x.pack));
     const custom=records(guildId).filter(x=>allCustom||selected.includes(x.category)).map(x=>({...x,pack:'custom',category:x.category||'custom'}));
-    return [...builtins,...custom].filter(x=>matchDifficulty(x,difficulty));
+    return [...builtins,...custom].filter(x=>matchDifficulty(x,difficulty)&&(voiceSource!=='original'||isOriginalVoice(x)));
   };
   const packs=guildId=>PACKS.map(p=>({...p,count:list(guildId,p.value).length}));
   async function load(guildId,sound){
-    if(sound.pack==='custom')return wavDecode(await fs.readFile(file(guildId,sound.id)));
+    if(sound.pack==='custom'){const bytes=await fs.readFile(file(guildId,sound.id));if(sound.sha256&&crypto.createHash('sha256').update(bytes).digest('hex')!==sound.sha256)throw Error('Die gespeicherte Originaldatei wurde verändert. Clip neu importieren.');return wavDecode(bytes);}
     if(!catalog.some(x=>x.id===sound.id)||! /^[a-z0-9-]+$/.test(sound.id))throw Error('Sound nicht gefunden.');
-    return wavDecode(await fs.readFile(path.join(__dirname,'../assets/mimic',`${sound.id}.wav`)));
+    try{return wavDecode(await fs.readFile(path.join(assetDirectory,`${sound.id}.wav`)));}
+    catch(error){const bundled=require('./mimic_stock').bundledSound(sound.id);if(!bundled)throw error;return wavDecode(bundled);}
+  }
+  async function importOriginal(guildId,name,link,{category='streamers',difficulty='normal',start=0,duration=6,sourcePage}={}){
+    if(locks.has(guildId))throw Error('Ein Sound wird gerade gespeichert. Bitte kurz warten.');locks.add(guildId);
+    let target,samples,entry;
+    try{
+      if(category!=='custom'&&!CATEGORIES.some(x=>x.value===category)||!['easy','normal','hard'].includes(difficulty))throw Error('Ungültige Kategorie oder Schwierigkeit.');
+      const prior=records(guildId).find(x=>x.source==='original-clip'&&x.importLink===String(link)&&x.start===start&&x.duration===duration);
+      if(prior){try{const cached=await load(guildId,{...prior,pack:'custom'});cached.fill(0);return prior;}catch{await fs.unlink(file(guildId,prior.id)).catch(()=>{});}}
+      if(records(guildId).length>=30&&!prior)throw Error('Maximal 30 eigene Sounds pro Server.');
+      const imported=await fetchOriginal(link,{fetchImpl,start,duration});samples=imported.samples;
+      const id=prior?.id||crypto.randomBytes(12).toString('hex'),bytes=wavEncode(samples);target=file(guildId,id);await fs.mkdir(path.dirname(target),{recursive:true});
+      const tmp=`${target}.tmp`;try{await fs.writeFile(tmp,bytes,{flag:'wx'});await fs.rename(tmp,target);}finally{await fs.unlink(tmp).catch(()=>{});}
+      entry={id,name:String(name).replace(/[\r\n`<>@]/g,'').trim().slice(0,60)||'Original-Clip',seconds:samples.length/16000,category,difficulty,source:'original-clip',sourcePage:sourcePage||imported.sourcePage||imported.audioUrl,audioUrl:imported.audioUrl,importLink:String(link),start,duration,sha256:crypto.createHash('sha256').update(bytes).digest('hex')};
+      const rows=records(guildId),index=prior?rows.indexOf(prior):-1;if(index>=0)rows[index]=entry;else rows.push(entry);
+      try{saveDB();}catch(error){if(index>=0)rows[index]=prior;else rows.pop();throw error;}
+      return entry;
+    }catch(error){if(target)await fs.unlink(target).catch(()=>{});throw error;}
+    finally{samples?.fill(0);locks.delete(guildId);}
+  }
+  function prepareOriginals(guildId){
+    if(originalTasks.has(guildId))return originalTasks.get(guildId);
+    const task=(async()=>{
+      const loaded=[],failed=[];
+      for(const clip of ORIGINALS){try{loaded.push(await importOriginal(guildId,clip.name,clip.audio,{...clip,sourcePage:clip.page}));}catch(error){failed.push({name:clip.name,message:String(error.message).slice(0,180)});}}
+      return {loaded,failed};
+    })().finally(()=>originalTasks.delete(guildId));originalTasks.set(guildId,task);return task;
   }
   async function upload(guildId,name,attachment,{category='custom',difficulty='normal',start=0,duration}={}){
     if(locks.has(guildId))throw Error('Ein Sound wird gerade gespeichert. Bitte kurz warten.');locks.add(guildId);
@@ -52,6 +82,6 @@ function createSoundStore({db,saveDB,dataDirectory,fetchImpl=fetch}){
       await fs.unlink(file(guildId,id)).catch(error=>{if(error.code!=='ENOENT')console.warn('Mimic Sound löschen:',error.code);});
     }finally{locks.delete(guildId);}
   }
-  return {list,load,upload,remove,packs};
+  return {list,load,upload,remove,packs,importOriginal,prepareOriginals};
 }
 module.exports={PACKS,createSoundStore};

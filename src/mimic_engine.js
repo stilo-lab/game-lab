@@ -17,8 +17,9 @@ function createMimicEngine({sounds,scorePool,voiceFactory,quietLeases,db,saveDB,
     if(sessions.size>=maxSessions)throw Error('Alle Voice-Spielplätze sind gerade belegt. Bitte später versuchen.');
     if(isExternalBusy(options.guildId))throw Error('Eine andere Voice-Party läuft. Beende sie zuerst.');
     categoriesFor(options.pack);const difficulty=options.difficulty||'mixed';
-    const available=sounds.list(options.guildId,options.pack,difficulty);if(!available.length)throw Error('Dieser Kategorie-Mix enthält keine passenden Sounds. Anderes Pack oder Gemischte Schwierigkeit wählen.');
-    const s={...options,difficulty,token:crypto.randomBytes(12).toString('hex'),abort:new AbortController(),phase:'lobby',round:0,players:new Map(),roundResults:[],cards:new Map(),pending:new Map(),samples:new Map(),started:now(),history:[],connection:null,note:'Bereit zum Mitmachen',used:new Set(),votes:new Map(),playedCategories:new Set()};
+    const voiceSource=options.voiceSource||'all';if(!['all','original'].includes(voiceSource))throw Error('Unbekannte Clip-Auswahl.');
+    const available=sounds.list(options.guildId,options.pack,difficulty,voiceSource);if(!available.length)throw Error('Dieser Mix enthält keine passenden Originalclips. /mimic originals lädt Streamer-Memes; eigene Aufnahmen gehen mit /mimic upload.');
+    const s={...options,difficulty,voiceSource,token:crypto.randomBytes(12).toString('hex'),abort:new AbortController(),phase:'lobby',round:0,players:new Map(),roundResults:[],cards:new Map(),pending:new Map(),samples:new Map(),started:now(),history:[],connection:null,note:'Bereit zum Mitmachen',used:new Set(),votes:new Map(),playedCategories:new Set(),pauseRequested:false};
     s.players.set(options.host.id,{id:options.host.id,name:options.host.name.slice(0,40),total:0,ready:false,modifier:null});
     sessions.set(s.guildId,s);
     s.expiry=setTimeout(()=>{void stop(s.guildId,'Lobby wegen Inaktivität beendet.');},10*60*1000);s.expiry.unref?.();
@@ -31,11 +32,11 @@ function createMimicEngine({sounds,scorePool,voiceFactory,quietLeases,db,saveDB,
   function configure(s,id,{pack=s.pack,difficulty=s.difficulty}={}){
     check(s);if(s.phase!=='lobby')throw Error('Die Kategorien sind während der Party gesperrt.');if(id!==s.host.id)throw Error('Nur der Host kann den Mix ändern.');
     categoriesFor(pack);if(!DIFFICULTIES.some(d=>d.value===difficulty))throw Error('Unbekannte Schwierigkeit.');
-    if(!sounds.list(s.guildId,pack,difficulty).length)throw Error('Dieser Mix enthält keine passenden Sounds. Gemischte Schwierigkeit wählen.');
+    if(!sounds.list(s.guildId,pack,difficulty,s.voiceSource).length)throw Error('Dieser Mix enthält keine passenden Originalclips. Clips importieren oder einen anderen Mix wählen.');
     s.pack=Array.isArray(pack)?[...pack]:pack;s.difficulty=difficulty;s.used.clear();s.playedCategories.clear();
     for(const p of s.players.values())p.ready=false;s.note='Kategorie-Mix geändert. Alle bitte erneut Bereit drücken.';
   }
-  function vote(s,id,category){check(s);if(s.phase!=='lobby'||!s.players.has(id))throw Error('Nur Lobby-Mitspieler können abstimmen.');if(!CATEGORIES.some(c=>c.value===category))throw Error('Unbekannte Kategorie.');if(!sounds.list(s.guildId,category).length)throw Error('Diese Kategorie ist leer.');s.votes.set(id,category);}
+  function vote(s,id,category){check(s);if(s.phase!=='lobby'||!s.players.has(id))throw Error('Nur Lobby-Mitspieler können abstimmen.');if(!CATEGORIES.some(c=>c.value===category))throw Error('Unbekannte Kategorie.');if(!sounds.list(s.guildId,category,'mixed',s.voiceSource).length)throw Error('Diese Kategorie ist leer.');s.votes.set(id,category);}
   function applyVotes(s,id){
     check(s);if(s.phase!=='lobby'||s.host.id!==id)throw Error('Nur der Host kann Lobby-Stimmen übernehmen.');
     const votes=[...s.votes].filter(([user])=>s.players.has(user));if(!votes.length)throw Error('Noch keine Kategorie-Stimmen.');
@@ -57,6 +58,17 @@ function createMimicEngine({sounds,scorePool,voiceFactory,quietLeases,db,saveDB,
     card.used=true;s.pending.set(target,{type:card.type,attacker});
   }
   function next(s,id){check(s);if(s.phase!=='wheel'||s.host.id!==id)throw Error('Nur der Host kann das Glücksrad überspringen.');s.next?.();}
+  function pause(s,id){
+    check(s);if(s.host.id!==id)throw Error('Nur der Host kann pausieren oder fortsetzen.');if(['lobby','ended'].includes(s.phase))throw Error('Starte zuerst die Party.');
+    s.pauseRequested=!s.pauseRequested;if(!s.pauseRequested)s.resume?.();
+    return s.pauseRequested;
+  }
+  async function pauseBetweenRounds(s){
+    if(!s.pauseRequested)return;check(s);s.phase='paused';
+    const resumed=new Promise(resolve=>{s.resume=resolve;});
+    try{await update(s,'⏸️ Pause. Mikrofone sind frei; der Host kann mit Fortsetzen weiterspielen.');await Promise.race([resumed,delay(25*60*1000,s.abort.signal)]);check(s);}
+    finally{s.resume=null;}
+  }
   async function cleanup(s,note){
     if(s.cleanup)return s.cleanup;
     s.cleanup=(async()=>{
@@ -82,6 +94,7 @@ function createMimicEngine({sounds,scorePool,voiceFactory,quietLeases,db,saveDB,
   async function quiet(s){if(s.quiet){check(s);await quietLeases.lock(s.voiceChannel,[...s.players.keys()]);check(s);}}
   async function unquiet(s){if(await quietLeases.restore(s.guildId,s.voiceChannel.id))throw Error('Sprechrechte konnten nicht wiederhergestellt werden. /mimic diagnose verwenden.');}
   async function wheel(s){
+    s.phase='wheel_spin';await update(s,'🎡 Das Glücksrad dreht sich …');await delay(1200,s.abort.signal);check(s);
     s.phase='wheel';s.cards.clear();
     for(const p of s.players.values()){
       const type=CARDS[random(CARDS.length)];s.cards.set(p.id,{type,used:!EFFECTS[type]});
@@ -107,7 +120,8 @@ function createMimicEngine({sounds,scorePool,voiceFactory,quietLeases,db,saveDB,
       s.deadline=setTimeout(()=>{s.stopNote='Zeitlimit erreicht.';s.abort.abort();},25*60*1000);s.deadline.unref?.();
       for(let round=1;round<=s.rounds;round++){
         check(s);s.round=round;s.roundResults=[];
-        const pack=sounds.list(s.guildId,s.pack,s.difficulty);if(!pack.length)throw Error('Das Sound-Pack ist leer.');
+        await pauseBetweenRounds(s);
+        const pack=sounds.list(s.guildId,s.pack,s.difficulty,s.voiceSource);if(!pack.length)throw Error('Das Sound-Pack ist leer.');
         let candidates=pack.filter(x=>!s.used.has(x.id));if(!candidates.length){s.used.clear();candidates=pack;}
         // Alternate selected categories fairly instead of letting large packs dominate.
         const categories=[...new Set(candidates.map(x=>x.category||x.pack||'custom'))];
@@ -133,16 +147,16 @@ function createMimicEngine({sounds,scorePool,voiceFactory,quietLeases,db,saveDB,
           const points=Math.max(0,Math.round(result.score*(p.modifier?.multiplier||1))-(p.modifier?.effect==='penalty'?20:0));p.total+=points;
           s.roundResults.push({id:p.id,name:p.name,result,points,effect:p.modifier?.effect,attacker:p.modifier?.attacker,blocked:p.modifier?.blocked});
         }));check(s);
-        s.roundResults.sort((a,b)=>b.points-a.points);s.phase='replay';await quiet(s);
+        s.roundResults.sort((a,b)=>b.points-a.points);s.phase='replay';
         for(const item of s.roundResults){
           if(!s.players.has(item.id))continue;
           s.replayId=item.id;const attacker=s.players.get(item.attacker)?.name||'ein Mitspieler';
           await update(s,`${item.name}: ${item.result.score}/100${item.effect?` · ${EFFECTS[item.effect]} von ${attacker}`:''}${item.blocked?' · Schild hat Sabotage abgewehrt':''}`);
           // Silence remains silence; sabotage cannot manufacture a scored attempt.
           const original=s.samples.get(item.id);if(original&&item.result.status!=='no_audio'){
-            const replay=effect(original,item.effect);try{await s.connection.play(replay);}finally{replay.fill(0);}
+            const replay=effect(original,item.effect);await quiet(s);try{await s.connection.play(replay);}finally{replay.fill(0);await unquiet(s);}
           }
-          check(s);await delay(500,s.abort.signal);
+          check(s);s.phase='reaction';await update(s,`😂 ${item.name}: ${item.points} Punkte – kurz Zeit für eure Reaktion!`);await delay(2000,s.abort.signal);s.phase='replay';
         }
         s.replayId=null;await unquiet(s);
         for(const data of s.samples.values())data.fill(0);s.samples.clear();s.reference.fill(0);s.reference=null;
@@ -160,6 +174,6 @@ function createMimicEngine({sounds,scorePool,voiceFactory,quietLeases,db,saveDB,
     clearTimeout(s.expiry);s.phase='connecting';s.task=run(s);return s.task;
   }
   async function shutdown(){await Promise.all([...sessions.keys()].map(id=>stop(id,'Bot wird neu gestartet.')));scorePool.close();await quietLeases.restore();}
-  return {create,status,join,ready,configure,vote,applyVotes,leave,start,stop,attack,next,sorted,hasSession:id=>sessions.has(id),shutdown,sessions};
+  return {create,status,join,ready,configure,vote,applyVotes,leave,start,stop,attack,next,pause,sorted,hasSession:id=>sessions.has(id),shutdown,sessions};
 }
 module.exports={createMimicEngine,EFFECTS,CARDS};

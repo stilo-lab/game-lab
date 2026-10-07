@@ -63,8 +63,8 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
 const GEMINI_SUPPORT_MODEL = process.env.GEMINI_SUPPORT_MODEL || "gemini-3.8-flash";
 const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || "gemini-3.5-flash-lite";
-const GEMINI_MIN_INTERVAL_MS = Math.max(4000, Number(process.env.GEMINI_MIN_INTERVAL_MS || 4500));
-const GEMINI_SUPPORT_MIN_INTERVAL_MS = Math.max(10000, Number(process.env.GEMINI_SUPPORT_MIN_INTERVAL_MS || 12500));
+const GEMINI_MIN_INTERVAL_MS = require("./ai_runtime").minimumInterval(process.env.GEMINI_MIN_INTERVAL_MS, 4500, 4000);
+const GEMINI_SUPPORT_MIN_INTERVAL_MS = require("./ai_runtime").minimumInterval(process.env.GEMINI_SUPPORT_MIN_INTERVAL_MS, 12500, 10000);
 const TRANSLATE_EMOJI = process.env.TRANSLATE_EMOJI || "🌐";
 const TRANSLATE_TARGET_LANGUAGE = process.env.TRANSLATE_TARGET_LANGUAGE || "German";
 const TRANSLATE_FALLBACK_LANGUAGE = process.env.TRANSLATE_FALLBACK_LANGUAGE || "English";
@@ -1544,7 +1544,15 @@ const aiConversationRequests = new Set();
 const AI_HISTORY_MAX_MESSAGES = 24;
 const AI_HISTORY_TTL_MS = 2 * 60 * 60 * 1000;
 const geminiSerialByModel = new Map();
-const geminiNotBeforeByModel = new Map();
+let geminiTaskScheduler = null;
+
+function getGeminiTaskScheduler() {
+  if (!geminiTaskScheduler) geminiTaskScheduler = require("./ai_runtime").createScheduler({
+    queues: geminiSerialByModel, isRetryable: isRetryableGeminiError,
+    onRetry: ({ label, attempt, maxRetries, delayMs, status }) => console.warn(`[Gemini] ${label || "AI"}: ${status || "retry"}; Versuch ${attempt}/${maxRetries} in ${Math.ceil(delayMs / 1000)}s.`)
+  });
+  return geminiTaskScheduler;
+}
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -1564,65 +1572,25 @@ function geminiStatus(err) {
   const direct = Number(err?.status || err?.statusCode || err?.code);
   if (Number.isFinite(direct) && direct >= 100 && direct <= 599) return direct;
   const text = String(err?.message || err || "");
-  const match = text.match(/(?:status|code)[^0-9]{0,8}(429|500|502|503|504)/i) || text.match(/\b(429|500|502|503|504)\b/);
+  const match = text.match(/(?:status|code)[^0-9]{0,8}(408|429|500|502|503|504)/i) || text.match(/\b(408|429|500|502|503|504)\b/);
   return match ? Number(match[1]) : null;
 }
 
 function geminiRetryAfterMs(err) {
-  const candidates = [
-    err?.headers?.get?.("retry-after"),
-    err?.headers?.["retry-after"],
-    err?.response?.headers?.get?.("retry-after"),
-    err?.response?.headers?.["retry-after"],
-    err?.rawResponse?.headers?.get?.("retry-after"),
-    err?.rawResponse?.headers?.["retry-after"]
-  ];
-  for (const value of candidates) {
-    if (value == null) continue;
-    const seconds = Number(value);
-    if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds * 1000);
-  }
-  const text = String(err?.message || err || "");
-  const match = text.match(/retry[- ]?after[^0-9]{0,12}(\d+)/i);
-  return match ? Number(match[1]) * 1000 : null;
+  return require("./ai_runtime").retryAfterMs(err);
 }
 
 function isRetryableGeminiError(err) {
-  return [429, 500, 502, 503, 504].includes(geminiStatus(err));
+  return [408, 429, 500, 502, 503, 504].includes(geminiStatus(err));
 }
 
-async function runGeminiTask(task, { label = "gemini", maxRetries = 3, model = GEMINI_MODEL, minIntervalMs = null } = {}) {
+async function runGeminiTask(task, { label = "gemini", maxRetries = 3, model = GEMINI_MODEL, minIntervalMs = null, attemptTimeoutMs = 45000 } = {}) {
   if (!GEMINI_API_KEY) throw new Error("GEMINI_NOT_CONFIGURED");
 
   const queueKey = String(model || "default");
   const interval = Math.max(0, Number(minIntervalMs ?? (queueKey === GEMINI_SUPPORT_MODEL ? GEMINI_SUPPORT_MIN_INTERVAL_MS : GEMINI_MIN_INTERVAL_MS)));
 
-  const execute = async () => {
-    let lastErr;
-    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-      const notBefore = geminiNotBeforeByModel.get(queueKey) || 0;
-      const waitForSlot = Math.max(0, notBefore - Date.now());
-      if (waitForSlot > 0) await sleep(waitForSlot);
-      geminiNotBeforeByModel.set(queueKey, Date.now() + interval);
-
-      try {
-        return await task();
-      } catch (err) {
-        lastErr = err;
-        if (!isRetryableGeminiError(err) || attempt >= maxRetries) throw err;
-        const retryAfter = geminiRetryAfterMs(err);
-        const backoff = retryAfter ?? Math.min(30000, 2500 * Math.pow(2, attempt));
-        console.warn(`[Gemini] ${label} bekam ${geminiStatus(err) || "retryable error"}; neuer Versuch in ${Math.ceil(backoff / 1000)}s (${attempt + 1}/${maxRetries}).`);
-        geminiNotBeforeByModel.set(queueKey, Math.max(geminiNotBeforeByModel.get(queueKey) || 0, Date.now() + backoff));
-      }
-    }
-    throw lastErr;
-  };
-
-  const previous = geminiSerialByModel.get(queueKey) || Promise.resolve();
-  const next = previous.catch(() => {}).then(execute);
-  geminiSerialByModel.set(queueKey, next.catch(() => {}));
-  return next;
+  return getGeminiTaskScheduler().run(queueKey, task, { label, maxRetries, minIntervalMs: interval, attemptTimeoutMs });
 }
 
 async function generateGeminiContent(request, { label = "generateContent", maxRetries = 3 } = {}) {
@@ -1630,11 +1598,15 @@ async function generateGeminiContent(request, { label = "generateContent", maxRe
   if (!ai) throw new Error("GEMINI_NOT_CONFIGURED");
   const primary = request.model || GEMINI_MODEL;
   try {
-    return await runGeminiTask(() => ai.models.generateContent({ ...request, model: primary }), { label, maxRetries, model: primary });
+    return await runGeminiTask(signal => ai.models.generateContent({ ...request, model: primary, config: {
+      ...request.config, abortSignal: signal, httpOptions: { timeout: 45000, ...request.config?.httpOptions }
+    } }), { label, maxRetries, model: primary });
   } catch (err) {
     if (GEMINI_FALLBACK_MODEL && GEMINI_FALLBACK_MODEL !== primary && isRetryableGeminiError(err)) {
       console.warn(`[Gemini] ${label}: Fallback auf ${GEMINI_FALLBACK_MODEL}.`);
-      return runGeminiTask(() => ai.models.generateContent({ ...request, model: GEMINI_FALLBACK_MODEL }), { label: `${label}_fallback`, maxRetries: 1, model: GEMINI_FALLBACK_MODEL });
+      return runGeminiTask(signal => ai.models.generateContent({ ...request, model: GEMINI_FALLBACK_MODEL, config: {
+        ...request.config, abortSignal: signal, httpOptions: { timeout: 45000, ...request.config?.httpOptions }
+      } }), { label: `${label}_fallback`, maxRetries: 1, model: GEMINI_FALLBACK_MODEL });
     }
     throw err;
   }
@@ -2126,6 +2098,8 @@ function improvementReviewEmbed(record) {
 function chatAiErrorMessage(error) {
   if (error?.message === "GEMINI_NOT_CONFIGURED") return "⚙️ Die KI ist noch nicht eingerichtet. Der Owner muss GEMINI_API_KEY in Railway setzen.";
   if (error?.message === "AI_BUSY") return "⏳ Deine vorige KI-Anfrage wird noch bearbeitet. Bitte warte auf die Antwort.";
+  if (["AI_QUEUE_FULL", "AI_QUEUE_TIMEOUT"].includes(error?.message)) return "⏳ Pixel bearbeitet gerade zu viele AI-Anfragen. Bitte versuche es in einer Minute erneut; deine Anfrage bleibt nicht endlos in der Warteschlange.";
+  if (error?.message === "AI_SHUTTING_DOWN") return "🔄 Pixel startet gerade neu. Bitte versuche es gleich erneut.";
   if (error?.message === "AI_EMPTY_RESPONSE") return "Gemini hat keinen Antworttext geliefert. Bitte formuliere die Frage etwas anders.";
   if (error?.message === "AI_REPEATED_RESPONSE") return "Gemini hat trotz eines zweiten Versuchs dieselbe Antwort geliefert. Sag bitte genauer, welchen Punkt ich ergänzen soll.";
   if (geminiStatus(error) === 429) return "⏳ Das Gemini-Anfragelimit ist erreicht. Bitte versuche es später erneut; bei einem Tageslimit muss das Kontingent zurückgesetzt werden.";
@@ -2148,7 +2122,7 @@ async function askGemini(question, userTag = "Discord user", guildId = null, use
 
 async function generateAiChatAnswer(question, userTag, guildId, userId, channelId, style = null) {
   const history = getAiConversation(guildId, userId, channelId);
-  const contextQuery = [question, ...history.slice(-4).filter(x => x.role === "user").map(x => x.parts?.[0]?.text || "")].join("\n");
+  const contextQuery = aiQuality().knowledgeQuery(question, history);
   const learnedContext = getGuildLearnContext(guildId, "ai", 4000, 5000, contextQuery);
   const adminFeedback = getAiFeedbackText(guildId, "ai", 4500, contextQuery);
   const repeatedQuestion = isRepeatedAiQuestion(history, question);
@@ -2761,8 +2735,8 @@ ${await aiServerContext(message.guild?.id,ticket.ownerId || message.author.id)}`
   let interaction, answer;
   try {
     const create = payload => runGeminiTask(
-      () => withTimeout(ai.interactions.create(payload), 60000, "ticket_ai"),
-      {label: "ticket_ai", maxRetries: 0, model: GEMINI_SUPPORT_MODEL, minIntervalMs: GEMINI_SUPPORT_MIN_INTERVAL_MS}
+      signal => ai.interactions.create(payload, { signal, timeout_ms: 60000, retries: { strategy: "none" } }),
+      {label: "ticket_ai", maxRetries: 0, model: GEMINI_SUPPORT_MODEL, minIntervalMs: GEMINI_SUPPORT_MIN_INTERVAL_MS, attemptTimeoutMs: 60000}
     );
     try { interaction = await create(request); }
     catch (error) {
@@ -2774,7 +2748,7 @@ ${await aiServerContext(message.guild?.id,ticket.ownerId || message.author.id)}`
     }
     answer = formatSupportAnswer(interaction);
   } catch (error) {
-    if (error?.message === "AI_BLOCKED_RESPONSE") throw error;
+    if (["AI_BLOCKED_RESPONSE", "AI_QUEUE_FULL", "AI_QUEUE_TIMEOUT", "AI_SHUTTING_DOWN"].includes(error?.message)) throw error;
     console.warn("Ticket AI: using local-context fallback", geminiStatus(error) || error?.name || "Error");
     // A separate supported API path, with the SAME facts, feedback, dialogue and images.
     const response = await generateGeminiContent({
@@ -2848,6 +2822,8 @@ async function runTicketAi(message) {
     if (!db.tickets[message.channel.id]?.aiEnabled || ticket.status === "closed") { await petResponse?.cancel(); return true; }
     if (err?.message === "GEMINI_NOT_CONFIGURED") {
       await sendTicketAiError("⚙️ **AI ist noch nicht eingerichtet.** Der Owner muss `GEMINI_API_KEY` in Railway eintragen. Dein Ticket bleibt für menschlichen Support offen.");
+    } else if (["AI_QUEUE_FULL", "AI_QUEUE_TIMEOUT", "AI_SHUTTING_DOWN"].includes(err?.message)) {
+      await sendTicketAiError(chatAiErrorMessage(err) + " Dein Ticket bleibt offen; du kannst **Get Human Support** nutzen.").catch(() => {});
     } else if (String(err?.message || "").includes("TIMEOUT")) {
       console.error("Ticket AI timeout:", err?.message || err);
       await sendTicketAiError("⏱️ **Die AI antwortet gerade zu langsam.** Ich habe die Anfrage abgebrochen, damit das Ticket nicht hängen bleibt. Bitte versuche es erneut oder nutze **Get Human Support**.").catch(() => {});
@@ -2921,6 +2897,9 @@ function startAiCooldown(userId) {
 }
 
 const commands = [
+  new SlashCommandBuilder()
+    .setName("diagnose")
+    .setDescription("Prüft Pixel-Rechte, Kanal-Zuordnungen, AI und Voice privat für dich."),
   new SlashCommandBuilder()
     .setName("new")
     .setDescription("Sag Pixel in normaler Sprache, was er für dich erledigen soll.")
@@ -3227,13 +3206,22 @@ try {
   }) || null;
 } catch (err) { console.warn("Mimic Party initialization failed:", err?.message || err); }
 
+const backgroundTasks = require("./background_tasks").createBackgroundTasks();
 let shuttingDownVoice = false;
+let restartTimer = null;
 async function shutdownVoiceGames() {
   if (shuttingDownVoice) return;
   shuttingDownVoice = true;
+  clearTimeout(restartTimer);
   const deadline = setTimeout(() => process.exit(0), 10000);
+  try { youtubeUploads?.stop(); } catch (err) { console.warn("Upload shutdown:", err?.code || err?.name); }
+  geminiTaskScheduler?.close();
+  const draining = Promise.allSettled([backgroundTasks.stop(), Promise.resolve().then(() => community.onShutdown())]);
   try { await mimicParty?.onShutdown(); } catch (err) { console.warn("Mimic shutdown:", err?.message || err); }
-  spotifyParty.onShutdown();
+  try { await spotifyParty.onShutdown(); } catch (err) { console.warn("Spotify shutdown:", err?.code || err?.name); }
+  await draining;
+  try { saveDB(); } catch (err) { console.warn("Shutdown save failed:", err?.code || err?.name); }
+  try { client.destroy(); } catch (err) { console.warn("Discord shutdown:", err?.code || err?.name); }
   clearTimeout(deadline);
   process.exit(0);
 }
@@ -3263,10 +3251,12 @@ async function snapshotInvites(guild) {
 }
 
 client.once("clientReady", async () => {
+  if (shuttingDownVoice) return;
   console.log(`${BOT_NAME} ist online als ${client.user.tag}`);
   void initializePet(client).catch(err => console.warn("Pixel Gojo startup:", err?.code || err?.name));
   await bootstrapGuildApprovals().catch(err => console.error("Guild approval bootstrap failed:", err?.message || err));
   await mimicParty?.onReady().catch(err => console.warn("Mimic permission recovery:", err?.message || err));
+  if (shuttingDownVoice) return;
   try { youtubeUploads?.start(); } catch (err) { console.warn("YouTube uploads startup failed:", err?.message || err); }
   try {
     await registerCommands();
@@ -3276,18 +3266,18 @@ client.once("clientReady", async () => {
   try { client.user.setActivity("Multi-Game Community"); } catch (err) { console.warn("Activity konnte nicht gesetzt werden:", err?.message || err); }
   for (const guild of client.guilds.cache.values()) {
     if (!isGuildApproved(guild.id)) continue;
-    repairGuildBindings(guild);
+    try { repairGuildBindings(guild); } catch (err) { console.warn("Guild binding recovery failed:", err?.code || err?.name); }
     await snapshotInvites(guild).catch(() => {});
     const externalScan = await scanExistingExternalTickets(guild).catch(() => null);
     if (externalScan?.detected) console.log(`External Ticket AI: ${externalScan.detected} Ticket-Kanal/Kanäle auf ${guild.name} erkannt.`);
   }
-  await processGiveaways().catch(err => console.error("Giveaway startup check failed:", err?.message || err));
-  await checkTicketInactivity().catch(err => console.error("Ticket inactivity startup check failed:", err?.message || err));
+  backgroundTasks.schedule("giveaways", processGiveaways, 30000);
+  backgroundTasks.schedule("ticket-inactivity", checkTicketInactivity, 30 * 60 * 1000);
+  backgroundTasks.schedule("staff", () => staff.scheduledTick(), 5 * 60 * 1000);
+  await backgroundTasks.run("giveaways").catch(() => {});
+  await backgroundTasks.run("ticket-inactivity").catch(() => {});
   await community.onReady().catch(err => console.error("Community startup failed:", err?.message || err));
-  await staff.scheduledTick().catch(err => console.error("Staff startup tick failed:", err?.message || err));
-  setInterval(() => processGiveaways().catch(err => console.error("Giveaway tick failed:", err?.message || err)), 30000);
-  setInterval(() => checkTicketInactivity().catch(err => console.error("Ticket inactivity tick failed:", err?.message || err)), 30 * 60 * 1000);
-  setInterval(() => staff.scheduledTick().catch(err => console.error("Staff scheduled tick failed:", err?.message || err)), 5 * 60 * 1000);
+  await backgroundTasks.run("staff").catch(() => {});
 });
 
 client.on("guildCreate", async guild => {
@@ -4031,6 +4021,7 @@ let newAssistant = null;
 function getNewAssistant() {
   if (!newAssistant) newAssistant = require("./new_assistant").createNewAssistant({
     guildData, saveDB, serverSettings, generateGeminiContent, canManageBotSettings,
+    isBotOwner: interaction => interaction.user.id === OWNER_ID,
     model: process.env.GEMINI_TASK_MODEL || GEMINI_MODEL,
     setupLocks: setupInProgress, resetMemory: resetAiMemory,
     isMaintenance: interaction => db.maintenance && interaction.user.id !== OWNER_ID,
@@ -4527,14 +4518,14 @@ async function processGiveaways() {
   for (const g of Object.values(db.giveaways)) {
     if (!g.ended) {
       if (Date.now() < g.endAt) continue;
-      g.ended = true;
-
       try {
         const guild = client.guilds.cache.get(g.guildId);
         const channel = guild?.channels.cache.get(g.channelId);
         const msg = channel && await channel.messages.fetch(g.messageId);
         if (!msg) continue;
 
+        // Only commit the draw after Discord has returned the target message.
+        // An outage must not turn an unfinished giveaway into an empty ended one.
         const pool = [...new Set(g.entries)];
         const drawPool = [...pool];
         const winners = [];
@@ -4543,6 +4534,7 @@ async function processGiveaways() {
           winners.push(drawPool.splice(idx, 1)[0]);
         }
 
+        g.ended = true;
         g.winners = winners;
         g.winnerHistory = [...new Set([...(Array.isArray(g.winnerHistory) ? g.winnerHistory : []), ...winners])];
         g.claimedBy = Array.isArray(g.claimedBy) ? g.claimedBy.filter(id => winners.includes(id)) : [];
@@ -4840,7 +4832,7 @@ client.on("interactionCreate", async interaction => {
     }
 
     const mimicMaintenanceCleanup = interaction.isChatInputCommand() && interaction.commandName === "mimic" && ["stop", "diagnose"].includes(interaction.options.getSubcommand());
-    if (interaction.isChatInputCommand() && db.maintenance && interaction.user.id !== OWNER_ID && interaction.commandName !== "statuspanel" && !mimicMaintenanceCleanup) {
+    if (interaction.isChatInputCommand() && db.maintenance && interaction.user.id !== OWNER_ID && !["statuspanel", "diagnose"].includes(interaction.commandName) && !mimicMaintenanceCleanup) {
       return interaction.reply({ content: "🔧 Der Bot ist gerade im Wartungsmodus.", flags: MessageFlags.Ephemeral });
     }
 
@@ -4954,6 +4946,16 @@ client.on("interactionCreate", async interaction => {
         return interaction.reply({ content: `✅ **${canonical}** ist jetzt fest ${channel} zugeordnet. /setup verwendet diese Zuordnung vor der AI-Erkennung.`, flags: MessageFlags.Ephemeral });
       }
       switch (interaction.commandName) {
+        case "diagnose": {
+          return await require("./bot_health").diagnose(interaction, {
+            data: db.guilds?.[interaction.guild?.id] || {}, staffChannels: db.staff?.[interaction.guild?.id]?.channels || {},
+            purposes: SMART_SETUP_PURPOSES.map(item => item.canonical), aiConfigured: Boolean(GEMINI_API_KEY),
+            aiStatus: geminiTaskScheduler?.snapshot() || {}, maintenance: db.maintenance,
+            systems: { mimicAvailable: Boolean(mimicParty), mimicActive: Boolean(mimicParty?.hasSession(interaction.guild?.id)),
+              spotifyActive: spotifyParty.isActiveOrStarting(interaction.guild?.id), uploadsAvailable: Boolean(youtubeUploads),
+              voiceChannel: interaction.member?.voice?.channel }
+          });
+        }
         case "new": {
           return await getNewAssistant().handle(interaction);
         }
@@ -5726,9 +5728,10 @@ ${lines.join("\n\n")}`.slice(0, 1900), flags: MessageFlags.Ephemeral });
         }
 
         if (id === "owner_restart") {
+          if (restartTimer) return interaction.reply({ content: "🔄 Der Neustart ist bereits geplant.", flags: MessageFlags.Ephemeral });
           await interaction.reply({ content: "🔄 Restart wurde für in 5 Minuten geplant.", flags: MessageFlags.Ephemeral });
           await ownerNotify(client, "🔄 Restart in 5 Minuten wurde über das Owner-Panel gestartet.");
-          setTimeout(() => process.exit(0), 5 * 60 * 1000);
+          restartTimer = setTimeout(shutdownVoiceGames, 5 * 60 * 1000);
           return;
         }
       }
