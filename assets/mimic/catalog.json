@@ -1,0 +1,986 @@
+[
+  {
+    "id": "animals-1",
+    "name": "Katze",
+    "pack": "animals",
+    "seconds": 0.8,
+    "difficulty": "easy"
+  },
+  {
+    "id": "animals-2",
+    "name": "Hund",
+    "pack": "animals",
+    "seconds": 1.02,
+    "difficulty": "normal"
+  },
+  {
+    "id": "animals-3",
+    "name": "Eule",
+    "pack": "animals",
+    "seconds": 1.5,
+    "difficulty": "hard"
+  },
+  {
+    "id": "animals-4",
+    "name": "Vogel",
+    "pack": "animals",
+    "seconds": 1.01,
+    "difficulty": "normal"
+  },
+  {
+    "id": "animals-5",
+    "name": "Frosch",
+    "pack": "animals",
+    "seconds": 1.08,
+    "difficulty": "easy"
+  },
+  {
+    "id": "animals-6",
+    "name": "Schaf",
+    "pack": "animals",
+    "seconds": 0.85,
+    "difficulty": "normal"
+  },
+  {
+    "id": "animals-7",
+    "name": "Affe",
+    "pack": "animals",
+    "seconds": 1.05,
+    "difficulty": "hard"
+  },
+  {
+    "id": "animals-8",
+    "name": "Wolf",
+    "pack": "animals",
+    "seconds": 1.3,
+    "difficulty": "normal"
+  },
+  {
+    "id": "machines-1",
+    "name": "Alarm",
+    "pack": "machines",
+    "seconds": 1.2,
+    "difficulty": "easy"
+  },
+  {
+    "id": "machines-2",
+    "name": "Motorstart",
+    "pack": "machines",
+    "seconds": 1.4,
+    "difficulty": "normal"
+  },
+  {
+    "id": "machines-3",
+    "name": "Roboter",
+    "pack": "machines",
+    "seconds": 1.36,
+    "difficulty": "hard"
+  },
+  {
+    "id": "machines-4",
+    "name": "Mikrowelle",
+    "pack": "machines",
+    "seconds": 1.2,
+    "difficulty": "normal"
+  },
+  {
+    "id": "machines-5",
+    "name": "Telefon",
+    "pack": "machines",
+    "seconds": 1.48,
+    "difficulty": "easy"
+  },
+  {
+    "id": "machines-6",
+    "name": "UFO",
+    "pack": "machines",
+    "seconds": 1.6,
+    "difficulty": "normal"
+  },
+  {
+    "id": "machines-7",
+    "name": "Drucker",
+    "pack": "machines",
+    "seconds": 1.05,
+    "difficulty": "hard"
+  },
+  {
+    "id": "machines-8",
+    "name": "Dampflok",
+    "pack": "machines",
+    "seconds": 1.5,
+    "difficulty": "normal"
+  },
+  {
+    "id": "voices-1",
+    "name": "Oh-ho",
+    "pack": "voices",
+    "seconds": 0.9,
+    "difficulty": "easy"
+  },
+  {
+    "id": "voices-2",
+    "name": "Ha-ha-ha",
+    "pack": "voices",
+    "seconds": 0.94,
+    "difficulty": "normal"
+  },
+  {
+    "id": "voices-3",
+    "name": "Hmm?",
+    "pack": "voices",
+    "seconds": 0.95,
+    "difficulty": "hard"
+  },
+  {
+    "id": "voices-4",
+    "name": "Wow",
+    "pack": "voices",
+    "seconds": 0.85,
+    "difficulty": "normal"
+  },
+  {
+    "id": "voices-5",
+    "name": "Brrr",
+    "pack": "voices",
+    "seconds": 1.05,
+    "difficulty": "easy"
+  },
+  {
+    "id": "voices-6",
+    "name": "Uuuh",
+    "pack": "voices",
+    "seconds": 0.9,
+    "difficulty": "normal"
+  },
+  {
+    "id": "voices-7",
+    "name": "La-la",
+    "pack": "voices",
+    "seconds": 1.34,
+    "difficulty": "hard"
+  },
+  {
+    "id": "voices-8",
+    "name": "Pixel-Signal",
+    "pack": "voices",
+    "seconds": 1.26,
+    "difficulty": "normal"
+  },
+  {
+    "id": "melodies-1",
+    "name": "Level Up",
+    "pack": "melodies",
+    "seconds": 2.35,
+    "difficulty": "easy"
+  },
+  {
+    "id": "melodies-2",
+    "name": "Downbeat",
+    "pack": "melodies",
+    "seconds": 1.8,
+    "difficulty": "normal"
+  },
+  {
+    "id": "melodies-3",
+    "name": "Sternsprung",
+    "pack": "melodies",
+    "seconds": 1.55,
+    "difficulty": "hard"
+  },
+  {
+    "id": "melodies-4",
+    "name": "Glocke",
+    "pack": "melodies",
+    "seconds": 1.7,
+    "difficulty": "normal"
+  },
+  {
+    "id": "melodies-5",
+    "name": "Geheimnis",
+    "pack": "melodies",
+    "seconds": 1.8,
+    "difficulty": "easy"
+  },
+  {
+    "id": "melodies-6",
+    "name": "Pixel-Tanz",
+    "pack": "melodies",
+    "seconds": 1.7,
+    "difficulty": "normal"
+  },
+  {
+    "id": "melodies-7",
+    "name": "Welle",
+    "pack": "melodies",
+    "seconds": 1.6,
+    "difficulty": "hard"
+  },
+  {
+    "id": "melodies-8",
+    "name": "Auf Wiederhören",
+    "pack": "melodies",
+    "seconds": 1.3,
+    "difficulty": "normal"
+  },
+  {
+    "id": "gaming-fx-1",
+    "name": "Coin-Kombo",
+    "pack": "gaming",
+    "difficulty": "easy",
+    "seconds": 0.59,
+    "source": "original-synth",
+    "sha256": "0f602b134483bea12cb9ebc8c58dd5b7ff738388776b3c15d719f63b36677541"
+  },
+  {
+    "id": "gaming-fx-2",
+    "name": "Game Over",
+    "pack": "gaming",
+    "difficulty": "normal",
+    "seconds": 1.34,
+    "source": "original-synth",
+    "sha256": "5b99ecba6b25296e694d2314ac07abdfedf55767531bd2c71f4a8a261ab4ac6a"
+  },
+  {
+    "id": "gaming-fx-3",
+    "name": "Boss-Alarm",
+    "pack": "gaming",
+    "difficulty": "hard",
+    "seconds": 1.14,
+    "source": "original-synth",
+    "sha256": "e779aa00b89468480d112d1470f8fc86c440997c8f9bc5a23ba72028f7014121"
+  },
+  {
+    "id": "gaming-fx-4",
+    "name": "Respawn-Signal",
+    "pack": "gaming",
+    "difficulty": "normal",
+    "seconds": 0.75,
+    "source": "original-synth",
+    "sha256": "957cea650cce21e164e5cb1fc57fe0eb10f11a5949a4630abd11e673ca1b4aba"
+  },
+  {
+    "id": "horror-fx-5",
+    "name": "Geisterheulen",
+    "pack": "horror",
+    "difficulty": "normal",
+    "seconds": 1.2,
+    "source": "original-synth",
+    "sha256": "0779de648af86810a681ace24b120e5a7b2aa8b755ce62012d9c14ffb4dbab61"
+  },
+  {
+    "id": "horror-fx-6",
+    "name": "Monster-Knurren",
+    "pack": "horror",
+    "difficulty": "hard",
+    "seconds": 1.05,
+    "source": "original-synth",
+    "sha256": "b7fc7f3bdb4e7c6dc55f908e6e1cb925bf59c7e30930227b7f559975a71f6f29"
+  },
+  {
+    "id": "horror-fx-7",
+    "name": "Dunkle Schritte",
+    "pack": "horror",
+    "difficulty": "easy",
+    "seconds": 0.77,
+    "source": "original-synth",
+    "sha256": "f4fb2e23f53635afc81a7005004b269059b62b615b429abf2b442e155ccf774f"
+  },
+  {
+    "id": "horror-fx-8",
+    "name": "Grusel-Lachen",
+    "pack": "horror",
+    "difficulty": "hard",
+    "seconds": 1.06,
+    "source": "original-synth",
+    "sha256": "c7a2d14ece96fa39f8e204d75d734460a7223036287d456079695c30f78714ca"
+  },
+  {
+    "id": "beatbox-fx-9",
+    "name": "Kick Snare",
+    "pack": "beatbox",
+    "difficulty": "easy",
+    "seconds": 0.82,
+    "source": "original-synth",
+    "sha256": "747e57807513246343ad314b251411ea2e998d7470a3225d35e05de882eef57a"
+  },
+  {
+    "id": "beatbox-fx-10",
+    "name": "Hi-Hat-Kette",
+    "pack": "beatbox",
+    "difficulty": "normal",
+    "seconds": 0.6,
+    "source": "original-synth",
+    "sha256": "3103461814ae9b960727332d76b622d1fd5665e4961c25f33d9362a52aa65152"
+  },
+  {
+    "id": "beatbox-fx-11",
+    "name": "Bass-Drop",
+    "pack": "beatbox",
+    "difficulty": "normal",
+    "seconds": 1,
+    "source": "original-synth",
+    "sha256": "4acc1e2b97802a123beba064b7695c4a506d7b38f8448ec7dc6d547f8dc35dcb"
+  },
+  {
+    "id": "beatbox-fx-12",
+    "name": "Triple Kick",
+    "pack": "beatbox",
+    "difficulty": "easy",
+    "seconds": 0.66,
+    "source": "original-synth",
+    "sha256": "ac43c188312e69695e1df6683756a5ef1e71df87d1aa72da43a59e31effb3783"
+  },
+  {
+    "id": "beatbox-fx-13",
+    "name": "Drum Fill",
+    "pack": "beatbox",
+    "difficulty": "hard",
+    "seconds": 0.78,
+    "source": "original-synth",
+    "sha256": "6eb884b7c686f2e4d4a263152b0ccc4a294c769d243433b2468affd3969a3f42"
+  },
+  {
+    "id": "beatbox-fx-14",
+    "name": "Boots Cats",
+    "pack": "beatbox",
+    "difficulty": "normal",
+    "seconds": 0.9,
+    "source": "original-synth",
+    "sha256": "008eec245d4f754a6558788b23c65e334183c64a772b2e59d34829e261602998"
+  },
+  {
+    "id": "beatbox-fx-15",
+    "name": "Pixel-Bass",
+    "pack": "beatbox",
+    "difficulty": "hard",
+    "seconds": 1.08,
+    "source": "original-synth",
+    "sha256": "c3ed93ab536df72a041e537f130786edb969d1023b54f2521602ace4eeac4dcd"
+  },
+  {
+    "id": "beatbox-fx-16",
+    "name": "Beatbox-Finale",
+    "pack": "beatbox",
+    "difficulty": "hard",
+    "seconds": 1.05,
+    "source": "original-synth",
+    "sha256": "8d51099fb78a66456b5b67e23b2f5805c8aa4a8962226ade954c08b51d54905c"
+  },
+  {
+    "id": "anime-spoken-1",
+    "name": "Nani",
+    "pack": "anime",
+    "seconds": 0.5,
+    "difficulty": "easy",
+    "text": "Nani?!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "7404901c7fabb50c18a93b0a1360ea4bb7269e481fe500f05a96d9c76cdb6f05"
+  },
+  {
+    "id": "anime-spoken-10",
+    "name": "Senpai",
+    "pack": "anime",
+    "seconds": 2.1626875,
+    "difficulty": "normal",
+    "text": "Senpai! Warte auf mich!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-KatjaNeural",
+    "sha256": "9787e33a50c29d8ef19e7d4a314adeebb907de0509016f37c21e9d6dfd18e961"
+  },
+  {
+    "id": "anime-spoken-11",
+    "name": "Power-Up",
+    "pack": "anime",
+    "seconds": 3.0446875,
+    "difficulty": "hard",
+    "text": "Mehr! Mehr! Noch mehr Kraft!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "68795bc095587b3ef5b141b15d83a2892b23c7e025af7a7453946c8a4108c988"
+  },
+  {
+    "id": "anime-spoken-12",
+    "name": "Blickduell",
+    "pack": "anime",
+    "seconds": 0.6011875,
+    "difficulty": "easy",
+    "text": "Du wagst es?!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "313e69c6740f55c9153c0b918176d8e735c2e3677e54bba0eda009515ae80615"
+  },
+  {
+    "id": "anime-spoken-2",
+    "name": "Finale Form",
+    "pack": "anime",
+    "seconds": 1.2183125,
+    "difficulty": "normal",
+    "text": "Das ist meine finale Form!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "cc1d183054111917422e1423533d2edb69ec25b017f99894a46eddf5c9a118a5"
+  },
+  {
+    "id": "anime-spoken-3",
+    "name": "Zu langsam",
+    "pack": "anime",
+    "seconds": 1.166875,
+    "difficulty": "normal",
+    "text": "Du bist viel zu langsam!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-KatjaNeural",
+    "sha256": "80223cb0cf2f55828ec597d56396fe7005b3e4a3e87fc061809f39b181b0f2bb"
+  },
+  {
+    "id": "anime-spoken-4",
+    "name": "Unmöglich",
+    "pack": "anime",
+    "seconds": 1.989125,
+    "difficulty": "hard",
+    "text": "Nein! Das ist unmöglich!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "f63b05f2a1d4a289572da26896afaeb6a4d86ee0a5721967749215263e2fad34"
+  },
+  {
+    "id": "anime-spoken-5",
+    "name": "Letzter Angriff",
+    "pack": "anime",
+    "seconds": 1.0199375,
+    "difficulty": "normal",
+    "text": "Mein letzter Angriff!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "cbb3858a3479aabf947bb7eacfeb31801d07c50f38838c6d98eef8d25e6c1086"
+  },
+  {
+    "id": "anime-spoken-6",
+    "name": "Warm-up",
+    "pack": "anime",
+    "seconds": 1.132875,
+    "difficulty": "normal",
+    "text": "Das war erst mein Warm-up!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-KatjaNeural",
+    "sha256": "4ffb70c4ead7695e5721e002472fe53459be032e67d1678bb272dcef620292e3"
+  },
+  {
+    "id": "anime-spoken-7",
+    "name": "Wahre Kraft",
+    "pack": "anime",
+    "seconds": 1.4828125,
+    "difficulty": "hard",
+    "text": "Du kennst meine wahre Kraft nicht!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "98477d530576fb8ec7e2173e338c03462f9151fb3d7e8019dda5aed89e674ad6"
+  },
+  {
+    "id": "anime-spoken-8",
+    "name": "Jetzt geht es los",
+    "pack": "anime",
+    "seconds": 3.5451875,
+    "difficulty": "hard",
+    "text": "Jetzt. Geht. Es. Los!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-KatjaNeural",
+    "sha256": "bb08c6046aa76534a44deab3f8a1d0bd5967535f508bd7f37617be645fc60c04"
+  },
+  {
+    "id": "anime-spoken-9",
+    "name": "Kampfschrei",
+    "pack": "anime",
+    "seconds": 2.28275,
+    "difficulty": "hard",
+    "text": "Hah! Hah! Haaah!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "53c45502b07851aa8f9429d3541e16a5a4ee1dc0ef11851909ea06671467ad40"
+  },
+  {
+    "id": "gaming-spoken-1",
+    "name": "Clutch",
+    "pack": "gaming",
+    "seconds": 3.1468125,
+    "difficulty": "hard",
+    "text": "Ein HP! Ein HP! Push ihn!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "70c4c673411c40bdbd6047a7ca5d18a8ed0a9769c7d1c71b7bd17f686c726ea6"
+  },
+  {
+    "id": "gaming-spoken-2",
+    "name": "GG",
+    "pack": "gaming",
+    "seconds": 1.9181875,
+    "difficulty": "easy",
+    "text": "GG! Gut gespielt!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "da73e6e360c004c5d126388aa783bfdbc5c57d31a6d7366450f143d998487232"
+  },
+  {
+    "id": "gaming-spoken-3",
+    "name": "Der Klassiker",
+    "pack": "gaming",
+    "seconds": 1.4503125,
+    "difficulty": "normal",
+    "text": "Das ist hundert Prozent ein Hacker!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "27c628074b72bf835f0665df8ad9c6da1850db2014a62ef4088c173dd52ea101"
+  },
+  {
+    "id": "gaming-spoken-4",
+    "name": "Minecraft-Moment",
+    "pack": "gaming",
+    "seconds": 2.0596875,
+    "difficulty": "hard",
+    "text": "Nicht die Diamanten! Nein!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-KatjaNeural",
+    "sha256": "5e1afcd70b03b5fb3ba9f4b9d37aa3390e40f62809aa093f209637c531e6211f"
+  },
+  {
+    "id": "gaming-spoken-5",
+    "name": "AFK",
+    "pack": "gaming",
+    "seconds": 2.5865,
+    "difficulty": "normal",
+    "text": "Bin kurz AFK. Gleich wieder da!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "3f33077e778f05b16976ebc6785e284b02415d28577db9a9302929950521db79"
+  },
+  {
+    "id": "gaming-spoken-6",
+    "name": "Respawn",
+    "pack": "gaming",
+    "seconds": 1.890625,
+    "difficulty": "easy",
+    "text": "Okay. Neuer Versuch!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-KatjaNeural",
+    "sha256": "3f14abd34c6078f85cbc0f3a013c9269a9f102317ca0ff3d0f8bab3418f917d3"
+  },
+  {
+    "id": "gaming-spoken-7",
+    "name": "Lobby",
+    "pack": "gaming",
+    "seconds": 1.088625,
+    "difficulty": "normal",
+    "text": "Wer hat die Lobby verlassen?!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "fc053404c580e3da40ad518e9e3855584cc27dcb1cc45ebe9de3ef397aa03661"
+  },
+  {
+    "id": "gaming-spoken-8",
+    "name": "Teamwork",
+    "pack": "gaming",
+    "seconds": 2.76475,
+    "difficulty": "hard",
+    "text": "Links! Nein, dein anderes links!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-KatjaNeural",
+    "sha256": "6612324b4416d84a17f56944fd83ee64169e54082573034fd38363244d7cec85"
+  },
+  {
+    "id": "horror-spoken-1",
+    "name": "Hinter dir",
+    "pack": "horror",
+    "seconds": 0.7541875,
+    "difficulty": "normal",
+    "text": "Dreh dich nicht um!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "0efc7990e00d317e493eb18783a6a1ced2c12b68ac2962c5eddf6488b837f0cb"
+  },
+  {
+    "id": "horror-spoken-2",
+    "name": "Buh",
+    "pack": "horror",
+    "seconds": 0.5,
+    "difficulty": "easy",
+    "text": "Buh!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-KatjaNeural",
+    "sha256": "e99e47e8bc0608739925c168489510e0a104fd867468074bd82578fe6c4c085f"
+  },
+  {
+    "id": "horror-spoken-3",
+    "name": "Klopfen",
+    "pack": "horror",
+    "seconds": 0.532375,
+    "difficulty": "normal",
+    "text": "Wer ist da?!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "cb3797f6850e8b463bda2e3ddda3025b8da39c104ab4bd54dbb50b7b125faa8f"
+  },
+  {
+    "id": "horror-spoken-4",
+    "name": "Nicht allein",
+    "pack": "horror",
+    "seconds": 0.9953125,
+    "difficulty": "hard",
+    "text": "Wir sind nicht allein!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-KatjaNeural",
+    "sha256": "b503acb8d56170489e9542b8f67f41268150657b3c83adaff75939de7c0f878a"
+  },
+  {
+    "id": "memes-spoken-1",
+    "name": "Bruder muss los",
+    "pack": "memes",
+    "seconds": 0.8025,
+    "difficulty": "easy",
+    "text": "Bruder muss los!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "8bdfd22f681c5e58df515cd7d5aa755c99222dbd35cb694847f62c8990a38746"
+  },
+  {
+    "id": "memes-spoken-10",
+    "name": "Bonk",
+    "pack": "memes",
+    "seconds": 2.873125,
+    "difficulty": "normal",
+    "text": "Bonk! Bonk! Bonk!",
+    "source": "synthetic-speech",
+    "voice": "en-US-GuyNeural",
+    "sha256": "832ae7ff2e42125e09727335a4d1296d858448030dfda52361bb2e5420266f48"
+  },
+  {
+    "id": "memes-spoken-11",
+    "name": "Offline",
+    "pack": "memes",
+    "seconds": 2.0990625,
+    "difficulty": "normal",
+    "text": "Das war's. Ich geh offline!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "da58eaa8942c6c8e843d5a60fa24728845ca014ef7a5a311cc68e64ec4a17479"
+  },
+  {
+    "id": "memes-spoken-12",
+    "name": "Einfach machen",
+    "pack": "memes",
+    "seconds": 2.0885,
+    "difficulty": "easy",
+    "text": "Einfach machen. Wird schon!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-KatjaNeural",
+    "sha256": "74b8e3f57cdba1aa9c4398d7b1d4091c43b8d7f8e1c9944415cfe5fc87090c2f"
+  },
+  {
+    "id": "memes-spoken-13",
+    "name": "Ganz entspannt",
+    "pack": "memes",
+    "seconds": 2.108875,
+    "difficulty": "normal",
+    "text": "Alles gut. Ganz entspannt!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "5dd358391ae482d8dccb7ccf4528589f72d997cbd14960abe28ae83ebb6cafca"
+  },
+  {
+    "id": "memes-spoken-14",
+    "name": "Moment mal",
+    "pack": "memes",
+    "seconds": 1.75125,
+    "difficulty": "hard",
+    "text": "Moment mal. Was?!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-KatjaNeural",
+    "sha256": "b2092f096496ad8f1d23c866c3f06d3fc6e4714023dd39ffa2058f3d3b4e5828"
+  },
+  {
+    "id": "memes-spoken-15",
+    "name": "Aha",
+    "pack": "memes",
+    "seconds": 2.394875,
+    "difficulty": "hard",
+    "text": "Aha. Aha! Aha?!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "32e2588b234667c7f899274c17c328797d1ddc0b99feae5358f72f525cbd3ecf"
+  },
+  {
+    "id": "memes-spoken-16",
+    "name": "Wo bin ich?",
+    "pack": "memes",
+    "seconds": 1.104875,
+    "difficulty": "normal",
+    "text": "Wo bin ich hier gelandet?!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-KatjaNeural",
+    "sha256": "ae3557bb31fff08e1f5132035e54aa7e2c253ac8f860eea7a6a35874d56a9006"
+  },
+  {
+    "id": "memes-spoken-2",
+    "name": "Ja moin",
+    "pack": "memes",
+    "seconds": 0.687,
+    "difficulty": "easy",
+    "text": "Ja, moin!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "146ad636fa12c81837e0492476492c5735a23fa44209a5dfa15a053bef386d46"
+  },
+  {
+    "id": "memes-spoken-3",
+    "name": "Nein Doch Oh",
+    "pack": "memes",
+    "seconds": 2.4378125,
+    "difficulty": "normal",
+    "text": "Nein! Doch! Oh!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-KatjaNeural",
+    "sha256": "1d23e4c48c74faf80b6b164fc9d72842dfad569251c8993d540dd55f94f357ed"
+  },
+  {
+    "id": "memes-spoken-4",
+    "name": "Emotional damage",
+    "pack": "memes",
+    "seconds": 0.98425,
+    "difficulty": "normal",
+    "text": "Emotional damage!",
+    "source": "synthetic-speech",
+    "voice": "en-US-GuyNeural",
+    "sha256": "089ac1488e703ed6a3bfa8a96d4525cdd8eca53e1ba2e72ef2d683c815e997a6"
+  },
+  {
+    "id": "memes-spoken-5",
+    "name": "Skill issue",
+    "pack": "memes",
+    "seconds": 0.709375,
+    "difficulty": "easy",
+    "text": "Skill issue!",
+    "source": "synthetic-speech",
+    "voice": "en-US-AriaNeural",
+    "sha256": "ae1c16f8fa99ed7c07ef72479411593e9a54f895eeab3903298a5bc0ea65c2cd"
+  },
+  {
+    "id": "memes-spoken-6",
+    "name": "Unser Tisch",
+    "pack": "memes",
+    "seconds": 1.81525,
+    "difficulty": "hard",
+    "text": "Oh nein! Unser Tisch!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-KatjaNeural",
+    "sha256": "0aabdaa4ed9707db49d5d2d2e8686cbbe58bac48298aace2a623707fd442e098"
+  },
+  {
+    "id": "memes-spoken-7",
+    "name": "Sus",
+    "pack": "memes",
+    "seconds": 0.8526875,
+    "difficulty": "easy",
+    "text": "Das ist aber sus!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "d1be11a06cda62840de0e874a97619d1c797b4bb3738e8cb49b49159597e8d44"
+  },
+  {
+    "id": "memes-spoken-8",
+    "name": "Side eye",
+    "pack": "memes",
+    "seconds": 1.12425,
+    "difficulty": "normal",
+    "text": "Bombastic side eye!",
+    "source": "synthetic-speech",
+    "voice": "en-US-AriaNeural",
+    "sha256": "e7921cf0398221b846e678af1e032de1a3d3daf0e668ced145df9a54e6343f96"
+  },
+  {
+    "id": "memes-spoken-9",
+    "name": "Nicht normal",
+    "pack": "memes",
+    "seconds": 0.9595,
+    "difficulty": "normal",
+    "text": "Das ist doch nicht normal!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "f7ee396347242b41fcdf91cb07a07af43c74b0970f19a4b831de4e807cee1e1e"
+  },
+  {
+    "id": "streamers-spoken-1",
+    "name": "Chat-Moment",
+    "pack": "streamers",
+    "seconds": 1.2548125,
+    "difficulty": "normal",
+    "text": "Chat, habt ihr das gesehen?!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "9f5518bd54fe6a3a78bdb46808b0b2326759116ada62fb41250e8eb5301dcbb3"
+  },
+  {
+    "id": "streamers-spoken-10",
+    "name": "Was macht der?",
+    "pack": "streamers",
+    "seconds": 1.1769375,
+    "difficulty": "normal",
+    "text": "Bruder, was macht der?!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "49d3cffe5af282e7a9ab7e882cf9038b563f814aa4cdcb89662895a62abec41c"
+  },
+  {
+    "id": "streamers-spoken-11",
+    "name": "Noch ein Versuch",
+    "pack": "streamers",
+    "seconds": 2.3035,
+    "difficulty": "hard",
+    "text": "Nur noch ein Versuch. Ganz ehrlich!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "872fa0c68f2a4cf3b6daa112f13e47b605eabca20422214e27284bc9c1abba7f"
+  },
+  {
+    "id": "streamers-spoken-12",
+    "name": "Wer hat das geclippt?",
+    "pack": "streamers",
+    "seconds": 1.2310625,
+    "difficulty": "normal",
+    "text": "Wer hat das bitte geclippt?!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-KatjaNeural",
+    "sha256": "3262ea998abf2f1abbc55371dbf35bbe3bd58216d432bac03e81bfeb2733fa99"
+  },
+  {
+    "id": "streamers-spoken-13",
+    "name": "Let's go!",
+    "pack": "streamers",
+    "seconds": 1.99775,
+    "difficulty": "easy",
+    "text": "Let's go! Let's go!",
+    "source": "synthetic-speech",
+    "voice": "en-US-GuyNeural",
+    "sha256": "a21fd1c4df28ac0a69249c14f622e20661e1456d88317a2510d0bfd30512af84"
+  },
+  {
+    "id": "streamers-spoken-14",
+    "name": "Kompletter Rage",
+    "pack": "streamers",
+    "seconds": 1.8346875,
+    "difficulty": "hard",
+    "text": "Nein! Nicht schon wieder!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "6410bbd1305b67b8f4c23f6fe6cd6a1654da37c5fd0f3d36b7e8133697d7ec35"
+  },
+  {
+    "id": "streamers-spoken-15",
+    "name": "Aim oder Glück",
+    "pack": "streamers",
+    "seconds": 2.2890625,
+    "difficulty": "hard",
+    "text": "Das war kein Aim. Das war Glück!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-KatjaNeural",
+    "sha256": "040f12d44d7be0cb09611084c8360ad7e4d6f37e7bb3b47a9d4fab5ee0bddf16"
+  },
+  {
+    "id": "streamers-spoken-16",
+    "name": "Chat entscheidet",
+    "pack": "streamers",
+    "seconds": 2.7814375,
+    "difficulty": "normal",
+    "text": "Chat, entscheidet ihr! Ich bin raus!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "59a99a1cad4035f5230d709479629053b78d10e23df15e1380915242ffe6f9c8"
+  },
+  {
+    "id": "streamers-spoken-2",
+    "name": "Clip das!",
+    "pack": "streamers",
+    "seconds": 1.918875,
+    "difficulty": "easy",
+    "text": "Clip das! Clip das!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "0983b3bf7b285046ed62c2d51a6333f2e139404511eea33e8aada6eb8e611e97"
+  },
+  {
+    "id": "streamers-spoken-3",
+    "name": "Komplett lost",
+    "pack": "streamers",
+    "seconds": 1.423125,
+    "difficulty": "easy",
+    "text": "Junge, komplett lost!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-KatjaNeural",
+    "sha256": "a1cb27175c8f5e72827588d3865bf31208b7117f391a6d947245b85b203a785b"
+  },
+  {
+    "id": "streamers-spoken-4",
+    "name": "Letzte Runde",
+    "pack": "streamers",
+    "seconds": 1.678625,
+    "difficulty": "normal",
+    "text": "Okay, wirklich die letzte Runde!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "b69361921fb8ac23e07a3f0047da7221f0507b224bb06449d4c13fae6d525af9"
+  },
+  {
+    "id": "streamers-spoken-5",
+    "name": "Lag-Ausrede",
+    "pack": "streamers",
+    "seconds": 1.165,
+    "difficulty": "normal",
+    "text": "Ich schwöre, der laggt!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "6900be489a88cef6d8d8f6f205817ed40f512ebbfbc2c915c91d0d02527353a1"
+  },
+  {
+    "id": "streamers-spoken-6",
+    "name": "Weltrekord",
+    "pack": "streamers",
+    "seconds": 2.1164375,
+    "difficulty": "hard",
+    "text": "Chat! Das ist ein Weltrekord!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-KatjaNeural",
+    "sha256": "45f7962e794c19e2572d4c3b500a9917a297a1bb8a1bef4192f4091f0eb9115d"
+  },
+  {
+    "id": "streamers-spoken-7",
+    "name": "Das zählt nicht",
+    "pack": "streamers",
+    "seconds": 2.4593125,
+    "difficulty": "normal",
+    "text": "Nein, nein! Das zählt nicht!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "f211498a4ed05b8f05d73f8b2d72951919b27b53c2e1a8a6ff79f6e531a68f8d"
+  },
+  {
+    "id": "streamers-spoken-8",
+    "name": "Nicht sauer",
+    "pack": "streamers",
+    "seconds": 2.2880625,
+    "difficulty": "hard",
+    "text": "Ich bin nicht sauer. Überhaupt nicht!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-ConradNeural",
+    "sha256": "4644b074c23dc6b096d2f88cc3bcefb5472e394b07b27c8a030a286cd90e4848"
+  },
+  {
+    "id": "streamers-spoken-9",
+    "name": "Raus!",
+    "pack": "streamers",
+    "seconds": 2.0504375,
+    "difficulty": "easy",
+    "text": "Raus! Sofort raus!",
+    "source": "synthetic-speech",
+    "voice": "de-DE-KatjaNeural",
+    "sha256": "c10c9de25849ab98d78d1ba45843a54c3cbfee86fba04b8972370e0b877e621d"
+  }
+]
