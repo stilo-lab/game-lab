@@ -1,0 +1,152 @@
+{
+  "ai_memory.js": {
+    "sha256": "c89dd72676fdcb928608e198f712c405c84d31971c083cef2f82132d9ccc83a9",
+    "edits": []
+  },
+  "ai_quality.js": {
+    "sha256": "a59d615deb9e90f5693368b2237d34e16a4d73cd0ce6643ed849d5acda6c750c",
+    "edits": []
+  },
+  "ai_runtime.js": {
+    "sha256": "f9650e394380d58e0de1c3bd1bb0834f13004cde338678050032a06d71ab8d76",
+    "edits": []
+  },
+  "background_tasks.js": {
+    "sha256": "b33208f940f405886e378cf119ada6b63b7465c6706b74c96803c46212e3c9cb",
+    "edits": []
+  },
+  "bot_health.js": {
+    "sha256": "caec5a29301c1ef72736b1d57c2c10b1f6968c35617c640c4af69aad9a15e07f",
+    "edits": []
+  },
+  "bot_permissions.js": {
+    "sha256": "384c8ec473e241a889695bb005e31b20362b0225529a8ace768becb2f3cbdf76",
+    "edits": []
+  },
+  "bot_runtime.js": {
+    "sha256": "0f8d870e4dc0a55eeef2ea28a1b6853ce3668c68c5ad3ef8191129bc86ee87c7",
+    "edits": []
+  },
+  "community.js": {
+    "sha256": "49de8c51dae75c41bdd7b6ab0e9d6594011f82bfb58a70a4c1f871551ab66680",
+    "edits": []
+  },
+  "element_seas.js": {
+    "sha256": "16b2c43bf49a1f7fbff299116eee65c83a0d1fdcce5b5e9dd130e0a10927ff3d",
+    "edits": []
+  },
+  "games.js": {
+    "sha256": "da31fbee0d23c8a367651f372e240a4b9fac84011b0f548d5c7ec2fbb7bb30e1",
+    "edits": []
+  },
+  "index.js": {
+    "sha256": "f8f7c542374af485312cdbf89a4b5ca130ab66954462d07033f5dce36c51dc23",
+    "edits": []
+  },
+  "mimic_audio.js": {
+    "sha256": "fc359272a9e373ed803110907912165c85c6aebb6b4a2a54d360ac791612b32d",
+    "edits": []
+  },
+  "mimic_categories.js": {
+    "sha256": "1aa3dac8891d08d13588985577bd220a92ac9d633ff85da8694f030f0107592e",
+    "edits": []
+  },
+  "mimic_engine.js": {
+    "sha256": "296b959fcbe60a4b484bf9e37dc2d73d4438a6cdaa40c851a90debf76e0c69de",
+    "edits": []
+  },
+  "mimic_media.js": {
+    "sha256": "f658a1459a7b47fe9fafd2a029d125775107618e668ee6d14ef1465917a11655",
+    "edits": []
+  },
+  "mimic_party.js": {
+    "sha256": "4615eb8fbdd54b3725067f6964a65f51ef564160d85e718d20336a7aca2413c8",
+    "edits": []
+  },
+  "mimic_quiet.js": {
+    "sha256": "c19bee879647c2f28971e39d65da426a72da6b1e8bd78463cc12cdedd628f132",
+    "edits": []
+  },
+  "mimic_score.js": {
+    "sha256": "bc2ed96609a76fe644c20317a742a2615c0e7a0a43f855ed721ecf3ed9184194",
+    "edits": []
+  },
+  "mimic_score_worker.js": {
+    "sha256": "65db5e7b312b7aa7a796b909bfe0236579ba35445dc1a880dc6d7dcf9808d879",
+    "edits": []
+  },
+  "mimic_sounds.js": {
+    "sha256": "dd1faeec56e24820d650a75104a5bf195b45409a6aa4c3f80792f997c85ee1a6",
+    "edits": []
+  },
+  "mimic_voice.js": {
+    "sha256": "af907908841f40c74e86f0b1b5561b8b569fa0aceeb446fb54c256b921257e41",
+    "edits": []
+  },
+  "mimic_workers.js": {
+    "sha256": "79716b5b6e2b25fd0b5a1466a029e1b7e54a71c63025dfa76169393f671cedc8",
+    "edits": []
+  },
+  "new_assistant.js": {
+    "sha256": "35b91c4853ffb318f1ffc5811beed229eeac9e14a216fdf7e6e1e7c35c294ba4",
+    "edits": []
+  },
+  "pixel_characters.js": {
+    "sha256": "4a1cf4a76fba46258c7fe32df04f00af1865e800dd0bebd61b0985927aeb1f6c",
+    "edits": [
+      {
+        "before": "  Object.freeze({id:'ember',name:'Pixel Ember',label:'Ember',symbol:'🦊',description:'Eigener Fuchs: Briefe stempeln, schlafen, Blätter fangen.'}),\n  Object.freeze({id:'luna',name:'Pixel Luna',label:'Luna',symbol:'🌙',description:'Eigene Sternmagierin: Tränke, Teleskop und Sternsprung.'})\n]);\nconst characterById=id=>CHARACTERS.find(c=>c.id===id)||CHARACTERS[0];\nconst validCharacter=id=>CHARACTERS.some(c=>c.id===id);\nconst selectedCharacter=record=>characterById(record?.pixelCharacterId).id;\nconst hasSelection=record=>validCharacter(record?.pixelCharacterId);\n\nfunction createCharacterPicker({getUserRecord,saveDB,answerQuestion,isAiEnabled=()=>true,isMaintenance=()=>false,now=Date.now,ttlMs=15*60000,maxSessions=200,previewPath=path.join(ASSET_ROOT,'auswahl.png')}={}){\n  if(typeof getUserRecord!=='function'||typeof saveDB!=='function')throw Error('Character storage missing');\n  const sessions=new Map();\n  function cleanup(){for(const [token,s] of sessions)if(now()-s.createdAt>ttlMs)sessions.delete(token);}\n  function createSession(guildId,userId,question){\n    cleanup();\n    if(sessions.size>=maxSessions)return null;\n    const token=crypto.randomBytes(12).toString('hex');\n    sessions.set(token,{guildId,userId,question:question?String(question).slice(0,6000):null,createdAt:now(),busy:false});return token;\n",
+        "after": "  Object.freeze({id:'ember',name:'Pixel Ember',label:'Ember',symbol:'🦊',description:'Eigener Fuchs: Briefe stempeln, schlafen, Blätter fangen.'}),\n  Object.freeze({id:'luna',name:'Pixel Luna',label:'Luna',symbol:'🌙',description:'Eigene Sternmagierin: Tränke, Teleskop und Sternsprung.'})\n]);\nconst characterById=id=>CHARACTERS.find(c=>c.id===id)||CHARACTERS[0];\nconst validCharacter=id=>CHARACTERS.some(c=>c.id===id);\nconst selectedCharacter=record=>characterById(record?.pixelCharacterId).id;\nconst hasSelection=record=>validCharacter(record?.pixelCharacterId);\n\nfunction createCharacterPicker({getUserRecord,saveDB,answerQuestion,isAiEnabled=()=>true,isMaintenance=()=>false,now=Date.now,ttlMs=15*60000,maxSessions=200,previewPath=path.join(ASSET_ROOT,'auswahl.png'),getDisplay=()=>require('./pixel_gojo')}={}){\n  if(typeof getUserRecord!=='function'||typeof saveDB!=='function')throw Error('Character storage missing');\n  const sessions=new Map();\n  function cleanup(){for(const [token,s] of sessions)if(now()-s.createdAt>ttlMs)sessions.delete(token);}\n  function createSession(guildId,userId,question){\n    cleanup();\n    if(sessions.size>=maxSessions)return null;\n    const token=crypto.randomBytes(12).toString('hex');\n    sessions.set(token,{guildId,userId,question:question?String(question).slice(0,6000):null,createdAt:now(),busy:false});return token;\n"
+      },
+      {
+        "before": "    session.busy=true;\n    try{\n      await interaction.deferUpdate();\n      const record=getUserRecord(session.guildId,session.userId),had=Object.hasOwn(record,'pixelCharacterId'),previous=record.pixelCharacterId;\n      record.pixelCharacterId=id;\n      try{saveDB();}catch(error){if(had)record.pixelCharacterId=previous;else delete record.pixelCharacterId;session.busy=false;await interaction.followUp({content:'⚠️ Deine Auswahl konnte nicht gespeichert werden. Bitte erneut versuchen.',flags:MessageFlags.Ephemeral});return true;}\n      sessions.delete(token);\n      const character=characterById(id);\n      if(session.question&&isAiEnabled(session.guildId)&&answerQuestion){\n        // Remove the picker and its attachment before starting the ordinary AI handler.\n        await interaction.editReply({content:`${character.symbol} **${character.name}** ist ausgewählt.`,embeds:[],components:[],attachments:[]});\n        await answerQuestion(interaction,session.question);return true;\n      }\n      await interaction.editReply({content:`${character.symbol} **${character.name}** begleitet dich jetzt. Du kannst mit /pixel wechseln.`+(session.question?'\\nDie AI wurde inzwischen ausgeschaltet. Deine Auswahl ist trotzdem gespeichert.':''),embeds:[],components:[],attachments:[],allowedMentions:{parse:[]}});\n      return true;\n    }catch(error){if(sessions.has(token))session.busy=false;throw error;}\n  }\n  return {open,openFromMessage,handleInteraction,hasSelection:(guildId,userId)=>hasSelection(getUserRecord(guildId,userId)),getSelected:(guildId,userId)=>selectedCharacter(getUserRecord(guildId,userId)),sessions};\n}\nmodule.exports={ASSET_ROOT,CHARACTERS,characterById,validCharacter,selectedCharacter,hasSelection,createCharacterPicker};\n",
+        "after": "    session.busy=true;\n    try{\n      await interaction.deferUpdate();\n      const record=getUserRecord(session.guildId,session.userId),had=Object.hasOwn(record,'pixelCharacterId'),previous=record.pixelCharacterId;\n      record.pixelCharacterId=id;\n      try{saveDB();}catch(error){if(had)record.pixelCharacterId=previous;else delete record.pixelCharacterId;session.busy=false;await interaction.followUp({content:'⚠️ Deine Auswahl konnte nicht gespeichert werden. Bitte erneut versuchen.',flags:MessageFlags.Ephemeral});return true;}\n      sessions.delete(token);\n      const character=characterById(id);\n      let display;\n      try { display=getDisplay();await display.ensureCharacter?.(id); } catch {}\n      const selectedText=text=>display?.aiTextPayload?.(text,'all',id)||{content:`${character.symbol} **${character.name}**\\n${text}`,allowedMentions:{parse:[],repliedUser:false}};\n      if(session.question&&isAiEnabled(session.guildId)&&answerQuestion){\n        // Remove the picker and its attachment before starting the ordinary AI handler.\n        await interaction.editReply({...selectedText('ist ausgewählt.'),embeds:[],components:[],attachments:[]});\n        await answerQuestion(interaction,session.question);return true;\n      }\n      await interaction.editReply({...selectedText('begleitet dich jetzt. Du kannst mit /pixel wechseln.'+(session.question?'\\nDie AI wurde inzwischen ausgeschaltet. Deine Auswahl ist trotzdem gespeichert.':'')),embeds:[],components:[],attachments:[]});\n      return true;\n    }catch(error){if(sessions.has(token))session.busy=false;throw error;}\n  }\n  return {open,openFromMessage,handleInteraction,hasSelection:(guildId,userId)=>hasSelection(getUserRecord(guildId,userId)),getSelected:(guildId,userId)=>selectedCharacter(getUserRecord(guildId,userId)),sessions};\n}\nmodule.exports={ASSET_ROOT,CHARACTERS,characterById,validCharacter,selectedCharacter,hasSelection,createCharacterPicker};\n"
+      }
+    ]
+  },
+  "pixel_gojo.js": {
+    "sha256": "049becd62f4188a10261393fcd3085ca16c37c4d36874a14c044141f33f18212",
+    "edits": [
+      {
+        "before": "const crypto = require(\"node:crypto\");\n\nconst { CHARACTERS, characterById, ASSET_ROOT } = require(\"./pixel_characters\");\nconst AI_NAME = \"Pixel Gojo\";\nconst ASSET_DIR = path.join(__dirname, \"..\", \"assets\", \"pixel-gojo\");\nconst EMOJI_STATES = [\"laptop\", \"all\", \"waiting\", \"failed\"];\n\n// App emojis require no changes to server emojis, permissions or the database.\nfunction createPetDisplay({ logger = console, waitMs = 20_000, characterIds = [\"gojo\"] } = {}) {\n  const emojis = new Map();\n  let initialization;\n  const warn = error => logger.warn(\"Pixel Gojo display unavailable:\", error?.code || error?.name || \"Error\");\n\n  function initialize(client) {\n    if (initialization) return initialization;\n    initialization = (async () => {\n      try {\n        const manager = client.application?.emojis;\n        if (!manager?.fetch || !manager?.create) throw new Error(\"Application emojis unavailable\");\n        const existing = await manager.fetch();\n        for (const characterId of [...new Set(characterIds)].filter(id => CHARACTERS.some(c => c.id === id))) {\n          const directory = characterId === \"gojo\" ? ASSET_DIR : path.join(ASSET_ROOT, characterId);\n          for (const state of EMOJI_STATES) {\n            try {\n              const attachment = fs.readFileSync(path.join(directory, `${state}.gif`));\n              if (attachment.length > 256 * 1024 || !/^GIF8[79]a$/.test(attachment.subarray(0, 6).toString())) throw new Error(\"Invalid emoji asset\");\n              const hash = crypto.createHash(\"sha256\").update(attachment).digest(\"hex\").slice(0, 8);\n              const name = characterId === \"gojo\" ? `pg_${state}_${hash}` : `pc_${characterId}_${state}_${hash}`;\n              const emoji = existing.find(e => e.name === name && e.animated) || await manager.create({ name, attachment });\n              if (/^\\d+$/.test(emoji?.id) && emoji.animated) emojis.set(characterId === \"gojo\" ? state : `${characterId}:${state}`, `<a:${name}:${emoji.id}>`);\n            } catch (error) { warn(error); }\n          }\n        }\n      } catch (error) { warn(error); }\n      return { available: [...emojis.keys()] };\n    })();\n    return initialization;\n  }\n\n  function aiTextPayload(text, state = \"all\", characterId = \"gojo\") {\n    const character = characterById(characterId);\n    const key = state => character.id === \"gojo\" ? state : `${character.id}:${state}`;\n    const icon = emojis.get(key(state)) || emojis.get(key(\"all\")) || (character.id === \"gojo\" ? \"✨\" : character.symbol);\n    return { content: `${icon} **${character.name}**\\n${text}`, allowedMentions: { parse: [], repliedUser: false } };\n  }\n\n  // Thinking and the first answer share one message. No large GIF post.\n  async function sendAiAnimation(send, { edit, characterId = \"gojo\" } = {}) {\n    let message = null, finished = false, queuedEdit = Promise.resolve();\n    try { message = await send(aiTextPayload(\"Ich denke nach …\", \"laptop\", characterId)); }\n    catch (error) { warn(error); }\n    const update = edit || (message?.edit ? payload => message.edit(payload) : null);\n    const timer = update && message ? setTimeout(() => {\n      queuedEdit = queuedEdit.then(async () => {\n        if (!finished) await update(aiTextPayload(\"Ich arbeite noch an deiner Antwort …\", \"waiting\", characterId));\n      }).catch(warn);\n",
+        "after": "const crypto = require(\"node:crypto\");\n\nconst { CHARACTERS, characterById, ASSET_ROOT } = require(\"./pixel_characters\");\nconst AI_NAME = \"Pixel Gojo\";\nconst ASSET_DIR = path.join(__dirname, \"..\", \"assets\", \"pixel-gojo\");\nconst EMOJI_STATES = [\"laptop\", \"all\", \"waiting\", \"failed\"];\n\n// App emojis require no changes to server emojis, permissions or the database.\nfunction createPetDisplay({ logger = console, waitMs = 20_000, characterIds = [\"gojo\"],\n  readyWaitMs = 8000, retryMs = 2000, assetDir = ASSET_DIR, assetRoot = ASSET_ROOT,\n  loadBundledGif = (id, state) => require(\"./pixel_assets\").bundledGif(id, state) } = {}) {\n  const emojis = new Map();\n  const assets = new Map(), stateTasks = new Map(), retryAt = new Map();\n  let clientRef, fetchTask, fetched = false, fetchRetryAt = 0, existing = [];\n  const warn = error => logger.warn(\"Pixel Gojo display unavailable:\", error?.code || error?.name || \"Error\");\n\n  const keyFor = (id, state) => id === \"gojo\" ? state : `${id}:${state}`;\n  const validGif = bytes => Buffer.isBuffer(bytes) && bytes.length <= 256 * 1024 && /^GIF8[79]a$/.test(bytes.subarray(0, 6).toString());\n  function asset(id, state) {\n    const key = keyFor(id, state);\n    if (assets.has(key)) return assets.get(key);\n    let bytes;\n    try { bytes = fs.readFileSync(path.join(id === \"gojo\" ? assetDir : path.join(assetRoot, id), `${state}.gif`)); } catch {}\n    if (!validGif(bytes)) bytes = loadBundledGif(id, state);\n    if (!validGif(bytes)) throw new Error(\"Invalid emoji asset\");\n    const hash = crypto.createHash(\"sha256\").update(bytes).digest(\"hex\").slice(0, 8);\n    const name = id === \"gojo\" ? `pg_${state}_${hash}` : `pc_${id}_${state}_${hash}`;\n    const result = { bytes, name }; assets.set(key, result); return result;\n  }\n  function remember(id, state, emoji) {\n    if (/^\\d+$/.test(emoji?.id) && emoji.animated && emoji.available !== false) {\n      emojis.set(keyFor(id, state), `<a:${emoji.name}:${emoji.id}>`); return true;\n    }\n    return false;\n  }\n  function reusable(name) {\n    return existing.find(e => (e.name === name || e.name === `${name}_v2`) && e.animated && e.available !== false);\n  }\n  function discover() {\n    if (fetched) return Promise.resolve(true);\n    if (fetchTask) return fetchTask;\n    if (!clientRef || Date.now() < fetchRetryAt) return Promise.resolve(false);\n    fetchTask = Promise.resolve().then(async () => {\n      try {\n        const manager = clientRef.application?.emojis;\n        if (!manager?.fetch || !manager?.create) throw new Error(\"Application emojis unavailable\");\n        const result = await manager.fetch();\n        existing = Array.from(result?.values?.() || result || []);\n        fetched = true;\n        for (const id of CHARACTERS.map(c => c.id)) for (const state of EMOJI_STATES) {\n          try { const old = reusable(asset(id, state).name); if (old) remember(id, state, old); } catch {}\n        }\n        return true;\n      } catch (error) { fetchRetryAt = Date.now() + retryMs; warn(error); return false; }\n    }).finally(() => { fetchTask = null; });\n    return fetchTask;\n  }\n  function ensureState(id, state) {\n    const key = keyFor(id, state);\n    if (emojis.has(key)) return Promise.resolve();\n    if (stateTasks.has(key)) return stateTasks.get(key);\n    if (Date.now() < (retryAt.get(key) || 0)) return Promise.resolve();\n    const task = (async () => {\n      try {\n        if (!await discover()) return;\n        const { bytes, name: originalName } = asset(id, state);\n        const old = reusable(originalName);\n        if (old) { remember(id, state, old); return; }\n        // Preserve an old static emoji; repair it with a distinct animated name.\n        const name = existing.some(e => e.name === originalName) ? `${originalName}_v2` : originalName;\n        // Buffers are otherwise encoded as image/jpg by discord.js. GIF MIME is required.\n        const emoji = await clientRef.application.emojis.create({ name, attachment: `data:image/gif;base64,${bytes.toString(\"base64\")}` });\n        if (!remember(id, state, emoji)) throw new Error(\"Application did not return an animated emoji\");\n        existing.push(emoji); retryAt.delete(key);\n      } catch (error) { retryAt.set(key, Date.now() + retryMs); warn(error); }\n      finally { stateTasks.delete(key); }\n    })();\n    stateTasks.set(key, task); return task;\n  }\n  async function boundedReady(work) {\n    let timer;\n    try { await Promise.race([work, new Promise(resolve => { timer = setTimeout(resolve, readyWaitMs); })]); }\n    finally { clearTimeout(timer); }\n    return { available: [...emojis.keys()] };\n  }\n  function initialize(client, { eager = true } = {}) {\n    clientRef ||= client;\n    return boundedReady((async () => {\n      if (!await discover() || !eager) return;\n      for (const id of [...new Set(characterIds)].filter(id => CHARACTERS.some(c => c.id === id))) {\n        for (const state of EMOJI_STATES) await ensureState(id, state);\n      }\n    })());\n  }\n  async function ensureCharacter(characterId = \"gojo\") {\n    if (!clientRef) return { available: [...emojis.keys()] };\n    const id = characterById(characterId).id;\n    // Prepare the selected figure first; don't put it behind all ten characters.\n    const status = await boundedReady(Promise.all([ensureState(id, \"laptop\"), ensureState(id, \"all\")]));\n    void Promise.all([ensureState(id, \"waiting\"), ensureState(id, \"failed\")]).catch(warn);\n    return status;\n  }\n\n  function aiTextPayload(text, state = \"all\", characterId = \"gojo\") {\n    const character = characterById(characterId);\n    const key = state => character.id === \"gojo\" ? state : `${character.id}:${state}`;\n    const icon = emojis.get(key(state)) || emojis.get(key(\"all\")) || emojis.get(key(\"laptop\")) || (character.id === \"gojo\" ? \"✨\" : character.symbol);\n    return { content: `${icon} **${character.name}**\\n${text}`, allowedMentions: { parse: [], repliedUser: false } };\n  }\n\n  // Thinking and the first answer share one message. No large GIF post.\n  async function sendAiAnimation(send, { edit, characterId = \"gojo\" } = {}) {\n    await ensureCharacter(characterId);\n    let message = null, finished = false, queuedEdit = Promise.resolve();\n    try { message = await send(aiTextPayload(\"Ich denke nach …\", \"laptop\", characterId)); }\n    catch (error) { warn(error); }\n    const update = edit || (message?.edit ? payload => message.edit(payload) : null);\n    const timer = update && message ? setTimeout(() => {\n      queuedEdit = queuedEdit.then(async () => {\n        if (!finished) await update(aiTextPayload(\"Ich arbeite noch an deiner Antwort …\", \"waiting\", characterId));\n      }).catch(warn);\n"
+      },
+      {
+        "before": "        await queuedEdit;\n        try {\n          if (message?.delete) await message.delete();\n          else if (update && message) await update(aiTextPayload(\"Die KI-Antwort wurde angehalten.\", \"waiting\", characterId));\n        } catch (error) { warn(error); }\n      }\n    };\n  }\n  return { initialize, aiTextPayload, sendAiAnimation };\n}\n\nconst display = createPetDisplay({ characterIds: CHARACTERS.map(c => c.id) });\nmodule.exports = { AI_NAME, ASSET_DIR, EMOJI_STATES, createPetDisplay,\n  initializePet: display.initialize, sendAiAnimation: display.sendAiAnimation, aiTextPayload: display.aiTextPayload };\n",
+        "after": "        await queuedEdit;\n        try {\n          if (message?.delete) await message.delete();\n          else if (update && message) await update(aiTextPayload(\"Die KI-Antwort wurde angehalten.\", \"waiting\", characterId));\n        } catch (error) { warn(error); }\n      }\n    };\n  }\n  return { initialize, ensureCharacter, aiTextPayload, sendAiAnimation };\n}\n\nconst display = createPetDisplay({ characterIds: CHARACTERS.map(c => c.id) });\nmodule.exports = { AI_NAME, ASSET_DIR, EMOJI_STATES, createPetDisplay,\n  initializePet: client => display.initialize(client, { eager: false }), ensureCharacter: display.ensureCharacter,\n  sendAiAnimation: display.sendAiAnimation, aiTextPayload: display.aiTextPayload };\n"
+      }
+    ]
+  },
+  "server_setup_customization.js": {
+    "sha256": "9570fc0f4c7d4fd17047b8d24c407ea7b670e59a7bc8a73489fd23a6bfa81338",
+    "edits": []
+  },
+  "server_setup_designs.js": {
+    "sha256": "b4e0dba5b6b24bae8fb3256947d1186e2c1dbd0218d54837f2e07c600663a1fe",
+    "edits": []
+  },
+  "server_setup_reset.js": {
+    "sha256": "1287cfe74543d78cd8fa6e8e62ea83afe70579dbfd519c0e9cf64ca4231b5cda",
+    "edits": []
+  },
+  "spotify_party.js": {
+    "sha256": "a2262e2cb22c0e717daa9e777416aed25274e72010fd110186a60033b830632d",
+    "edits": []
+  },
+  "staff.js": {
+    "sha256": "634403d254525ed09d2fb829b88135fe5b42b87a50da1bddc8f54daf9d4544d2",
+    "edits": []
+  },
+  "youtube_uploads.js": {
+    "sha256": "e1c2fc9b20abfae6a2e498fea4e9ecf6f488469df8334ef919408bcbcf794fbc",
+    "edits": []
+  },
+  "youtube_uploads_api.js": {
+    "sha256": "210672b01dd991db0b33b7bdf9323c0b60393b85b37932d2b52a61031fa63fcb",
+    "edits": []
+  },
+  "youtube_uploads_core.js": {
+    "sha256": "1e905e14906d4e164c551f1fb9398fc5784b07e560458bc57ca85b0054ada20e",
+    "edits": []
+  }
+}
