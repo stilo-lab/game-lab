@@ -93,6 +93,14 @@ function supportFixture(options={}) {
   return {ctx,calls,ticket,message,messages,image};
 }
 
+test('Support queue overflow or shutdown keeps the ticket context and does not start a second provider request',async()=>{
+  for(const code of ['AI_QUEUE_FULL','AI_QUEUE_TIMEOUT','AI_SHUTTING_DOWN']) {
+    const f=supportFixture({previousId:'keep-prior'});f.ctx.runGeminiTask=async()=>{throw new Error(code);};
+    await assert.rejects(f.ctx.askGeminiSupport(f.message,f.ticket),new RegExp(code));
+    assert.equal(f.calls.fallback.length,0);assert.equal(f.calls.primary.length,0);assert.equal(f.ticket.previousInteractionId,'keep-prior');
+  }
+});
+
 test('Support primary receives actual previous solutions, current failure, server facts and screenshots',async()=>{
   const f=supportFixture({images:true,previousId:'prior'});const answer=await f.ctx.askGeminiSupport(f.message,f.ticket);
   const request=f.calls.primary[0],data=JSON.parse(request.input[0].text);

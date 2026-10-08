@@ -33,13 +33,15 @@ test('Existing non-YouTube commands remain unchanged except the reviewed setup p
   const actual = commandList();
   const baseline = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/commands-before.json'), 'utf8'));
   const setup=baseline.find(c=>c.name==='serversetup');assert.equal(setup.default_member_permissions,String(discord.PermissionFlagsBits.Administrator));setup.default_member_permissions=null;
-  assert.deepEqual(actual.filter(c => !['youtube', 'uploads', 'pixel', 'new', 'mimic'].includes(c.name)), baseline);
+  assert.deepEqual(actual.filter(c => !['youtube', 'uploads', 'pixel', 'new', 'mimic', 'diagnose'].includes(c.name)), baseline);
   assert.equal(new Set(actual.map(c => c.name)).size, actual.length);
   assert.ok(actual.length <= 100, `Too many Discord slash commands: ${actual.length}`);
   assert.equal(actual.filter(c => c.name === 'uploads').length, 1);
   assert.equal(actual.filter(c => c.name === 'pixel').length, 1);
   assert.equal(actual.filter(c => c.name === 'new').length, 1);
   assert.equal(actual.filter(c => c.name === 'mimic').length, 1);
+  assert.equal(actual.filter(c => c.name === 'diagnose').length, 1);
+  assert.equal(actual.find(c => c.name === 'diagnose').default_member_permissions, undefined);
 });
 test('Existing Spotify, community, staff, minigame and game modules are byte-for-byte unchanged', () => {
   const expected = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/module-hashes.json'), 'utf8'));

@@ -27,7 +27,7 @@ test('Original mode excludes every packaged synthetic voice and keeps actual upl
   assert.equal(isOriginalVoice({pack:'streamers',source:'original-synth'}),false);assert.equal(isOriginalVoice({pack:'voices'}),false);
 });
 test('Curated recordings have distinct HTTPS source pages and MP3s, with clips limited to six seconds',()=>{
-  assert.equal(ORIGINALS.length,5);assert.equal(new Set(ORIGINALS.map(x=>x.audio)).size,5);
+  assert.equal(ORIGINALS.length,9);assert.equal(new Set(ORIGINALS.map(x=>x.audio)).size,9);
   for(const clip of ORIGINALS){assert.equal(sourceURL(clip.page).protocol,'https:');assert.match(sourceURL(clip.audio,{audio:true}).pathname,/\.mp3$/);assert.ok(clip.duration<=6);}
 });
 test('Original importer decodes actual MP3 bytes into WAV and preserves their shape rather than generating speech',async()=>{
@@ -64,8 +64,8 @@ test('Imported originals survive a restart, carry exact source and file hashes, 
 test('Shared preset installation fetches each original once and reuses the verified files on the next lobby',async()=>{
   const folder=await fs.mkdtemp(path.join(os.tmpdir(),'mimic-preset-')),db={},source=await mp3();let calls=0;
   try{const store=createSoundStore({db,saveDB(){},dataDirectory:folder,fetchImpl:async()=>{calls++;return response(source);}});
-    const [a,b]=await Promise.all([store.prepareOriginals('123'),store.prepareOriginals('123')]);assert.equal(a,b);assert.equal(a.loaded.length,5);assert.equal(a.failed.length,0);assert.equal(calls,5);
-    await store.prepareOriginals('123');assert.equal(calls,5);assert.equal(store.list('123','custom').length,5);
+    const [a,b]=await Promise.all([store.prepareOriginals('123'),store.prepareOriginals('123')]);assert.equal(a,b);assert.equal(a.loaded.length,ORIGINALS.length);assert.equal(a.failed.length,0);assert.equal(calls,ORIGINALS.length);
+    await store.prepareOriginals('123');assert.equal(calls,ORIGINALS.length);assert.equal(store.list('123','custom').length,ORIGINALS.length);
   }finally{await fs.rm(folder,{recursive:true,force:true});}
 });
 test('Database failure after an import removes the new file and restores the previous catalog',async()=>{
@@ -110,16 +110,16 @@ function controller({quietPermission=true,failImports=false,holdCapture=false}={
   const members=new Map(),guild={id:'123',members:{fetch:async id=>members.get(id),fetchMe:async()=>({id:'bot',permissions:quietPermission?rights:noQuiet})}};
   const vc={id:'vc',guild,type:ChannelType.GuildVoice,permissionsFor:m=>m.permissions||rights};
   for(const id of ['A','B'])members.set(id,{id,displayName:id,user:{bot:false},permissions:rights,voice:{channel:vc,channelId:'vc'}});
-  const soundStore={list:(gid,pack,difficulty,source)=>{assert.equal(source,'original');return failImports?pack==='streamers'?[]:[{id:'machine',pack:'machines',name:'Alarm'}]:[original];},load:async()=>Float32Array.from(reference),prepareOriginals:async()=>{imports++;return {loaded:failImports?[]:[original],failed:failImports?[{name:'Original',message:'nicht erreichbar'}]:[]};}};
+  const soundStore={list:(gid,pack,difficulty,source)=>{assert.equal(source,'recordings');return failImports?pack==='streamers'?[]:[{id:'machine',pack:'machines',name:'Alarm'}]:[original];},load:async()=>Float32Array.from(reference),prepareOriginals:async()=>{imports++;return {loaded:failImports?[]:[original],failed:failImports?[{name:'Original',message:'nicht erreichbar'}]:[]};}};
   const audio={play:async()=>{},capture:async ids=>{const result=new Map(ids.map(id=>{const samples=Float32Array.from(reference);taken.push(samples);return [id,samples];}));if(holdCapture)await new Promise(resolve=>{resolveCapture=resolve;});return result;},close:()=>closed++,connection:{once(){},on(){}},forget(){},interrupt(){}};
-  const party=createMimicParty({client:{user:{id:'bot'},guilds:{cache:new Map([['123',guild]])}},db,saveDB(){},dataDirectory:'/tmp',isGuildApproved:()=>true,OWNER_ID:'owner',soundStoreFactory:()=>soundStore,micDelay:async()=>{},voiceFactory:()=>({busy:()=>false,connect:async()=>audio})});
+  const party=createMimicParty({client:{user:{id:'bot'},guilds:{cache:new Map([['123',guild]])}},db,saveDB(){},dataDirectory:'/tmp',isGuildApproved:()=>true,OWNER_ID:'owner',soundStoreFactory:()=>soundStore,narratorFactory:()=>({status:()=>({enabled:true,clips:{}}),prepare:async()=>({loaded:[{event:'record'}],failed:[]}),say:async()=>false}),micDelay:async()=>{},voiceFactory:()=>({busy:()=>false,connect:async()=>audio})});
   const interaction=(user='A',sub='lobby',values={},customId)=>{const message={id:'panel',edit:async p=>{messages.push(p);return message;}};const i={guild,user:{id:user},memberPermissions:rights,commandName:'mimic',customId,values:values.selection,isChatInputCommand:()=>!customId,
     options:{getSubcommand:()=>sub,getString:k=>values[k]??null,getInteger:k=>values[k]??null,getBoolean:k=>values[k]??null,getNumber:k=>values[k]??null},deferReply:async()=>i.deferred=true,deferUpdate:async()=>i.deferred=true,
     reply:async p=>{i.replied=true;outputs.push(p);messages.push(p);return message;},editReply:async p=>{outputs.push(p);messages.push(p);return message;}};return i;};
   return {party,interaction,messages,outputs,members,db,taken,soundStore,get imports(){return imports;},get closed(){return closed;},releaseCapture:()=>resolveCapture?.(),token:()=>messages.find(p=>p.components?.length)?.components[0].toJSON().components[0].custom_id.split(':')[1]};
 }
 test('Actual lobby defaults to original voices, prepares its source clips, and automatically enables replay quiet when permitted',async()=>{
-  const f=controller();try{await f.party.handleInteraction(f.interaction());assert.equal(f.imports,1);assert.equal(f.party.hasSession('123'),true);const data=f.messages.at(-1).embeds[0].toJSON();assert.ok(JSON.stringify(data).includes('Synthetische Sprachvorlagen sind ausgeschaltet'));assert.ok(JSON.stringify(data).includes('kurz pausiert'));assert.equal(f.messages.at(-1).components.length,5);}finally{await f.party.onShutdown();}
+  const f=controller();try{await f.party.handleInteraction(f.interaction());assert.equal(f.imports,1);assert.equal(f.party.hasSession('123'),true);const data=f.messages.at(-1).embeds[0].toJSON();assert.ok(JSON.stringify(data).includes('Keine erzeugten Übungstöne oder KI-Sprachvorlagen'));assert.ok(JSON.stringify(data).includes('kurz pausiert'));assert.equal(f.messages.at(-1).components.length,5);}finally{await f.party.onShutdown();}
 });
 test('An inaccessible original pack never silently uses old AI streamer voices',async()=>{
   const f=controller({failImports:true});try{await f.party.handleInteraction(f.interaction('A','lobby',{pack:'streamers'}));assert.equal(f.party.hasSession('123'),false);assert.match(f.outputs.at(-1).content,/Originalclips/);}finally{await f.party.onShutdown();}
