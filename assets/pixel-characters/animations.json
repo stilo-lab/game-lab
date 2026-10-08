@@ -1,0 +1,316 @@
+{
+  "size": [
+    128,
+    128
+  ],
+  "layout": "three columns, four rows",
+  "characters": [
+    "sukuna",
+    "geto",
+    "nanami",
+    "toji",
+    "zelda",
+    "link",
+    "nova",
+    "ember",
+    "luna"
+  ],
+  "animations": {
+    "sukuna/idle.gif": {
+      "sha256": "2800e3244480d50177328496887c6323503f3f593e704ed5e7be063ba7f5b5fc",
+      "frames": 3
+    },
+    "sukuna/laptop.gif": {
+      "sha256": "df084b2aa4c386cfb388cd46b1d0c1b848e32fd3e7ef75f431c2d8f03797bd4c",
+      "frames": 3
+    },
+    "sukuna/waiting.gif": {
+      "sha256": "1dd4263afa9fccc2d34c90cdd8d09e43b950e211fbba6f28c5677667c736734f",
+      "frames": 3
+    },
+    "sukuna/jumping.gif": {
+      "sha256": "86139ca145f4f951cbec7b4c8e56fed2b2fa4664dabc99b9134dcb024a22886f",
+      "frames": 3
+    },
+    "sukuna/failed.gif": {
+      "sha256": "09c239a9f248598d34f4a92d67ec9faa5b00d584152b28d07fb8d95101a719df",
+      "frames": 3
+    },
+    "sukuna/all.gif": {
+      "frames": 3,
+      "bytes": 13565,
+      "sha256": "cfcd87a725e17c04f9668fb0fa4d82e71535889006835d9f98bc8a30e465eeab"
+    },
+    "geto/idle.gif": {
+      "sha256": "34476b2f842da2764b21de91585991c410590d4b0ce7ac97b4ca70f54f85795f",
+      "frames": 3
+    },
+    "geto/laptop.gif": {
+      "sha256": "75d8eaed036987c253c535ff171abb1c3530cdabf16f7df52d7118918bf1384f",
+      "frames": 3
+    },
+    "geto/waiting.gif": {
+      "sha256": "d9dea46b3f9d9cbfc1bc2972bb51dc413181fe6f56b982707e6b8e75955b107c",
+      "frames": 3
+    },
+    "geto/jumping.gif": {
+      "sha256": "66fef4a9edeffa4c67a65a3655c0970ae734161da83d96f2c233a5031036bf9f",
+      "frames": 3
+    },
+    "geto/failed.gif": {
+      "sha256": "d9cd8fc689f6931783eaf3b820732c0406389a90fec9a65f8fa128e50364cecb",
+      "frames": 3
+    },
+    "geto/all.gif": {
+      "frames": 3,
+      "bytes": 11204,
+      "sha256": "414dc6c7e2e06effec4efa99cd6fbe7611d7659df335225572ecd08f60f03b38"
+    },
+    "nanami/idle.gif": {
+      "sha256": "3c4e09a92ff9f8c48f3466233d09038317c1883743b5bde07abe87a995cce712",
+      "frames": 3
+    },
+    "nanami/laptop.gif": {
+      "sha256": "096a10ee62a0889d8076e4924791650ef4d776dbe1d29615fb8a8e455c8b9fa3",
+      "frames": 3
+    },
+    "nanami/waiting.gif": {
+      "sha256": "96e9dea5b3bd732daad7db5a777ce95319f6b30bb926b1f3d33c5f6811dfa898",
+      "frames": 3
+    },
+    "nanami/jumping.gif": {
+      "sha256": "812107e2d148fd023a738b560dfe1ef11c2455b6c6de2e46ec8691785bd84b07",
+      "frames": 3
+    },
+    "nanami/failed.gif": {
+      "sha256": "0ceaab3a580f63006efa8afcd4769edae9a6a1bfe4b7544a69245959da1a20dc",
+      "frames": 3
+    },
+    "nanami/all.gif": {
+      "frames": 3,
+      "bytes": 13464,
+      "sha256": "ec941d9a3799a2eedd3c336c0a7b646063a51607c8875169873f932c7359fb85"
+    },
+    "toji/idle.gif": {
+      "sha256": "3f2f9f691b7e6e2aa28cd20399b54cf5b7bc7c13006e55fc9f3f4be90b0f2028",
+      "frames": 3
+    },
+    "toji/laptop.gif": {
+      "sha256": "e84dcdf6234b97b48fc6c5410006bfde964aa3c1e6c8559620ffc10f7f0656c3",
+      "frames": 3
+    },
+    "toji/waiting.gif": {
+      "sha256": "5cb4766699ad1d4f9fb880881695fae4f4d7d1a57ec1b1660819e480c5b1ee82",
+      "frames": 3
+    },
+    "toji/jumping.gif": {
+      "sha256": "a718acd47812b50a1551e04e1d5e29bf7804a478989e2aeae78afe230e5dc3a8",
+      "frames": 3
+    },
+    "toji/failed.gif": {
+      "sha256": "a0ea01eb0123456fc4281e6972467ffc497c000fa932c57536e3ff349aa57874",
+      "frames": 3
+    },
+    "toji/all.gif": {
+      "frames": 3,
+      "bytes": 11591,
+      "sha256": "12949898e23189168c24a48f73d72903f9561457323d819b367569cf78761c84"
+    },
+    "zelda/idle.gif": {
+      "frames": 3,
+      "bytes": 13154,
+      "sha256": "67b7c164149072bdff095893c16ebaeecfd4d1fd6f25ff4af70fe5f209d617dc"
+    },
+    "zelda/laptop.gif": {
+      "frames": 3,
+      "bytes": 14281,
+      "sha256": "c92ee3cd9b0e306bfde9f8d3b3f5167dbb216462b9295fb420381c1df88ebe98"
+    },
+    "zelda/waiting.gif": {
+      "frames": 3,
+      "bytes": 14663,
+      "sha256": "bb56b8d55292352993b6d213de6c8551866d95e8420648e9bebbd697ed90d1b0"
+    },
+    "zelda/jumping.gif": {
+      "frames": 3,
+      "bytes": 14619,
+      "sha256": "5c91f1b4efc58421e120c91273c94844f70583651d1eba96ea0e1b378b18e8a3"
+    },
+    "zelda/special.gif": {
+      "frames": 3,
+      "bytes": 14619,
+      "sha256": "5c91f1b4efc58421e120c91273c94844f70583651d1eba96ea0e1b378b18e8a3"
+    },
+    "zelda/failed.gif": {
+      "frames": 3,
+      "bytes": 14579,
+      "sha256": "8f0c5c30ecbdc3cac116a033b19014e2f612fd86fdea5ae9d6b834546e5a9920"
+    },
+    "zelda/all.gif": {
+      "frames": 12,
+      "bytes": 54961,
+      "sha256": "a4c24d1361ccffc61f4107dfc5a1329d816111882e0526873c0b8d1510d256b1"
+    },
+    "link/idle.gif": {
+      "frames": 3,
+      "bytes": 9218,
+      "sha256": "ecc7a21cf3eaf64cac9a81f88840aebb15f759a3a602c2b5fe9384ed16392669"
+    },
+    "link/laptop.gif": {
+      "frames": 3,
+      "bytes": 10326,
+      "sha256": "87b1f7ecbf97925ad4cdb562848ecb1a34278cea93ab6681e362dae9095fff08"
+    },
+    "link/waiting.gif": {
+      "frames": 3,
+      "bytes": 11293,
+      "sha256": "8721cf823f8508c799f848a6630388278711cfe051ef04455776183f6d5fdc75"
+    },
+    "link/jumping.gif": {
+      "frames": 3,
+      "bytes": 11262,
+      "sha256": "8d08c9687f20467b4983f34bc56b3233844938eae60d33faaa2f305fb2647ded"
+    },
+    "link/special.gif": {
+      "frames": 3,
+      "bytes": 11262,
+      "sha256": "8d08c9687f20467b4983f34bc56b3233844938eae60d33faaa2f305fb2647ded"
+    },
+    "link/failed.gif": {
+      "frames": 3,
+      "bytes": 11230,
+      "sha256": "765564f59e01043071f9eb51f266f97e0c659246b0c8974901753c1f8dbbda45"
+    },
+    "link/all.gif": {
+      "frames": 12,
+      "bytes": 39928,
+      "sha256": "b01da0957d5edb4644f90c290d92afed8b25881eae16161220510134408a34e6"
+    },
+    "nova/idle.gif": {
+      "frames": 3,
+      "bytes": 8173,
+      "sha256": "d5dab4652b5b0c571ccf92235d9e8e0eb7a4e3fdba92193efdd4c40b31714884"
+    },
+    "nova/laptop.gif": {
+      "frames": 3,
+      "bytes": 10511,
+      "sha256": "270f1d21380b06db2b1520617db80b749bd75290f5d047fec72dcc0151faf0ea"
+    },
+    "nova/waiting.gif": {
+      "frames": 3,
+      "bytes": 9780,
+      "sha256": "41aaeca7e4cd0163f505bab153a26c9b1f0bd30921bceea2076f605c0ec9a33b"
+    },
+    "nova/jumping.gif": {
+      "frames": 3,
+      "bytes": 9063,
+      "sha256": "139afbdfc6a2ca86908c4fdb9f4513e3023f0dc26e2bb70e639feb1813de90d7"
+    },
+    "nova/special.gif": {
+      "frames": 3,
+      "bytes": 9063,
+      "sha256": "139afbdfc6a2ca86908c4fdb9f4513e3023f0dc26e2bb70e639feb1813de90d7"
+    },
+    "nova/failed.gif": {
+      "frames": 3,
+      "bytes": 9453,
+      "sha256": "594402f4f2ab713fb0423e5a01411ef8227d2ba4a20a806de7762ddcd9d59a60"
+    },
+    "nova/all.gif": {
+      "frames": 12,
+      "bytes": 35468,
+      "sha256": "3787be5c454a213f6a6c61d7c101ef48f6d68d9d7194369b10f5bd1d9ee9f6aa"
+    },
+    "ember/idle.gif": {
+      "frames": 3,
+      "bytes": 11494,
+      "sha256": "d570e0b9eb0cb11f2e871b215c0dc101a96dc340961630c7cb2aeea8fd3bdddd"
+    },
+    "ember/laptop.gif": {
+      "frames": 3,
+      "bytes": 13065,
+      "sha256": "5026941bfeff30cc1cc0c0ff4e32874bb5d15f557f011cc77db7c359642e8169"
+    },
+    "ember/waiting.gif": {
+      "frames": 3,
+      "bytes": 9877,
+      "sha256": "f35e24fc88b4e20f1b2052313f11a79e7de561ac2170bfcb406941ff74130816"
+    },
+    "ember/jumping.gif": {
+      "frames": 3,
+      "bytes": 11303,
+      "sha256": "256acfb861f37650b6452bbfd24d6c6ad6e294d09099e85dee6d3cd5c18f1e00"
+    },
+    "ember/special.gif": {
+      "frames": 3,
+      "bytes": 11303,
+      "sha256": "256acfb861f37650b6452bbfd24d6c6ad6e294d09099e85dee6d3cd5c18f1e00"
+    },
+    "ember/failed.gif": {
+      "frames": 3,
+      "bytes": 9816,
+      "sha256": "bbc21848f70ed03e78de4a7d41b739bc43f6f770771d91d945b113d44eb66c55"
+    },
+    "ember/all.gif": {
+      "frames": 12,
+      "bytes": 43786,
+      "sha256": "97673964d36959110f7a980396d9292efa9cbd8d1e5a76011eafa7efdc78d31b"
+    },
+    "luna/idle.gif": {
+      "frames": 3,
+      "bytes": 15410,
+      "sha256": "db240cddfc06e43254b94dde53c941387aba19c73ef378ec3aa8da23d745edcf"
+    },
+    "luna/laptop.gif": {
+      "frames": 3,
+      "bytes": 15837,
+      "sha256": "4045b8e7a5fb65ded1aba6dc98f7c7273132cbf2e11a952b2e4fb63f63744615"
+    },
+    "luna/waiting.gif": {
+      "frames": 3,
+      "bytes": 15387,
+      "sha256": "a2949a468d2a5c8f1c95cf7ca4c2a4020d306095b18cf601c03843a5ad59d339"
+    },
+    "luna/jumping.gif": {
+      "frames": 3,
+      "bytes": 15253,
+      "sha256": "42caea7caa3b2df45b0c414511ab6a334bb04c6e0e5655655d58afda265a6705"
+    },
+    "luna/special.gif": {
+      "frames": 3,
+      "bytes": 15253,
+      "sha256": "42caea7caa3b2df45b0c414511ab6a334bb04c6e0e5655655d58afda265a6705"
+    },
+    "luna/failed.gif": {
+      "frames": 3,
+      "bytes": 15178,
+      "sha256": "8bb9b018ea6be3982296b25c36de3307a34227674739dadf2f42f263194763da"
+    },
+    "luna/all.gif": {
+      "frames": 12,
+      "bytes": 60005,
+      "sha256": "02c9b939790b24265c68c96554e32f2318253e72ea312e9c6b1aa91e1df1257b"
+    },
+    "sukuna/special.gif": {
+      "frames": 3,
+      "bytes": 13565,
+      "sha256": "cfcd87a725e17c04f9668fb0fa4d82e71535889006835d9f98bc8a30e465eeab"
+    },
+    "geto/special.gif": {
+      "frames": 3,
+      "bytes": 11204,
+      "sha256": "414dc6c7e2e06effec4efa99cd6fbe7611d7659df335225572ecd08f60f03b38"
+    },
+    "nanami/special.gif": {
+      "frames": 3,
+      "bytes": 13464,
+      "sha256": "ec941d9a3799a2eedd3c336c0a7b646063a51607c8875169873f932c7359fb85"
+    },
+    "toji/special.gif": {
+      "frames": 3,
+      "bytes": 11591,
+      "sha256": "12949898e23189168c24a48f73d72903f9561457323d819b367569cf78761c84"
+    }
+  },
+  "note": "Jede Figur besitzt eigene Arbeit-, Warte- und Spezialposen. Die vier bestehenden JJK-Figuren bekommen eigene Spezialanimationen; Gojo bleibt erhalten."
+}
