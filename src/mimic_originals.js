@@ -11,7 +11,15 @@ const ORIGINALS=Object.freeze([
   {key:'bastighg-guam',name:'BastiGHG · Wo ist Guam?',category:'gaming',difficulty:'hard',duration:2.6,
     page:'https://www.myinstants.com/en/instant/bastighg-wo-ist-guam-5562/',audio:'https://www.myinstants.com/media/sounds/bastighg-wo-ist-guam_P5g4ZCh.mp3'},
   {key:'bastighg-ay-zip',name:'BastiGHG · Ay Zip',category:'streamers',difficulty:'easy',duration:1.8,
-    page:'https://www.myinstants.com/en/instant/bastighg-ay-zip-8128/',audio:'https://www.myinstants.com/media/sounds/bastighg-ay-zip_k9M5Gnu.mp3'}
+    page:'https://www.myinstants.com/en/instant/bastighg-ay-zip-8128/',audio:'https://www.myinstants.com/media/sounds/bastighg-ay-zip_k9M5Gnu.mp3'},
+  {key:'risitas-laugh',name:'El Risitas · Lachen',category:'voices',difficulty:'hard',duration:3,
+    page:'https://www.myinstants.com/en/instant/el-risitas-funniest-laugh-26007/',audio:'https://www.myinstants.com/media/sounds/el-risitas-funniest-laugh.mp3'},
+  {key:'habicht',name:'Habicht hat zwei H',category:'memes',difficulty:'hard',duration:4,
+    page:'https://www.myinstants.com/en/instant/habicht-habicht-hat-zwei-h-84518/',audio:'https://www.myinstants.com/media/sounds/habicht-habicht-hat-zwei-h.mp3'},
+  {key:'villager',name:'Minecraft · Villager',category:'gaming',difficulty:'easy',duration:1.2,
+    page:'https://www.myinstants.com/en/instant/villager/',audio:'https://www.myinstants.com/media/sounds/yes1.mp3'},
+  {key:'cat-meow',name:'Katze · Miau',category:'animals',difficulty:'easy',duration:1.2,
+    page:'https://www.myinstants.com/en/instant/meow-1-25594/',audio:'https://www.myinstants.com/media/sounds/meow-1.mp3'}
 ].map(Object.freeze));
 function sourceURL(value,{audio=false}={}) {
   let u;try{u=new URL(value);}catch{throw Error('Ungültiger Clip-Link.');}
@@ -51,4 +59,5 @@ async function fetchOriginal(link,{fetchImpl=fetch,start=0,duration=6}={}) {
   return {samples,audioUrl:url.href,sourcePage:page,start,duration};
 }
 const isOriginalVoice=sound=>sound.source!=='synthetic-speech'&&!(sound.source!=='upload'&&sound.source!=='original-clip'&&['streamers','memes','gaming','anime','horror','voices','beatbox'].includes(sound.pack));
-module.exports={ORIGINALS,sourceURL,fetchOriginal,isOriginalVoice};
+const isRecording=sound=>['original-clip','upload'].includes(sound.source)&&sound.role!=='announcer';
+module.exports={ORIGINALS,sourceURL,fetchOriginal,isOriginalVoice,isRecording};

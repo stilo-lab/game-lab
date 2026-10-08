@@ -4,6 +4,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { configuredApi } = require('./youtube_uploads_api');
 
 const CHANNEL_ID = /^UC[A-Za-z0-9_-]{22}$/;
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
@@ -78,12 +79,19 @@ async function fetchYoutubeText(url, { fetchImpl = globalThis.fetch, maxBytes = 
         const location = response.headers.get('location');
         await response.body?.cancel();
         if (!location) throw new Error('YouTube-Weiterleitung ohne Ziel.');
-        current = safeYoutubeUrl(new URL(location, current).href);
+        const next = new URL(location, current);
+        if (next.hostname === 'consent.youtube.com' || next.hostname === 'accounts.google.com') {
+          throw new Error('YouTube verlangt eine Browser-Bestätigung. Für den Bot YOUTUBE_API_KEY einrichten; der Kanal-Link ist dadurch nicht automatisch falsch.');
+        }
+        current = safeYoutubeUrl(next.href);
         continue;
       }
       if (!response.ok) {
         await response.body?.cancel();
-        throw new Error(`YouTube ist nicht erreichbar (HTTP ${response.status}). Bitte später erneut versuchen.`);
+        if (response.status === 404 && current.pathname === '/feeds/videos.xml') {
+          throw new Error('YouTubes Upload-Feed liefert HTTP 404. Das beweist nicht, dass der Kanal fehlt. YOUTUBE_API_KEY einrichten oder später erneut versuchen.');
+        }
+        throw new Error(`Die angefragte YouTube-Seite liefert HTTP ${response.status}. Kanal-Link prüfen oder YOUTUBE_API_KEY einrichten.`);
       }
       if (Number(response.headers.get('content-length')) > maxBytes) {
         await response.body?.cancel();
@@ -150,14 +158,26 @@ function channelIdFromPage(html) {
   throw new Error('Den Kanal konnte YouTube gerade nicht auflösen. Nutze den direkten Link https://www.youtube.com/channel/UC… oder versuche es später erneut.');
 }
 
-async function readFeed(channelId, options) {
+async function readFeed(channelId, options = {}) {
   if (!CHANNEL_ID.test(channelId)) throw new Error('Ungültige YouTube-Kanal-ID.');
+  const api = options.apiClient === undefined ? configuredApi() : options.apiClient;
+  if (api) return api.readFeed(channelId);
   const xml = await fetchYoutubeText(`https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`, { ...options, maxBytes: 1_000_000 });
   return parseFeed(xml, channelId);
 }
 
-async function resolveChannel(input, options) {
+async function resolveChannel(input, options = {}) {
   const parsed = channelInput(input);
+  const api = options.apiClient === undefined ? configuredApi() : options.apiClient;
+  if (api) {
+    if (parsed.id) return api.resolve({ id: parsed.id });
+    const parts = new URL(parsed.page).pathname.split('/').filter(Boolean).map(decodeURIComponent);
+    if (parts[0].startsWith('@')) return api.resolve({ forHandle: parts[0] });
+    if (parts[0] === 'user') return api.resolve({ forUsername: parts[1] });
+    // Older /c/ names have no API filter. Never guess a different channel by search.
+    const id = channelIdFromPage(await fetchYoutubeText(parsed.page, options));
+    return api.resolve({ id });
+  }
   const channelId = parsed.id || channelIdFromPage(await fetchYoutubeText(parsed.page, options));
   return readFeed(channelId, options);
 }

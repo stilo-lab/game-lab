@@ -3,7 +3,7 @@ const fs=require('node:fs/promises'),path=require('node:path'),crypto=require('n
 const {wavDecode,wavEncode}=require('./mimic_audio');
 const {PACKS,CATEGORIES,categoriesFor,matchDifficulty}=require('./mimic_categories');
 const {decodeMedia}=require('./mimic_media');
-const {ORIGINALS,fetchOriginal,isOriginalVoice}=require('./mimic_originals');
+const {ORIGINALS,fetchOriginal,isOriginalVoice,isRecording}=require('./mimic_originals');
 function createSoundStore({db,saveDB,dataDirectory,fetchImpl=fetch,assetDirectory=path.join(__dirname,'../assets/mimic')}){
   let catalog;
   try{catalog=require(path.join(assetDirectory,'catalog.json'));}
@@ -15,7 +15,7 @@ function createSoundStore({db,saveDB,dataDirectory,fetchImpl=fetch,assetDirector
     const selected=categoriesFor(pack),allCustom=selected.includes('custom');
     const builtins=catalog.filter(x=>selected.includes(x.pack));
     const custom=records(guildId).filter(x=>allCustom||selected.includes(x.category)).map(x=>({...x,pack:'custom',category:x.category||'custom'}));
-    return [...builtins,...custom].filter(x=>matchDifficulty(x,difficulty)&&(voiceSource!=='original'||isOriginalVoice(x)));
+    return [...builtins,...custom].filter(x=>matchDifficulty(x,difficulty)&&(voiceSource==='recordings'?isRecording(x):voiceSource!=='original'||isOriginalVoice(x)));
   };
   const packs=guildId=>PACKS.map(p=>({...p,count:list(guildId,p.value).length}));
   async function load(guildId,sound){

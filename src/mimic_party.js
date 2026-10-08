@@ -3,6 +3,7 @@ const {SlashCommandBuilder,EmbedBuilder,ActionRowBuilder,ButtonBuilder,ButtonSty
 const {PACKS,createSoundStore}=require('./mimic_sounds');
 const {createVoiceAdapter,wait}=require('./mimic_voice');
 const {ORIGINALS}=require('./mimic_originals');
+const {createNarrator,EVENTS}=require('./mimic_narrator');
 const {createQuietLeases}=require('./mimic_quiet');
 const {createScorePool}=require('./mimic_workers');
 const {createMimicEngine,EFFECTS}=require('./mimic_engine');
@@ -15,7 +16,8 @@ function buildMimicCommands(){
       .addStringOption(o=>o.setName('pack').setDescription('Welche Sounds wollt ihr nachmachen?').addChoices(...PACKS))
       .addStringOption(o=>o.setName('schwierigkeit').setDescription('Wie schwer sollen die Sounds sein?').addChoices(...DIFFICULTIES))
       .addStringOption(o=>o.setName('modus').setDescription('Mit oder ohne Glücksrad?').addChoices({name:'Chaos mit Sabotagen',value:'chaos'},{name:'Klassisch: nur Nachmachen',value:'classic'}))
-      .addBooleanOption(o=>o.setName('replay-ruhe').setDescription('Sprechrechte bei Vorlagen/Replays pausieren (Kanäle verwalten nötig).')))
+      .addBooleanOption(o=>o.setName('replay-ruhe').setDescription('Sprechrechte bei Vorlagen/Replays pausieren (Kanäle verwalten nötig).'))
+      .addBooleanOption(o=>o.setName('spielleiter').setDescription('Aufgezeichnete Spielleiter-Ansagen abspielen (Standard: an).')))
     .addSubcommand(s=>s.setName('start').setDescription('Die eigene Lobby starten, sobald alle bereit sind.'))
     .addSubcommand(s=>s.setName('stop').setDescription('Die eigene Party beenden (Host oder Serververwaltung).'))
     .addSubcommand(s=>s.setName('status').setDescription('Aktuelle Lobby und Regeln anzeigen.'))
@@ -34,6 +36,15 @@ function buildMimicCommands(){
       .addNumberOption(o=>o.setName('dauer').setDescription('Ausschnitt: 0,4–6 Sekunden, Standard 6').setMinValue(.4).setMaxValue(6)))
     .addSubcommand(s=>s.setName('mic').setDescription('Dein Mikrofon 2,5 Sekunden testen; der Mitschnitt wird sofort gelöscht.'))
     .addSubcommand(s=>s.setName('pause').setDescription('Als Host nach der aktuellen Runde pausieren oder fortsetzen.'))
+    .addSubcommand(s=>s.setName('spielleiter').setDescription('Original-Ansagen laden, Status sehen oder vorhören.')
+      .addBooleanOption(o=>o.setName('aktiv').setDescription('Spielleiter für diesen Server ein-/ausschalten (Verwaltung).'))
+      .addStringOption(o=>o.setName('probe').setDescription('Eine gespeicherte Ansage privat vorhören').addChoices(...EVENTS)))
+    .addSubcommand(s=>s.setName('ansage').setDescription('Eigene Originalaufnahme für den Spielleiter hinzufügen (Verwaltung).')
+      .addStringOption(o=>o.setName('phase').setDescription('Wann soll die Ansage abgespielt werden?').setRequired(true).addChoices(...EVENTS))
+      .addAttachmentOption(o=>o.setName('datei').setDescription('Deine Aufnahme als WAV, MP3 oder OGG bis 2 MB'))
+      .addStringOption(o=>o.setName('link').setDescription('Alternativ ein Myinstants-Originalclip').setMaxLength(300))
+      .addNumberOption(o=>o.setName('von').setDescription('Ausschnitt: Start in Sekunden').setMinValue(0).setMaxValue(120))
+      .addNumberOption(o=>o.setName('dauer').setDescription('Ausschnitt: Länge 0,4–6 Sekunden').setMinValue(.4).setMaxValue(6)))
     .addSubcommand(s=>s.setName('preview').setDescription('Eine Vorlage vorab privat anhören.')
       .addStringOption(o=>o.setName('id').setDescription('Sound-ID aus /mimic sounds').setRequired(true).setMaxLength(40)))
     .addSubcommand(s=>s.setName('upload').setDescription('Eigene Vorlage hinzufügen (Server verwalten nötig).')
@@ -63,6 +74,8 @@ function panel(s){
   if(s.sound&&s.phase!=='lobby')embed.addFields({name:'🎧 Aktuelle Vorlage',value:`${categoryName(s.sound.category||s.sound.pack)} · ${clean(s.sound.name)}${s.sound.difficulty?' · '+(DIFFICULTIES.find(d=>d.value===s.sound.difficulty)?.name||'Normal'):''}`});
   if(s.roundResults.length)embed.addFields({name:`Runde ${s.round}`,value:s.roundResults.map(x=>`**${clean(x.name)}** · ${x.points} Punkte${x.result.status==='no_audio'?' · kein Mikrofon-Signal':` · Melodie ${x.result.melody} / Rhythmus ${x.result.rhythm} / Einsätze ${x.result.attacks}`}`).join('\n').slice(0,1024)});
   if(s.voiceSource==='original')embed.addFields({name:'🎙️ Vorlagen',value:'Originalclips und eigene Uploads. Synthetische Sprachvorlagen sind ausgeschaltet.'});
+  if(s.voiceSource==='recordings')embed.addFields({name:'🎙️ Originalaufnahmen',value:'Streamer, Memes, Stimm- und Spielgeräusche aus Aufnahmen. Keine erzeugten Übungstöne oder KI-Sprachvorlagen.'});
+  if(s.narration)embed.addFields({name:'🎤 Spielleiter',value:s.narrationStatus?.loaded?`${s.narrationStatus.loaded} gespeicherte Sprachansagen. ${s.narratorError?'Eine Ansage war nicht erreichbar; das Spiel läuft weiter.':'Die gespeicherten Ansagen begleiten die Runden.'}`:'Ansagen noch nicht geladen. /mimic spielleiter laden oder /mimic ansage nutzen; die Runden laufen mit Textansagen.'});
   if(s.pauseRequested&&s.phase!=='paused')embed.addFields({name:'⏸️ Pause vorgemerkt',value:'Die aktuelle Runde läuft zu Ende. Danach bleiben die Mikrofone frei, bis der Host fortsetzt.'});
   if(s.phase==='wheel')embed.addFields({name:'🎡 Glücksrad',value:[...s.cards].map(([id,c])=>`${clean(s.players.get(id)?.name)}: ${c.type==='bonus'?'+15 Punkte':c.type==='double'?'Nächste Runde ×2':c.type==='shield'?'Schild':EFFECTS[c.type]}${EFFECTS[c.type]?' · Ziel über Sabotage wählen':''}`).join('\n').slice(0,1024)});
   embed.setFooter({text:'Pixel Party · lokale Bewertung · ein Versuch pro Runde'});
@@ -81,15 +94,16 @@ function panel(s){
   else rows.push(new ActionRowBuilder().addComponents(button('rematch','Noch eine Party',ButtonStyle.Success)));
   return {embeds:[embed],components:rows,allowedMentions:{parse:[]}};
 }
-function createMimicParty({client,db,saveDB,dataDirectory,isGuildApproved,isMaintenance=()=>false,isVoiceBusy=()=>false,OWNER_ID,voiceFactory=createVoiceAdapter,voiceSource='original',soundStoreFactory=createSoundStore,micDelay=wait}){
+function createMimicParty({client,db,saveDB,dataDirectory,isGuildApproved,isMaintenance=()=>false,isVoiceBusy=()=>false,OWNER_ID,voiceFactory=createVoiceAdapter,voiceSource='recordings',soundStoreFactory=createSoundStore,narratorFactory=createNarrator,micDelay=wait}){
   const sounds=soundStoreFactory({db,saveDB,dataDirectory}),quiet=createQuietLeases({client,db,saveDB}),pool=createScorePool(),rematches=new Map(),micTests=new Map();
+  const narrator=narratorFactory({db,saveDB,dataDirectory});
   const manager=i=>i.user.id===OWNER_ID||i.memberPermissions?.has(P.ManageGuild);
   const allowed=id=>isGuildApproved(id)&&!isMaintenance();
-  const engine=createMimicEngine({sounds,scorePool:pool,voiceFactory,quietLeases:quiet,db,saveDB,isAllowed:allowed,isExternalBusy:gid=>isVoiceBusy(gid)||micTests.has(gid),onUpdate:async s=>{
+  const engine=createMimicEngine({sounds,narrator,scorePool:pool,voiceFactory,quietLeases:quiet,db,saveDB,isAllowed:allowed,isExternalBusy:gid=>isVoiceBusy(gid)||micTests.has(gid),onUpdate:async s=>{
     if(s.phase==='ended'){
       for(const [id,entry]of rematches)if(Date.now()-entry.at>15*60000)rematches.delete(id);
       if(rematches.size>=100)rematches.delete(rematches.keys().next().value);
-      rematches.set(s.guildId,{at:Date.now(),token:s.token,players:[...s.players.keys()],options:{guildId:s.guildId,voiceChannel:s.voiceChannel,host:s.host,rounds:s.rounds,pack:s.pack,difficulty:s.difficulty,mode:s.mode,quiet:s.quiet,voiceSource:s.voiceSource}});
+      rematches.set(s.guildId,{at:Date.now(),token:s.token,players:[...s.players.keys()],options:{guildId:s.guildId,voiceChannel:s.voiceChannel,host:s.host,rounds:s.rounds,pack:s.pack,difficulty:s.difficulty,mode:s.mode,quiet:s.quiet,voiceSource:s.voiceSource,narration:s.narration,narrationStatus:s.narrationStatus}});
     }
     if(s.message)await s.message.edit(panel(s));
   }});
@@ -97,7 +111,7 @@ function createMimicParty({client,db,saveDB,dataDirectory,isGuildApproved,isMain
   function session(i){const s=engine.status(i.guild.id);if(!s)throw Error('Keine Lobby aktiv. Erstelle eine mit /mimic lobby.');return s;}
   function packOverview(gid){
     return '🎉 **Pixel-Soundpacks**\n'+CATEGORIES.map(c=>`${c.name} · **${sounds.list(gid,c.value,'mixed',voiceSource).length}** Sounds\n${c.description}`).join('\n\n')+
-      `\n\n📁 Eigene Clips: **${sounds.list(gid,'custom').length}/30**.\n🔥 Streamer-Meme-Mix: Streamer, Memes und Gaming.\n/mimic originals lädt die verlinkten Community-Clips. /mimic upload und /mimic import ergänzen deinen Mix.\nOriginalmodus: keine synthetischen Sprachvorlagen.`;
+      `\n\n📁 Eigene Clips: **${sounds.list(gid,'custom').length}/30**.\n🔥 Streamer-Meme-Mix: Streamer, Memes und Gaming.\n/mimic originals lädt die verlinkten Community-Clips. /mimic upload und /mimic import ergänzen deinen Mix.\nNur Originalaufnahmen und Uploads: keine erzeugten Übungstöne oder KI-Sprachvorlagen.\n/mimic spielleiter lädt die gesprochenen Spielansagen.`;
   }
   async function member(i){return i.guild.members.fetch(i.user.id);}
   async function requireInside(i,s){const m=await member(i);if(m.user.bot||m.voice.channelId!==s.voiceChannel.id)throw Error('Geh zuerst in den Voice-Chat der Lobby.');return m;}
@@ -106,6 +120,15 @@ function createMimicParty({client,db,saveDB,dataDirectory,isGuildApproved,isMain
     const result=await sounds.prepareOriginals(i.guild.id);
     const rows=result.loaded.map(x=>`✅ **${clean(x.name)}** · \`${x.id}\``),failures=result.failed.map(x=>`⚠️ ${clean(x.name)}: ${clean(x.message,150)}`);
     return reply(i,`🎙️ **Originalclips**\n${rows.join('\n')||'Noch kein Clip geladen.'}\n${failures.join('\n')}\n\nVorhören: /mimic preview id:…\nQuellen: ${ORIGINALS.map(c=>`[${clean(c.name)}](${c.page})`).join(' · ')}\nCommunity-Aufnahmen; die Streamer sind nicht mit Pixel verbunden.`);
+  }
+  async function narratorCommand(i){
+    const gid=i.guild.id,active=i.options.getBoolean('aktiv');
+    if(active!==null){if(!manager(i))throw Error('Du brauchst Server verwalten.');narrator.enable(gid,active);}
+    const probe=i.options.getString('probe');
+    if(engine.hasSession(gid)&&engine.status(gid).phase!=='lobby')throw Error('Ansagen bitte vor der Party laden oder vorhören.');
+    const result=await narrator.prepare(gid),state=narrator.status(gid);
+    if(probe){const data=await narrator.load(gid,probe);if(!data)throw Error('Für diese Phase fehlt eine Ansage. /mimic ansage hinzufügen.');try{return await i.editReply({content:'🎤 Aufgezeichnete Spielleiter-Ansage',files:[{attachment:require('./mimic_audio').wavEncode(data),name:'spielleiter-'+probe+'.wav'}],allowedMentions:{parse:[]}});}finally{data.fill(0);}}
+    return reply(i,`🎤 **Spielleiter ${state.enabled?'an':'aus'}**\n${Object.values(state.clips).map(x=>`✅ ${EVENTS.find(e=>e.value===x.event)?.name}: ${clean(x.name||x.event)}`).join('\n')||'Noch keine Ansage geladen.'}\n${result.failed.map(x=>`⚠️ ${clean(x.name)}: ${clean(x.message,120)}`).join('\n')}\n\nDie Standardstimme sagt Ready, Start, Finish und Congratulations. Eigene deutsche Originalansagen: /mimic ansage phase:… datei:…\nVorhören: /mimic spielleiter probe:…`);
   }
   async function mic(i){
     const gid=i.guild.id;if(engine.hasSession(gid)||micTests.has(gid)||isVoiceBusy(gid))throw Error('Der Mikrofontest braucht einen freien Voice-Platz. Beende die laufende Party zuerst.');
@@ -145,6 +168,7 @@ function createMimicParty({client,db,saveDB,dataDirectory,isGuildApproved,isMain
     const sub=i.options.getSubcommand(),gid=i.guild.id;
     if(sub==='lobby'){
       await i.deferReply();
+      if(engine.hasSession(gid)||micTests.has(gid)||isVoiceBusy(gid))throw Error('Hier läuft schon eine Voice-Party oder ein Mikrofontest. Beende sie zuerst.');
       const m=await member(i),vc=m.voice.channel;
       if(!vc||vc.type!==ChannelType.GuildVoice)throw Error('Geh zuerst in einen normalen Voice-Chat (kein Stage-Kanal).');
       const quietChoice=i.options.getBoolean('replay-ruhe');
@@ -152,11 +176,13 @@ function createMimicParty({client,db,saveDB,dataDirectory,isGuildApproved,isMain
       const useQuiet=quietChoice??Boolean(vc.permissionsFor(me)?.has(P.ManageChannels));
       if(useQuiet&&!vc.permissionsFor(me)?.has(P.ManageChannels))throw Error('Pixel braucht Kanäle verwalten für Replay-Ruhe. Deine eigenen Verwaltungsrechte sind dafür nicht nötig.');
       if(Object.values(db.mimic?.quietLeases||{}).some(x=>x.guildId===gid))throw Error('Noch offene Sprechrechte: Ein Admin muss zuerst /mimic diagnose ausführen.');
-      const pack=i.options.getString('pack')||'mixed';let loaded;
-      if(voiceSource==='original'&&['mixed','party','streamers','memes','gaming'].includes(pack)){
+      const pack=i.options.getString('pack')||'mixed';let loaded,narrationStatus;
+      if(['original','recordings'].includes(voiceSource)&&pack!=='custom'){
         await i.editReply({content:'🎙️ Originalclips werden vorbereitet …',allowedMentions:{parse:[]}});loaded=await sounds.prepareOriginals(gid);
       }
-      const s=engine.create({guildId:gid,voiceChannel:vc,host:{id:i.user.id,name:clean(m.displayName)},rounds:i.options.getInteger('runden')||10,pack,difficulty:i.options.getString('schwierigkeit')||'mixed',mode:i.options.getString('modus')||'chaos',quiet:useQuiet,voiceSource});
+      const useNarration=voiceSource!=='all'&&(i.options.getBoolean('spielleiter')??true)&&narrator.status(gid).enabled;
+      if(useNarration){await i.editReply({content:'🎤 Spielleiter-Ansagen werden vorbereitet …',allowedMentions:{parse:[]}});const result=await narrator.prepare(gid);narrationStatus={loaded:Object.keys(narrator.status(gid).clips).length,failed:result.failed.length};}
+      const s=engine.create({guildId:gid,voiceChannel:vc,host:{id:i.user.id,name:clean(m.displayName)},rounds:i.options.getInteger('runden')||10,pack,difficulty:i.options.getString('schwierigkeit')||'mixed',mode:i.options.getString('modus')||'chaos',quiet:useQuiet,voiceSource,narration:useNarration,narrationStatus});
       if(loaded)s.note=loaded.failed.length?`${loaded.loaded.length} Originalclips geladen; ${loaded.failed.length} Quellen momentan nicht erreichbar. /mimic originals versucht es erneut.`:`${loaded.loaded.length} Originalclips geladen. Bereit zum Mitmachen!`;
       try{s.message=await i.editReply(panel(s));}catch(error){await engine.stop(gid,'Lobby konnte nicht angezeigt werden.');throw error;}return;
     }
@@ -164,6 +190,14 @@ function createMimicParty({client,db,saveDB,dataDirectory,isGuildApproved,isMain
     if(sub==='pause'){const s=session(i);await i.deferReply({flags:MessageFlags.Ephemeral});const paused=engine.pause(s,i.user.id);await reply(i,paused?'Pause nach der aktuellen Runde vorgemerkt.':'Party wird fortgesetzt.');await s.message.edit(panel(s));return;}
     if(sub==='mic'){await i.deferReply({flags:MessageFlags.Ephemeral});return mic(i);}
     if(sub==='originals'){await i.deferReply({flags:MessageFlags.Ephemeral});return originals(i);}
+    if(sub==='spielleiter'){await i.deferReply({flags:MessageFlags.Ephemeral});return narratorCommand(i);}
+    if(sub==='ansage'){
+      if(!manager(i))throw Error('Du brauchst Server verwalten.');
+      if(engine.hasSession(gid)&&engine.status(gid).phase!=='lobby')throw Error('Ansagen bitte vor der Party ändern.');
+      await i.deferReply({flags:MessageFlags.Ephemeral});
+      const clip=await narrator.install(gid,i.options.getString('phase'),{link:i.options.getString('link'),attachment:i.options.getAttachment('datei'),start:i.options.getNumber('von')||0,duration:i.options.getNumber('dauer')??6});
+      return reply(i,`✅ Originalansage für **${EVENTS.find(x=>x.value===clip.event)?.name}** gespeichert. /mimic spielleiter probe:${clip.event} zum Vorhören.`);
+    }
     if(sub==='import'){
       if(!manager(i))throw Error('Clip-Imports darf nur die Serververwaltung oder der Owner hinzufügen.');if(engine.hasSession(gid)&&engine.status(gid).phase!=='lobby')throw Error('Clips bitte vor dem Spiel importieren.');
       await i.deferReply({flags:MessageFlags.Ephemeral});const sound=await sounds.importOriginal(gid,i.options.getString('name')||'Original-Clip',i.options.getString('link'),{category:i.options.getString('kategorie')||'streamers',difficulty:i.options.getString('schwierigkeit')||'normal',start:i.options.getNumber('von')||0,duration:i.options.getNumber('dauer')??6});

@@ -6,7 +6,7 @@ const {prepare}=require('./mimic_score');
 const {categoriesFor,DIFFICULTIES,CATEGORIES,categoryName}=require('./mimic_categories');
 const EFFECTS=Object.freeze({echo:'Echo',saturation:'Verzerrung',pitch:'Pitch-Shift',chop:'Zerhackt',fart:'Pups-Ersatz',penalty:'20 Punkte Abzug'});
 const CARDS=Object.freeze(['bonus','bonus','double','shield',...Object.keys(EFFECTS)]);
-function createMimicEngine({sounds,scorePool,voiceFactory,quietLeases,db,saveDB,isExternalBusy=()=>false,isAllowed=()=>true,onUpdate=async()=>{},delay=wait,random=crypto.randomInt,now=Date.now,maxSessions=4}){
+function createMimicEngine({sounds,scorePool,voiceFactory,quietLeases,db,saveDB,narrator=null,isExternalBusy=()=>false,isAllowed=()=>true,onUpdate=async()=>{},delay=wait,random=crypto.randomInt,now=Date.now,maxSessions=4}){
   const sessions=new Map();
   const check=s=>{if(s.abort.signal.aborted||sessions.get(s.guildId)!==s||!isAllowed(s.guildId))throw Error('Spiel beendet.');};
   async function update(s,note){s.note=note;await onUpdate(s,note);check(s);}
@@ -17,9 +17,9 @@ function createMimicEngine({sounds,scorePool,voiceFactory,quietLeases,db,saveDB,
     if(sessions.size>=maxSessions)throw Error('Alle Voice-Spielplätze sind gerade belegt. Bitte später versuchen.');
     if(isExternalBusy(options.guildId))throw Error('Eine andere Voice-Party läuft. Beende sie zuerst.');
     categoriesFor(options.pack);const difficulty=options.difficulty||'mixed';
-    const voiceSource=options.voiceSource||'all';if(!['all','original'].includes(voiceSource))throw Error('Unbekannte Clip-Auswahl.');
+    const voiceSource=options.voiceSource||'all';if(!['all','original','recordings'].includes(voiceSource))throw Error('Unbekannte Clip-Auswahl.');
     const available=sounds.list(options.guildId,options.pack,difficulty,voiceSource);if(!available.length)throw Error('Dieser Mix enthält keine passenden Originalclips. /mimic originals lädt Streamer-Memes; eigene Aufnahmen gehen mit /mimic upload.');
-    const s={...options,difficulty,voiceSource,token:crypto.randomBytes(12).toString('hex'),abort:new AbortController(),phase:'lobby',round:0,players:new Map(),roundResults:[],cards:new Map(),pending:new Map(),samples:new Map(),started:now(),history:[],connection:null,note:'Bereit zum Mitmachen',used:new Set(),votes:new Map(),playedCategories:new Set(),pauseRequested:false};
+    const s={...options,difficulty,voiceSource,token:crypto.randomBytes(12).toString('hex'),abort:new AbortController(),phase:'lobby',round:0,players:new Map(),roundResults:[],cards:new Map(),pending:new Map(),samples:new Map(),started:now(),history:[],connection:null,note:'Bereit zum Mitmachen',used:new Set(),unavailable:new Set(),votes:new Map(),playedCategories:new Set(),pauseRequested:false};
     s.players.set(options.host.id,{id:options.host.id,name:options.host.name.slice(0,40),total:0,ready:false,modifier:null});
     sessions.set(s.guildId,s);
     s.expiry=setTimeout(()=>{void stop(s.guildId,'Lobby wegen Inaktivität beendet.');},10*60*1000);s.expiry.unref?.();
@@ -66,7 +66,7 @@ function createMimicEngine({sounds,scorePool,voiceFactory,quietLeases,db,saveDB,
   async function pauseBetweenRounds(s){
     if(!s.pauseRequested)return;check(s);s.phase='paused';
     const resumed=new Promise(resolve=>{s.resume=resolve;});
-    try{await update(s,'⏸️ Pause. Mikrofone sind frei; der Host kann mit Fortsetzen weiterspielen.');await Promise.race([resumed,delay(25*60*1000,s.abort.signal)]);check(s);}
+    try{await update(s,'⏸️ Pause. Mikrofone sind frei; der Host kann mit Fortsetzen weiterspielen.');await announce(s,'pause');await Promise.race([resumed,delay(25*60*1000,s.abort.signal)]);check(s);await announce(s,'resume');}
     finally{s.resume=null;}
   }
   async function cleanup(s,note){
@@ -93,8 +93,26 @@ function createMimicEngine({sounds,scorePool,voiceFactory,quietLeases,db,saveDB,
   }
   async function quiet(s){if(s.quiet){check(s);await quietLeases.lock(s.voiceChannel,[...s.players.keys()]);check(s);}}
   async function unquiet(s){if(await quietLeases.restore(s.guildId,s.voiceChannel.id))throw Error('Sprechrechte konnten nicht wiederhergestellt werden. /mimic diagnose verwenden.');}
+  async function announce(s,event){
+    check(s);if(!s.narration||!narrator)return false;
+    try{const played=await narrator.say(s,event);check(s);return played;}
+    catch(error){check(s);s.narratorError=String(error.message).slice(0,150);return false;}
+  }
+  async function selectSound(s){
+    const pack=sounds.list(s.guildId,s.pack,s.difficulty,s.voiceSource).filter(x=>!s.unavailable.has(x.id));
+    if(!pack.length)throw Error('Keine erreichbare Originalaufnahme in diesem Mix. /mimic originals erneut laden oder /mimic upload verwenden.');
+    let candidates=pack.filter(x=>!s.used.has(x.id));if(!candidates.length){s.used.clear();candidates=[...pack];}
+    while(candidates.length){
+      const categories=[...new Set(candidates.map(x=>x.category||x.pack||'custom'))];
+      let fresh=categories.filter(x=>!s.playedCategories.has(x));if(!fresh.length){s.playedCategories.clear();fresh=categories;}
+      const category=fresh[random(fresh.length)],choices=candidates.filter(x=>(x.category||x.pack||'custom')===category),sound=choices[random(choices.length)];
+      try{s.reference=await sounds.load(s.guildId,sound);check(s);s.sound=sound;s.used.add(sound.id);s.playedCategories.add(category);return sound;}
+      catch(error){check(s);s.unavailable.add(sound.id);s.reference?.fill(0);s.reference=null;candidates=candidates.filter(x=>x.id!==sound.id);}
+    }
+    throw Error('Die ausgewählten Aufnahmen fehlen oder sind beschädigt. /mimic originals erneut laden oder Originaldateien hochladen.');
+  }
   async function wheel(s){
-    s.phase='wheel_spin';await update(s,'🎡 Das Glücksrad dreht sich …');await delay(1200,s.abort.signal);check(s);
+    s.phase='wheel_spin';await update(s,'🎡 Das Glücksrad dreht sich …');await announce(s,'wheel');await delay(1200,s.abort.signal);check(s);
     s.phase='wheel';s.cards.clear();
     for(const p of s.players.values()){
       const type=CARDS[random(CARDS.length)];s.cards.set(p.id,{type,used:!EFFECTS[type]});
@@ -118,27 +136,24 @@ function createMimicEngine({sounds,scorePool,voiceFactory,quietLeases,db,saveDB,
       s.connection.connection?.once('destroyed',disconnected);
       s.connection.connection?.on('error',disconnected);
       s.deadline=setTimeout(()=>{s.stopNote='Zeitlimit erreicht.';s.abort.abort();},25*60*1000);s.deadline.unref?.();
+      await announce(s,'intro');
       for(let round=1;round<=s.rounds;round++){
         check(s);s.round=round;s.roundResults=[];
         await pauseBetweenRounds(s);
-        const pack=sounds.list(s.guildId,s.pack,s.difficulty,s.voiceSource);if(!pack.length)throw Error('Das Sound-Pack ist leer.');
-        let candidates=pack.filter(x=>!s.used.has(x.id));if(!candidates.length){s.used.clear();candidates=pack;}
-        // Alternate selected categories fairly instead of letting large packs dominate.
-        const categories=[...new Set(candidates.map(x=>x.category||x.pack||'custom'))];
-        let fresh=categories.filter(x=>!s.playedCategories.has(x));if(!fresh.length){s.playedCategories.clear();fresh=categories;}
-        const category=fresh[random(fresh.length)];s.playedCategories.add(category);candidates=candidates.filter(x=>(x.category||x.pack||'custom')===category);
-        const sound=candidates[random(candidates.length)];s.used.add(sound.id);s.sound=sound;s.reference=await sounds.load(s.guildId,sound);check(s);
-        s.phase='reference';await quiet(s);await update(s,`${categoryName(sound.category||sound.pack)} · ${sound.name}. Einmal zuhören!`);await s.connection.play(s.reference);check(s);await unquiet(s);
+        const sound=await selectSound(s);
+        s.phase='reference';await quiet(s);await update(s,`${categoryName(sound.category||sound.pack)} · ${sound.name}. Einmal zuhören!`);await announce(s,'reference');await s.connection.play(s.reference);check(s);await unquiet(s);
         s.phase='countdown';
-        await update(s,'🎧 Hörbarer Countdown: 3 · 2 · 1. Danach gemeinsam nachmachen!');
-        for(let i=3;i>0;i--){const beep=synth([{f:i===1?800:500,d:.1}]);try{await s.connection.play(beep);}finally{beep.fill(0);}await delay(900,s.abort.signal);}
+        await update(s,'🎧 Bereit machen! Aufnahme startet nach 3 · 2 · 1 / der Start-Ansage.');
+        await announce(s,'countdown');
+        for(let i=3;i>0;i--){if(s.voiceSource!=='recordings'){const beep=synth([{f:i===1?800:500,d:.1}]);try{await s.connection.play(beep);}finally{beep.fill(0);}}await delay(900,s.abort.signal);}
+        await announce(s,'record');
         s.phase='recording';
         // Discord message rate limits must not postpone the shared microphone window.
         const capture=s.connection.capture([...s.players.keys()],Math.min(7,Math.max(1.5,s.reference.length/RATE+.6)));
         [s.samples]=await Promise.all([capture,update(s,'🔴 JETZT nachmachen! Ein Versuch für alle.')]);check(s);
         // Remove a take if its owner left during capture; never replay revoked audio.
         for(const [id,data] of s.samples)if(!s.players.has(id)){data.fill(0);s.samples.delete(id);}
-        s.phase='scoring';await update(s,'Bewerte Melodie, Rhythmus und Einsätze …');
+        s.phase='scoring';await announce(s,'stop');await update(s,'Bewerte Melodie, Rhythmus und Einsätze …');await announce(s,'scoring');
         await Promise.all([...s.players.values()].map(async p=>{
           const original=s.samples.get(p.id)||new Float32Array(0);
           const audible=prepare(original);let replay=audible.length?effect(original,p.modifier?.effect):new Float32Array(0),result;audible.fill(0);
@@ -147,7 +162,7 @@ function createMimicEngine({sounds,scorePool,voiceFactory,quietLeases,db,saveDB,
           const points=Math.max(0,Math.round(result.score*(p.modifier?.multiplier||1))-(p.modifier?.effect==='penalty'?20:0));p.total+=points;
           s.roundResults.push({id:p.id,name:p.name,result,points,effect:p.modifier?.effect,attacker:p.modifier?.attacker,blocked:p.modifier?.blocked});
         }));check(s);
-        s.roundResults.sort((a,b)=>b.points-a.points);s.phase='replay';
+        s.roundResults.sort((a,b)=>b.points-a.points);s.phase='replay';await announce(s,'replay');
         for(const item of s.roundResults){
           if(!s.players.has(item.id))continue;
           s.replayId=item.id;const attacker=s.players.get(item.attacker)?.name||'ein Mitspieler';
@@ -161,10 +176,10 @@ function createMimicEngine({sounds,scorePool,voiceFactory,quietLeases,db,saveDB,
         s.replayId=null;await unquiet(s);
         for(const data of s.samples.values())data.fill(0);s.samples.clear();s.reference.fill(0);s.reference=null;
         for(const p of s.players.values())p.modifier=null;
-        s.history.push(s.roundResults.map(({id,points,result})=>({id,points,score:result.score})));s.phase='results';await update(s,'Runde abgeschlossen!');await delay(3000,s.abort.signal);
+        s.history.push(s.roundResults.map(({id,points,result})=>({id,points,score:result.score})));s.phase='results';await update(s,'Runde abgeschlossen!');await announce(s,'round');await delay(3000,s.abort.signal);
         if(round<s.rounds&&s.mode==='chaos')await wheel(s);
       }
-      check(s);persist(s);end='🏆 Party abgeschlossen! Rangliste gespeichert.';
+      check(s);persist(s);await announce(s,'win');end='🏆 Party abgeschlossen! Rangliste gespeichert.';
     }catch(error){end=s.stopNote||(s.abort.signal.aborted?'Party beendet.':`Party gestoppt: ${error.message}`);}
     finally{await cleanup(s,end);}
   }

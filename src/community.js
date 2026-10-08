@@ -105,6 +105,9 @@ function createCommunity(ctx) {
   const { client, db, saveDB, guildData, userData, footer, cleanName, findOrCreateCategory, findOrCreateText, findOrCreateRole, generateGeminiContent, GEMINI_MODEL } = ctx;
   const isGuildApproved = typeof ctx.isGuildApproved === "function" ? ctx.isGuildApproved : (() => true);
   const isAiEnabled = typeof ctx.isAiEnabled === "function" ? ctx.isAiEnabled : (() => true);
+  const backgroundTasks = require("./background_tasks").createBackgroundTasks();
+  let readyPromise = null;
+  let firstFeedCheck = true;
   const suggestionAiSeen = new Map();
   const suggestionAiPending = new Set();
   const apiKey = process.env.FORTNITE_API_KEY || "";
@@ -890,7 +893,7 @@ function createCommunity(ctx) {
 
   async function processEvents(guild){const now=Date.now(),c=ensureGuild(guild.id);for(const e of Object.values(db.events).filter(e=>e.guildId===guild.id&&!e.ended)){if(!e.reminded&&now>=e.startAt-30*60000){e.reminded=true;for(const uid of e.reminders){const u=await client.users.fetch(uid).catch(()=>null);if(u)await u.send(`⏰ **${e.name}** auf **${guild.name}** startet <t:${Math.floor(e.startAt/1000)}:R>.`).catch(()=>{});}const ch=guild.channels.cache.get(e.channelId);if(ch&&c.roles.eventPing)await ch.send({content:`<@&${c.roles.eventPing}> ⏰ **${e.name}** startet <t:${Math.floor(e.startAt/1000)}:R>.`,allowedMentions:{roles:[c.roles.eventPing]}}).catch(()=>{});}if(!e.started&&now>=e.startAt){e.started=true;const ch=guild.channels.cache.get(e.channelId);if(ch)await ch.send(`🚀 **${e.name} startet jetzt!** ${mentionList(e.participants)}`).catch(()=>{});}}saveDB();}
 
-  async function fetchFortnite(path){const headers={"User-Agent":"StiloMultiGameCommunityBot/1.0"};if(apiKey)headers.Authorization=apiKey;const r=await fetch(`https://fortnite-api.com/${path}`,{headers});if(!r.ok)throw new Error(`Fortnite API ${r.status}`);return r.json();}
+  async function fetchFortnite(path){const headers={"User-Agent":"StiloMultiGameCommunityBot/1.0"};if(apiKey)headers.Authorization=apiKey;const r=await fetch(`https://fortnite-api.com/${path}`,{headers,signal:AbortSignal.timeout(15000)});if(!r.ok)throw new Error(`Fortnite API ${r.status}`);return r.json();}
   function getNewsItems(json){const d=json?.data||json||{};return d.motds||d.br?.motds||d.news?.motds||[];}
   function flattenShop(node,out=[]){if(!node)return out;if(Array.isArray(node)){for(const x of node)flattenShop(x,out);return out;}if(typeof node!=="object")return out;if(node.name&&typeof node.name==="string"&&(node.id||node.type||node.images))out.push({name:node.name,image:node.images?.icon||node.images?.featured||node.images?.smallIcon||null,id:node.id||null});for(const v of Object.values(node))flattenShop(v,out);return out;}
   function uniqueByName(items){const m=new Map();for(const x of items){const k=norm(x.name);if(k&&!m.has(k))m.set(k,x);}return [...m.values()];}
@@ -903,8 +906,15 @@ function createCommunity(ctx) {
   }
 
   async function scheduler(){for(const guild of client.guilds.cache.values()){if(!isGuildApproved(guild.id))continue;await weeklyRollover(guild).catch(()=>{});await processBirthdays(guild).catch(()=>{});await processEvents(guild).catch(()=>{});}}
-  async function feedScheduler(){for(const guild of client.guilds.cache.values()){if(!isGuildApproved(guild.id))continue;await checkFortniteFeeds(guild,true).catch(()=>{});}}
-  async function onReady(){for(const guild of client.guilds.cache.values()){if(!isGuildApproved(guild.id))continue;ensureGuild(guild.id);await weeklyRollover(guild);await processBirthdays(guild);await processEvents(guild);await checkFortniteFeeds(guild,false).catch(()=>{});}setInterval(()=>scheduler().catch(()=>{}),15*60*1000);setInterval(()=>feedScheduler().catch(()=>{}),30*60*1000);}
+  async function feedScheduler(){for(const guild of client.guilds.cache.values()){if(!isGuildApproved(guild.id))continue;await checkFortniteFeeds(guild,!firstFeedCheck).catch(()=>{});}firstFeedCheck=false;}
+  function onReady(){
+    if(readyPromise)return readyPromise;
+    backgroundTasks.schedule("community",scheduler,15*60*1000);
+    backgroundTasks.schedule("fortnite-feeds",feedScheduler,30*60*1000);
+    readyPromise=(async()=>{await backgroundTasks.run("community").catch(()=>{});await backgroundTasks.run("fortnite-feeds").catch(()=>{});})();
+    return readyPromise;
+  }
+  function onShutdown(){return backgroundTasks.stop();}
 
   const fallbackCommunityQuestions = [
     "Welches Game könntest du einen ganzen Monat spielen, ohne dass es langweilig wird – und warum?",
@@ -1129,7 +1139,7 @@ function createCommunity(ctx) {
     return false;
   }
 
-  return { setup, setupExistingOnly, onReady, onMessage, onMemberAdd, onVoiceStateUpdate, onReactionAdd, handleInteraction, onTeamsearchCreated, onTeamMemberJoined, onTeamFull };
+  return { setup, setupExistingOnly, onReady, onShutdown, onMessage, onMemberAdd, onVoiceStateUpdate, onReactionAdd, handleInteraction, onTeamsearchCreated, onTeamMemberJoined, onTeamFull };
 }
 
 module.exports = { buildCommunityCommands, createCommunity };

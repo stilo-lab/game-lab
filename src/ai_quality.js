@@ -39,7 +39,8 @@ function selectKnowledge(entries, query, budget = 5000) {
     const title = new Set(words(entry.topic)), body = new Set(words(entry.text));
     const score = terms.reduce((n,t)=>n+(title.has(t)?4:0)+(body.has(t)?1:0),0);
     return {entry,index,score};
-  }).sort((a,b)=>b.score-a.score || Number(b.entry.createdAt || 0)-Number(a.entry.createdAt || 0) || b.index-a.index);
+  }).filter(row => !terms.length || row.score > 0)
+    .sort((a,b)=>b.score-a.score || Number(b.entry.createdAt || 0)-Number(a.entry.createdAt || 0) || b.index-a.index);
   let remaining=budget;
   const result=[],seen=new Set();
   for (const {entry} of rows) {
@@ -54,6 +55,14 @@ function selectKnowledge(entries, query, budget = 5000) {
     if(remaining<80 || result.length>=24) break;
   }
   return result.join('\n');
+}
+
+function knowledgeQuery(question, history = []) {
+  const text = String(question || '').trim();
+  // A concrete new subject should not inherit every subject from an old chat.
+  const followup = /^(?:hä|hae|hm|hmm|ok|okay|ne|nein|ja|geht\s*(?:nicht|nd|ned)|funktioniert\s*(?:nicht|nd)|immer\s*noch|nochmal|warum|wieso|und\s*dann|weiter|was\s*jetzt|das\s*(?:geht|klappt)\s*(?:nicht|nd))[!?.,\s]*$/i.test(text);
+  if (!followup) return text;
+  return [text, ...history.filter(m => m.role === 'user').slice(-2).map(m => m.parts?.[0]?.text || '')].join('\n');
 }
 
 function trimConversation(messages, maxMessages=24, maxChars=32000) {
@@ -148,4 +157,4 @@ function researchSources(response){
   }
   return [...found.values()].slice(0,4);
 }
-module.exports={CHAT_GUIDANCE,SUPPORT_GUIDANCE,selectKnowledge,trimConversation,chatGenerationSettings,ticketContext,interactionText,interactionSources,conversationSignals,needsResearch,chatGuidance,researchSources};
+module.exports={CHAT_GUIDANCE,SUPPORT_GUIDANCE,selectKnowledge,knowledgeQuery,trimConversation,chatGenerationSettings,ticketContext,interactionText,interactionSources,conversationSignals,needsResearch,chatGuidance,researchSources};
