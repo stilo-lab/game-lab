@@ -1,20 +1,40 @@
-PIXEL-ANZEIGE-FIX – NUR DREI BOT-DATEIEN
+PIXEL START-FIX + MIMIC-SPIELLEITER – VERSION 1.10.1
 
-ZIP entpacken und in deinem GitHub-Projekt den vorhandenen Ordner src öffnen.
+1. ZIP entpacken.
+2. Deinen vorhandenen GitHub-Ordner src öffnen.
+3. ALLE 39 Dateien aus dem ZIP-Ordner src direkt dort hochladen.
+   Gleichnamige Dateien ersetzen. Neue Dateien hinzufügen.
+4. Im Hauptordner package.json und package-lock.json ersetzen.
+5. Falls bei dir Assets fehlen: enthaltenen assets-Ordner samt Unterordnern
+   im Hauptordner übernehmen. Die alten Dateien behalten.
+6. Bot neu deployen / neu starten.
 
-Diese drei Dateien aus dem ZIP-Ordner src dort hochladen:
+Die Dateien gehören direkt in den vorhandenen src-Ordner.
+Für dieses Update brauchst du keine neuen assets-Ordner.
+Alle bisherigen Dateien und Ordner behalten.
 
-src/pixel_gojo.js       -> vorhandene Datei ersetzen
-src/pixel_characters.js -> vorhandene Datei ersetzen
-src/pixel_assets.js     -> neue Datei hinzufügen
+Nur wenn du automatische Tests nutzt:
+Auch die Dateien aus tests an ihren jeweiligen Pfaden übernehmen.
 
-Danach den Bot neu deployen oder neu starten.
-Mit /pixel einen Charakter auswählen und anschließend /ai testen.
+Zum Ausprobieren:
+/new wunsch:Erstelle eine Rolle Helfer, gib ihr Nachrichten verwalten
+und weise sie @DEIN-MITGLIED zu.
 
-Die Dateien gehören in src, nicht in assets.
-Alle benötigten GIFs für die kleine Anzeige sind schon in pixel_assets.js.
-Deine bestehenden Ordner und Dateien behalten.
+In einen Voice-Chat gehen und /mimic lobby verwenden.
+Pixel lädt dann die vorgeschlagenen Originalclips aus dem Internet.
+Mit /mimic originals erneut laden, mit /mimic preview vorhören.
+Weitere echte Aufnahmen kannst du mit /mimic upload hochladen.
+/mimic mic prüft dein Mikrofon.
 
-Zusatz für Projekte mit automatischen Tests:
-Die sechs Dateien im ZIP-Ordner tests an dieselben Pfade übernehmen.
-Details stehen in PIXEL-ANZEIGE-FIX-README.md.
+Die Streamer-Audiodateien sind nicht in der ZIP; der Bot lädt sie nach.
+Die bisherigen KI-Sprachvorlagen sind im normalen Spiel ausgeschaltet.
+Der fehlende src/ai_runtime.js ist jetzt im vollständigen src-Ordner dabei.
+
+Mimic verwendet nur importierte Aufnahmen und deine Uploads.
+Keine erzeugten Übungstöne und keine KI-Sprachvorlagen in der normalen Auswahl.
+Der Spielleiter sagt Ready / Start / Finish / Congratulations.
+/mimic spielleiter lädt und zeigt die Ansagen.
+/mimic ansage erlaubt eigene deutsche Originalansagen.
+Die Ansagen-Audiodateien werden ebenfalls vom Bot nachgeladen.
+
+Weitere Infos, Quellen und Upload-Schritte: README-START-FIX.md

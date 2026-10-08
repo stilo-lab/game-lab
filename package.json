@@ -1,16 +1,17 @@
 {
   "name": "stilo-multigame-community-bot",
-  "version": "1.10.0",
-  "description": "Pixel Community Bot mit Server-Aktionen, Originalclip-Import und Mimic Party.",
+  "version": "1.10.1",
+  "description": "Pixel Community Bot: vollständiger Start-Fix, Originalaufnahmen und gesprochener Mimic-Spielleiter.",
   "main": "src/index.js",
   "type": "commonjs",
   "scripts": {
     "start": "node src/index.js",
-    "check": "node --check src/ai_memory.js && node --check src/ai_quality.js && node --check src/ai_runtime.js && node --check src/background_tasks.js && node --check src/bot_health.js && node --check src/bot_permissions.js && node --check src/bot_runtime.js && node --check src/community.js && node --check src/element_seas.js && node --check src/games.js && node --check src/index.js && node --check src/mimic_audio.js && node --check src/mimic_categories.js && node --check src/mimic_engine.js && node --check src/mimic_media.js && node --check src/mimic_originals.js && node --check src/mimic_party.js && node --check src/mimic_quiet.js && node --check src/mimic_score.js && node --check src/mimic_score_worker.js && node --check src/mimic_sounds.js && node --check src/mimic_stock.js && node --check src/mimic_voice.js && node --check src/mimic_workers.js && node --check src/new_actions.js && node --check src/new_assistant.js && node --check src/pixel_assets.js && node --check src/pixel_characters.js && node --check src/pixel_gojo.js && node --check src/server_setup_customization.js && node --check src/server_setup_designs.js && node --check src/server_setup_reset.js && node --check src/spotify_party.js && node --check src/staff.js && node --check src/youtube_uploads.js && node --check src/youtube_uploads_api.js && node --check src/youtube_uploads_core.js",
+    "check": "node --check src/ai_memory.js && node --check src/ai_quality.js && node --check src/ai_runtime.js && node --check src/background_tasks.js && node --check src/bot_health.js && node --check src/bot_permissions.js && node --check src/bot_runtime.js && node --check src/community.js && node --check src/element_seas.js && node --check src/games.js && node --check src/index.js && node --check src/install_check.js && node --check src/mimic_audio.js && node --check src/mimic_categories.js && node --check src/mimic_engine.js && node --check src/mimic_media.js && node --check src/mimic_narrator.js && node --check src/mimic_originals.js && node --check src/mimic_party.js && node --check src/mimic_quiet.js && node --check src/mimic_score.js && node --check src/mimic_score_worker.js && node --check src/mimic_sounds.js && node --check src/mimic_stock.js && node --check src/mimic_voice.js && node --check src/mimic_workers.js && node --check src/new_actions.js && node --check src/new_assistant.js && node --check src/pixel_assets.js && node --check src/pixel_characters.js && node --check src/pixel_gojo.js && node --check src/server_setup_customization.js && node --check src/server_setup_designs.js && node --check src/server_setup_reset.js && node --check src/spotify_party.js && node --check src/staff.js && node --check src/youtube_uploads.js && node --check src/youtube_uploads_api.js && node --check src/youtube_uploads_core.js",
     "test:uploads": "node --test tests/youtube_uploads.test.js tests/youtube_integration.test.js",
     "test": "node --test tests/run.js",
     "test:mimic": "node --test tests/mimic_party.test.js tests/mimic_audio.test.js tests/mimic_voice.test.js tests/mimic_quiet.test.js tests/mimic_categories.test.js tests/mimic_upgrade.test.js",
-    "test:new": "node --test tests/new_assistant.test.js tests/new_actions.test.js"
+    "test:new": "node --test tests/new_assistant.test.js tests/new_actions.test.js",
+    "prestart": "node src/install_check.js"
   },
   "engines": {
     "node": ">=22.12.0"
