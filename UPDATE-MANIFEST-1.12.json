@@ -1,0 +1,61 @@
+{
+  "version": "1.12.0",
+  "based_on": "Pixel 1.11.0",
+  "tests": {
+    "passed": 412,
+    "failed": 0,
+    "live_tested": false
+  },
+  "changed_existing_sources": [
+    "src/ai_runtime.js",
+    "src/index.js",
+    "src/youtube_uploads_core.js"
+  ],
+  "new_sources": [
+    "src/ai_reasoning.js"
+  ],
+  "preserved_assets": 198,
+  "source_files": {
+    "src/ai_memory.js": "c89dd72676fdcb928608e198f712c405c84d31971c083cef2f82132d9ccc83a9",
+    "src/ai_quality.js": "56fbbeaa140f85b3d40133e7d88e2c5370147f02824608d1517964d488df7960",
+    "src/ai_reasoning.js": "9ea2ce29c1a989f29e77f2a3174f1647517690418c9c3c436c20beb97e4fc7af",
+    "src/ai_runtime.js": "35b8106243b3a0cafdcc3c239cfca8767611bf0d60b2a1b62bfcdce91f1859d5",
+    "src/background_tasks.js": "b33208f940f405886e378cf119ada6b63b7465c6706b74c96803c46212e3c9cb",
+    "src/bot_health.js": "caec5a29301c1ef72736b1d57c2c10b1f6968c35617c640c4af69aad9a15e07f",
+    "src/bot_permissions.js": "384c8ec473e241a889695bb005e31b20362b0225529a8ace768becb2f3cbdf76",
+    "src/bot_runtime.js": "0f8d870e4dc0a55eeef2ea28a1b6853ce3668c68c5ad3ef8191129bc86ee87c7",
+    "src/community.js": "49de8c51dae75c41bdd7b6ab0e9d6594011f82bfb58a70a4c1f871551ab66680",
+    "src/element_seas.js": "16b2c43bf49a1f7fbff299116eee65c83a0d1fdcce5b5e9dd130e0a10927ff3d",
+    "src/games.js": "da31fbee0d23c8a367651f372e240a4b9fac84011b0f548d5c7ec2fbb7bb30e1",
+    "src/index.js": "672e571125a8a025cbcd8d2d0810f1c3cd1a1dbbc7313b369c21f36e101af047",
+    "src/install_check.js": "a7a0d85863c4ab47505d6e43bb86b43f3cc6b76b6ab5325935ecac85725f6084",
+    "src/mimic_audio.js": "fc359272a9e373ed803110907912165c85c6aebb6b4a2a54d360ac791612b32d",
+    "src/mimic_categories.js": "1aa3dac8891d08d13588985577bd220a92ac9d633ff85da8694f030f0107592e",
+    "src/mimic_engine.js": "dc85dfd2a6a61281ed9a224d34e99b6dd54f6262eecc56bc76fc109cea637c02",
+    "src/mimic_media.js": "92cc8559368a37d1a1c83a488f5f4d2a3b17c7c35bbea21a2ea717f504cc2316",
+    "src/mimic_narrator.js": "de10f4d87751dc0fc7662bfac0354374017cab4c35a3edb52d8a8b595af2b450",
+    "src/mimic_originals.js": "d172ce5be55ea353a81927bfe0f28e5c9464fb27152c287e3bbc8984c2c5d66c",
+    "src/mimic_party.js": "dbfc35a6352734ffe411d3e72a3e6d4d21ef2f5195e6de915a74a3bbe9de669e",
+    "src/mimic_quiet.js": "c19bee879647c2f28971e39d65da426a72da6b1e8bd78463cc12cdedd628f132",
+    "src/mimic_score.js": "bc2ed96609a76fe644c20317a742a2615c0e7a0a43f855ed721ecf3ed9184194",
+    "src/mimic_score_worker.js": "65db5e7b312b7aa7a796b909bfe0236579ba35445dc1a880dc6d7dcf9808d879",
+    "src/mimic_sounds.js": "316278d1a51d9e507a82f99e51754cc0185ea5a261b256af1aeab9c245c6e365",
+    "src/mimic_stock.js": "7db9f6080e8a063bea4aa52e830bf50a85a3cbe889d3446b327d7e71438680db",
+    "src/mimic_voice.js": "af907908841f40c74e86f0b1b5561b8b569fa0aceeb446fb54c256b921257e41",
+    "src/mimic_workers.js": "79716b5b6e2b25fd0b5a1466a029e1b7e54a71c63025dfa76169393f671cedc8",
+    "src/new_actions.js": "81ed1abee155b6e6fa7ee11231781326ca078eda5b7e039caa57c3df22739c75",
+    "src/new_assistant.js": "59044a56ff177d62bd53f43062cfbb87857a5e985367136d061bb3647dda907c",
+    "src/pixel_assets.js": "d66b30587ecfa2c3649870917afdf724719996ba0516ba90cb9e2a4d15bbe97a",
+    "src/pixel_characters.js": "8f680b60c3aed6908f48859116212c55284a934f8e9c84f691945a4febd0acf2",
+    "src/pixel_gojo.js": "c96b10e970c71774b98b70252818bdad931ae4ba5874c0fbc15b7f71b6692556",
+    "src/server_setup_customization.js": "9570fc0f4c7d4fd17047b8d24c407ea7b670e59a7bc8a73489fd23a6bfa81338",
+    "src/server_setup_designs.js": "8e5518c98e4548f39decc9561ae05df6953ad9b88509c12bc561828e7a0b3b7c",
+    "src/server_setup_reset.js": "1287cfe74543d78cd8fa6e8e62ea83afe70579dbfd519c0e9cf64ca4231b5cda",
+    "src/setup_roles.js": "ffcf231590c6059562cb743dd9a6700ec19d542badc63c0b885de565af155235",
+    "src/spotify_party.js": "a2262e2cb22c0e717daa9e777416aed25274e72010fd110186a60033b830632d",
+    "src/staff.js": "634403d254525ed09d2fb829b88135fe5b42b87a50da1bddc8f54daf9d4544d2",
+    "src/youtube_uploads.js": "e1c2fc9b20abfae6a2e498fea4e9ecf6f488469df8334ef919408bcbcf794fbc",
+    "src/youtube_uploads_api.js": "210672b01dd991db0b33b7bdf9323c0b60393b85b37932d2b52a61031fa63fcb",
+    "src/youtube_uploads_core.js": "3c4d65ed7656789b53f88a7c98c4f2a0d48cca17f11e0eca0316bddb15701c5b"
+  }
+}
