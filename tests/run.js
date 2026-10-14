@@ -1,4 +1,7 @@
 'use strict';
+require('./video_bug_fixes.test');
+require('./ai_reasoning.test');
+require('./roles_ai_update.test');
 require('./setup_customization.test');
 require('./general_improvements.test');
 require('./pixel_display_fix.test');
