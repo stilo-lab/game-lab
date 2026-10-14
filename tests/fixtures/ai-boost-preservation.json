@@ -1,0 +1,187 @@
+{
+  "ai_memory.js": {
+    "sha256": "c89dd72676fdcb928608e198f712c405c84d31971c083cef2f82132d9ccc83a9",
+    "edits": []
+  },
+  "ai_quality.js": {
+    "sha256": "56fbbeaa140f85b3d40133e7d88e2c5370147f02824608d1517964d488df7960",
+    "edits": []
+  },
+  "ai_runtime.js": {
+    "sha256": "f9650e394380d58e0de1c3bd1bb0834f13004cde338678050032a06d71ab8d76",
+    "edits": []
+  },
+  "background_tasks.js": {
+    "sha256": "b33208f940f405886e378cf119ada6b63b7465c6706b74c96803c46212e3c9cb",
+    "edits": []
+  },
+  "bot_health.js": {
+    "sha256": "caec5a29301c1ef72736b1d57c2c10b1f6968c35617c640c4af69aad9a15e07f",
+    "edits": []
+  },
+  "bot_permissions.js": {
+    "sha256": "384c8ec473e241a889695bb005e31b20362b0225529a8ace768becb2f3cbdf76",
+    "edits": []
+  },
+  "bot_runtime.js": {
+    "sha256": "0f8d870e4dc0a55eeef2ea28a1b6853ce3668c68c5ad3ef8191129bc86ee87c7",
+    "edits": []
+  },
+  "community.js": {
+    "sha256": "49de8c51dae75c41bdd7b6ab0e9d6594011f82bfb58a70a4c1f871551ab66680",
+    "edits": []
+  },
+  "element_seas.js": {
+    "sha256": "16b2c43bf49a1f7fbff299116eee65c83a0d1fdcce5b5e9dd130e0a10927ff3d",
+    "edits": []
+  },
+  "games.js": {
+    "sha256": "da31fbee0d23c8a367651f372e240a4b9fac84011b0f548d5c7ec2fbb7bb30e1",
+    "edits": []
+  },
+  "index.js": {
+    "sha256": "7d5703af2e0f6f405c87a615ccd75aea4b18d36f72338e060e79a1b2cdccefbe",
+    "edits": [
+      {
+        "before": "  const repeatedQuestion = isRepeatedAiQuestion(history, question);\n  const serverContext = await aiServerContext(guildId,userId);\n  const research = (typeof process === \"undefined\" || process.env.GEMINI_CHAT_SEARCH !== \"false\") && aiQuality().needsResearch(question,history);\n  const reasoningModel = typeof process !== \"undefined\" ? process.env.GEMINI_REASONING_MODEL : null;\n\n  const currentPrompt = repeatedQuestion\n    ? `${question}\\n\\nWichtig: Diese Frage wurde bereits gestellt. Prüfe, was unklar blieb oder fehlgeschlagen ist. Erkläre gezielter oder mit einem anderen Beispiel. Wiederhole nicht einfach die vorige Antwort, aber ändere keine gesicherten Fakten nur für Abwechslung.`\n",
+        "after": "  const repeatedQuestion = isRepeatedAiQuestion(history, question);\n  const serverContext = await aiServerContext(guildId,userId);\n  const research = (typeof process === \"undefined\" || process.env.GEMINI_CHAT_SEARCH !== \"false\") && aiQuality().needsResearch(question,history);\n  const reasoning = require(\"./ai_reasoning\");\n  const reasoningPlan = reasoning.taskPlan(question,history);\n  const reasoningModel = (typeof process !== \"undefined\" && process.env.GEMINI_REASONING_MODEL) ||\n    (typeof GEMINI_SUPPORT_MODEL !== \"undefined\" ? GEMINI_SUPPORT_MODEL : GEMINI_MODEL);\n\n  const currentPrompt = repeatedQuestion\n    ? `${question}\\n\\nWichtig: Diese Frage wurde bereits gestellt. Prüfe, was unklar blieb oder fehlgeschlagen ist. Erkläre gezielter oder mit einem anderen Beispiel. Wiederhole nicht einfach die vorige Antwort, aber ändere keine gesicherten Fakten nur für Abwechslung.`\n"
+      },
+      {
+        "before": "    : \"\";\n\n  const request = {\n    model: reasoningModel && aiQuality().chatGenerationSettings(question,history).maxOutputTokens > 1200 ? reasoningModel : GEMINI_MODEL,\n    contents,\n    config: {\n      systemInstruction: `Du heißt ${pixelCharacterName(guildId, userId)} und bist die KI von ${BOT_NAME}, einem Multi-Game-Discord-Bot. Dein Begleiter ist ein kleiner Pixel-Magier. Stelle dich nicht vor jeder Antwort erneut vor.\n",
+        "after": "    : \"\";\n\n  const request = {\n    model: reasoningPlan.detailed ? reasoningModel : GEMINI_MODEL,\n    contents,\n    config: {\n      systemInstruction: `Du heißt ${pixelCharacterName(guildId, userId)} und bist die KI von ${BOT_NAME}, einem Multi-Game-Discord-Bot. Dein Begleiter ist ein kleiner Pixel-Magier. Stelle dich nicht vor jeder Antwort erneut vor.\n"
+      },
+      {
+        "before": "\nAktueller Nutzer: ${userTag}${learnedInstruction}${feedbackInstruction}\n${aiQuality().chatGuidance(research)}${serverContext}\nGESPRÄCHSFOKUS (nur aus echten Nutzer-Nachrichten abgeleitet): ${aiQuality().conversationSignals(history,question)}`,\n      ...aiQuality().chatGenerationSettings(question, history),\n      ...(research ? {tools:[{googleSearch:{}}]} : {}),\n      httpOptions: { timeout: 30000 }\n    }\n  };\n  let response;\n  try { response = await generateGeminiContent(request, { label: \"slash_ai\", maxRetries: 2 }); }\n  catch (error) {\n    if (!research || ![400,404].includes(geminiStatus(error))) throw error;\n    delete request.config.tools;\n    request.config.systemInstruction += \"\\nRECHERCHE-STATUS: Die Websuche war nicht verfügbar. Für diese Ersatzantwort gibt es KEINE Websuche. Keine aktuellen Prüfungen oder aktuellen Fakten erfinden.\";\n    response = await generateGeminiContent(request, {label:\"slash_ai_search_fallback\",maxRetries:1});\n  }\n\n  let answer = String(response.text || \"\").trim();\n",
+        "after": "\nAktueller Nutzer: ${userTag}${learnedInstruction}${feedbackInstruction}\n${aiQuality().chatGuidance(research)}${serverContext}\nGESPRÄCHSFOKUS (nur aus echten Nutzer-Nachrichten abgeleitet): ${aiQuality().conversationSignals(history,question)}\n${reasoningPlan.guidance}`,\n      ...aiQuality().chatGenerationSettings(question, history),\n      ...(research ? {tools:[{googleSearch:{}}]} : {}),\n      httpOptions: { timeout: 30000 }\n    }\n  };\n  let response;\n  try { response = await reasoning.generateAnswer(request,{generate:generateGeminiContent,fallbackModel:GEMINI_MODEL,plan:reasoningPlan}); }\n  catch (error) {\n    if (!research || ![400,404].includes(geminiStatus(error))) throw error;\n    delete request.config.tools;\n    request.config.systemInstruction += \"\\nRECHERCHE-STATUS: Die Websuche war nicht verfügbar. Für diese Ersatzantwort gibt es KEINE Websuche. Keine aktuellen Prüfungen oder aktuellen Fakten erfinden.\";\n    response = await reasoning.generateAnswer(request,{generate:generateGeminiContent,label:\"slash_ai_search_fallback\",fallbackModel:GEMINI_MODEL,plan:reasoningPlan});\n  }\n\n  let answer = String(response.text || \"\").trim();\n"
+      },
+      {
+        "before": "  const repeatedAnswer = text => text.length >= 60 && history.filter(item => item.role === \"model\").slice(-2)\n    .some(item => normalizeAnswer(item.parts?.[0]?.text) === normalizeAnswer(text));\n  if (repeatedAnswer(answer)) {\n    const retry = await generateGeminiContent({ ...request, config: {\n      ...request.config,\n      systemInstruction: request.config.systemInstruction + \"\\nDein letzter Versuch hat eine frühere Antwort wortgleich wiederholt. Beantworte die neueste Frage mit einer neuen Erklärung oder neuen konkreten Informationen.\"\n    } }, { label: \"slash_ai_repetition\", maxRetries: 1 });\n    answer = String(retry.text || \"\").trim();\n    response = retry;\n    if (!answer) throw new Error(\"AI_EMPTY_RESPONSE\");\n    if (repeatedAnswer(answer)) throw new Error(\"AI_REPEATED_RESPONSE\");\n  }\n  const sources = aiQuality().researchSources(response);\n  if (sources.length) answer += \"\\n\\nQuellen: \" + sources.map(s => `[${s.title}](${s.url})`).join(\" • \");\n  rememberAiExchange(guildId, userId, question, answer, channelId);\n",
+        "after": "  const repeatedAnswer = text => text.length >= 60 && history.filter(item => item.role === \"model\").slice(-2)\n    .some(item => normalizeAnswer(item.parts?.[0]?.text) === normalizeAnswer(text));\n  if (repeatedAnswer(answer)) {\n    const retry = await reasoning.generateAnswer({ ...request, config: {\n      ...request.config,\n      systemInstruction: request.config.systemInstruction + \"\\nDein letzter Versuch hat eine frühere Antwort wortgleich wiederholt. Beantworte die neueste Frage mit einer neuen Erklärung oder neuen konkreten Informationen.\"\n    } }, {generate:generateGeminiContent,label:\"slash_ai_repetition\",fallbackModel:GEMINI_MODEL,plan:reasoningPlan});\n    answer = String(retry.text || \"\").trim();\n    response = retry;\n    if (!answer) throw new Error(\"AI_EMPTY_RESPONSE\");\n    if (repeatedAnswer(answer)) throw new Error(\"AI_REPEATED_RESPONSE\");\n  }\n  response = await reasoning.reviewAnswer(request,response,{generate:generateGeminiContent,plan:reasoningPlan,\n    enabled:typeof process === \"undefined\" || process.env.GEMINI_ANSWER_REVIEW !== \"false\"});\n  answer = String(response.text || \"\").trim();\n  if (!answer) throw new Error(\"AI_EMPTY_RESPONSE\");\n  if (repeatedAnswer(answer)) throw new Error(\"AI_REPEATED_RESPONSE\");\n  const sources = aiQuality().researchSources(response);\n  if (sources.length) answer += \"\\n\\nQuellen: \" + sources.map(s => `[${s.title}](${s.url})`).join(\" • \");\n  rememberAiExchange(guildId, userId, question, answer, channelId);\n"
+      },
+      {
+        "before": "    input,\n    system_instruction: systemInstruction,\n    tools: [{type: \"google_search\"}],\n    generation_config: {thinking_level: \"high\", max_output_tokens: 6000}\n  };\n  if (ticket.previousInteractionId) request.previous_interaction_id = ticket.previousInteractionId;\n  let interaction, answer;\n",
+        "after": "    input,\n    system_instruction: systemInstruction,\n    tools: [{type: \"google_search\"}],\n    generation_config: {thinking_level: \"high\", max_output_tokens: 12000}\n  };\n  if (ticket.previousInteractionId) request.previous_interaction_id = ticket.previousInteractionId;\n  let interaction, answer;\n"
+      },
+      {
+        "before": "      contents: [{role: \"user\", parts: input.map(part => part.type === \"image\"\n        ? {inlineData: {data: part.data, mimeType: part.mime_type}}\n        : {text: part.text})}],\n      config: {\n        systemInstruction: systemInstruction + \"\\nRECHERCHE-STATUS: Für diese Ersatzantwort steht KEINE Websuche zur Verfügung. Behaupte keine aktuelle Prüfung. Gib zeitstabile Schritte und kennzeichne unverifizierbare aktuelle Informationen knapp.\",\n        maxOutputTokens: 4000, temperature: 0.35, topP: 0.9,\n        httpOptions: {timeout: 45000}\n      }\n    }, {label: \"ticket_ai_fallback\", maxRetries: 1});\n    answer = String(response.text || \"\").trim();\n    if (!answer) throw new Error(\"AI_EMPTY_RESPONSE\");\n",
+        "after": "      contents: [{role: \"user\", parts: input.map(part => part.type === \"image\"\n        ? {inlineData: {data: part.data, mimeType: part.mime_type}}\n        : {text: part.text})}],\n      config: require(\"./ai_reasoning\").modelConfig(GEMINI_MODEL || GEMINI_FALLBACK_MODEL,{deep:true,detailed:true},{\n        systemInstruction: systemInstruction + \"\\nRECHERCHE-STATUS: Für diese Ersatzantwort steht KEINE Websuche zur Verfügung. Behaupte keine aktuelle Prüfung. Gib zeitstabile Schritte und kennzeichne unverifizierbare aktuelle Informationen knapp.\",\n        maxOutputTokens: 4000, temperature: 0.35, topP: 0.9,\n        httpOptions: {timeout: 45000}\n      })\n    }, {label: \"ticket_ai_fallback\", maxRetries: 1});\n    answer = String(response.text || \"\").trim();\n    if (!answer) throw new Error(\"AI_EMPTY_RESPONSE\");\n"
+      }
+    ]
+  },
+  "install_check.js": {
+    "sha256": "a7a0d85863c4ab47505d6e43bb86b43f3cc6b76b6ab5325935ecac85725f6084",
+    "edits": []
+  },
+  "mimic_audio.js": {
+    "sha256": "fc359272a9e373ed803110907912165c85c6aebb6b4a2a54d360ac791612b32d",
+    "edits": []
+  },
+  "mimic_categories.js": {
+    "sha256": "1aa3dac8891d08d13588985577bd220a92ac9d633ff85da8694f030f0107592e",
+    "edits": []
+  },
+  "mimic_engine.js": {
+    "sha256": "dc85dfd2a6a61281ed9a224d34e99b6dd54f6262eecc56bc76fc109cea637c02",
+    "edits": []
+  },
+  "mimic_media.js": {
+    "sha256": "92cc8559368a37d1a1c83a488f5f4d2a3b17c7c35bbea21a2ea717f504cc2316",
+    "edits": []
+  },
+  "mimic_narrator.js": {
+    "sha256": "de10f4d87751dc0fc7662bfac0354374017cab4c35a3edb52d8a8b595af2b450",
+    "edits": []
+  },
+  "mimic_originals.js": {
+    "sha256": "d172ce5be55ea353a81927bfe0f28e5c9464fb27152c287e3bbc8984c2c5d66c",
+    "edits": []
+  },
+  "mimic_party.js": {
+    "sha256": "dbfc35a6352734ffe411d3e72a3e6d4d21ef2f5195e6de915a74a3bbe9de669e",
+    "edits": []
+  },
+  "mimic_quiet.js": {
+    "sha256": "c19bee879647c2f28971e39d65da426a72da6b1e8bd78463cc12cdedd628f132",
+    "edits": []
+  },
+  "mimic_score.js": {
+    "sha256": "bc2ed96609a76fe644c20317a742a2615c0e7a0a43f855ed721ecf3ed9184194",
+    "edits": []
+  },
+  "mimic_score_worker.js": {
+    "sha256": "65db5e7b312b7aa7a796b909bfe0236579ba35445dc1a880dc6d7dcf9808d879",
+    "edits": []
+  },
+  "mimic_sounds.js": {
+    "sha256": "316278d1a51d9e507a82f99e51754cc0185ea5a261b256af1aeab9c245c6e365",
+    "edits": []
+  },
+  "mimic_stock.js": {
+    "sha256": "7db9f6080e8a063bea4aa52e830bf50a85a3cbe889d3446b327d7e71438680db",
+    "edits": []
+  },
+  "mimic_voice.js": {
+    "sha256": "af907908841f40c74e86f0b1b5561b8b569fa0aceeb446fb54c256b921257e41",
+    "edits": []
+  },
+  "mimic_workers.js": {
+    "sha256": "79716b5b6e2b25fd0b5a1466a029e1b7e54a71c63025dfa76169393f671cedc8",
+    "edits": []
+  },
+  "new_actions.js": {
+    "sha256": "81ed1abee155b6e6fa7ee11231781326ca078eda5b7e039caa57c3df22739c75",
+    "edits": []
+  },
+  "new_assistant.js": {
+    "sha256": "59044a56ff177d62bd53f43062cfbb87857a5e985367136d061bb3647dda907c",
+    "edits": []
+  },
+  "pixel_assets.js": {
+    "sha256": "d66b30587ecfa2c3649870917afdf724719996ba0516ba90cb9e2a4d15bbe97a",
+    "edits": []
+  },
+  "pixel_characters.js": {
+    "sha256": "8f680b60c3aed6908f48859116212c55284a934f8e9c84f691945a4febd0acf2",
+    "edits": []
+  },
+  "pixel_gojo.js": {
+    "sha256": "c96b10e970c71774b98b70252818bdad931ae4ba5874c0fbc15b7f71b6692556",
+    "edits": []
+  },
+  "server_setup_customization.js": {
+    "sha256": "9570fc0f4c7d4fd17047b8d24c407ea7b670e59a7bc8a73489fd23a6bfa81338",
+    "edits": []
+  },
+  "server_setup_designs.js": {
+    "sha256": "8e5518c98e4548f39decc9561ae05df6953ad9b88509c12bc561828e7a0b3b7c",
+    "edits": []
+  },
+  "server_setup_reset.js": {
+    "sha256": "1287cfe74543d78cd8fa6e8e62ea83afe70579dbfd519c0e9cf64ca4231b5cda",
+    "edits": []
+  },
+  "setup_roles.js": {
+    "sha256": "ffcf231590c6059562cb743dd9a6700ec19d542badc63c0b885de565af155235",
+    "edits": []
+  },
+  "spotify_party.js": {
+    "sha256": "a2262e2cb22c0e717daa9e777416aed25274e72010fd110186a60033b830632d",
+    "edits": []
+  },
+  "staff.js": {
+    "sha256": "634403d254525ed09d2fb829b88135fe5b42b87a50da1bddc8f54daf9d4544d2",
+    "edits": []
+  },
+  "youtube_uploads.js": {
+    "sha256": "e1c2fc9b20abfae6a2e498fea4e9ecf6f488469df8334ef919408bcbcf794fbc",
+    "edits": []
+  },
+  "youtube_uploads_api.js": {
+    "sha256": "210672b01dd991db0b33b7bdf9323c0b60393b85b37932d2b52a61031fa63fcb",
+    "edits": []
+  },
+  "youtube_uploads_core.js": {
+    "sha256": "1e905e14906d4e164c551f1fb9398fc5784b07e560458bc57ca85b0054ada20e",
+    "edits": []
+  }
+}
