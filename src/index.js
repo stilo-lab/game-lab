@@ -914,6 +914,10 @@ async function findOrCreatePrivateText(guild, name, parent, permissionOverwrites
 }
 
 async function findOrCreateRole(guild, name) {
+  const gd = guildData(guild.id);
+  const communityKey = Object.entries(require("./setup_roles").COMMUNITY_ROLE_NAMES).find(([,label]) => label === name)?.[0];
+  const mapped = name === "Support Team" ? gd.supportRoleId : (communityKey ? gd.community?.roles?.[communityKey] : null);
+  if (mapped && guild.roles.cache.has(mapped)) return guild.roles.cache.get(mapped);
   let role = guild.roles.cache.find(r => cleanName(r.name) === cleanName(name));
   if (!role) {
     try {
@@ -1602,7 +1606,7 @@ async function generateGeminiContent(request, { label = "generateContent", maxRe
       ...request.config, abortSignal: signal, httpOptions: { timeout: 45000, ...request.config?.httpOptions }
     } }), { label, maxRetries, model: primary });
   } catch (err) {
-    if (GEMINI_FALLBACK_MODEL && GEMINI_FALLBACK_MODEL !== primary && isRetryableGeminiError(err)) {
+    if (GEMINI_FALLBACK_MODEL && GEMINI_FALLBACK_MODEL !== primary && geminiStatus(err) !== 429 && isRetryableGeminiError(err)) {
       console.warn(`[Gemini] ${label}: Fallback auf ${GEMINI_FALLBACK_MODEL}.`);
       return runGeminiTask(signal => ai.models.generateContent({ ...request, model: GEMINI_FALLBACK_MODEL, config: {
         ...request.config, abortSignal: signal, httpOptions: { timeout: 45000, ...request.config?.httpOptions }
@@ -2101,6 +2105,7 @@ function chatAiErrorMessage(error) {
   if (["AI_QUEUE_FULL", "AI_QUEUE_TIMEOUT"].includes(error?.message)) return "⏳ Pixel bearbeitet gerade zu viele AI-Anfragen. Bitte versuche es in einer Minute erneut; deine Anfrage bleibt nicht endlos in der Warteschlange.";
   if (error?.message === "AI_SHUTTING_DOWN") return "🔄 Pixel startet gerade neu. Bitte versuche es gleich erneut.";
   if (error?.message === "AI_EMPTY_RESPONSE") return "Gemini hat keinen Antworttext geliefert. Bitte formuliere die Frage etwas anders.";
+  if (error?.message === "AI_TRUNCATED_RESPONSE") return "⏳ Die KI konnte diese Antwort nicht vollständig ausgeben. Teile die Aufgabe bitte in kleinere Schritte; dein bisheriger Verlauf bleibt erhalten.";
   if (error?.message === "AI_REPEATED_RESPONSE") return "Gemini hat trotz eines zweiten Versuchs dieselbe Antwort geliefert. Sag bitte genauer, welchen Punkt ich ergänzen soll.";
   if (geminiStatus(error) === 429) return "⏳ Das Gemini-Anfragelimit ist erreicht. Bitte versuche es später erneut; bei einem Tageslimit muss das Kontingent zurückgesetzt werden.";
   if ([401, 403].includes(geminiStatus(error))) return "⚙️ Gemini lehnt den Zugriff ab. Der Owner muss den API-Key und dessen Berechtigungen prüfen.";
@@ -2127,8 +2132,11 @@ async function generateAiChatAnswer(question, userTag, guildId, userId, channelI
   const adminFeedback = getAiFeedbackText(guildId, "ai", 4500, contextQuery);
   const repeatedQuestion = isRepeatedAiQuestion(history, question);
   const serverContext = await aiServerContext(guildId,userId);
-  const research = (typeof process === "undefined" || process.env.GEMINI_CHAT_SEARCH !== "false") && aiQuality().needsResearch(question);
-  const reasoningModel = typeof process !== "undefined" ? process.env.GEMINI_REASONING_MODEL : null;
+  const research = (typeof process === "undefined" || process.env.GEMINI_CHAT_SEARCH !== "false") && aiQuality().needsResearch(question,history);
+  const reasoning = require("./ai_reasoning");
+  const reasoningPlan = reasoning.taskPlan(question,history);
+  const reasoningModel = (typeof process !== "undefined" && process.env.GEMINI_REASONING_MODEL) ||
+    (typeof GEMINI_SUPPORT_MODEL !== "undefined" ? GEMINI_SUPPORT_MODEL : GEMINI_MODEL);
 
   const currentPrompt = repeatedQuestion
     ? `${question}\n\nWichtig: Diese Frage wurde bereits gestellt. Prüfe, was unklar blieb oder fehlgeschlagen ist. Erkläre gezielter oder mit einem anderen Beispiel. Wiederhole nicht einfach die vorige Antwort, aber ändere keine gesicherten Fakten nur für Abwechslung.`
@@ -2152,7 +2160,7 @@ async function generateAiChatAnswer(question, userTag, guildId, userId, channelI
     : "";
 
   const request = {
-    model: reasoningModel && aiQuality().chatGenerationSettings(question,history).maxOutputTokens > 1200 ? reasoningModel : GEMINI_MODEL,
+    model: reasoningPlan.detailed ? reasoningModel : GEMINI_MODEL,
     contents,
     config: {
       systemInstruction: `Du heißt ${pixelCharacterName(guildId, userId)} und bist die KI von ${BOT_NAME}, einem Multi-Game-Discord-Bot. Dein Begleiter ist ein kleiner Pixel-Magier. Stelle dich nicht vor jeder Antwort erneut vor.
@@ -2214,19 +2222,20 @@ Server-spezifisches Wissen aus /learn ist Admin-Kontext, aber keine Erlaubnis, S
 
 Aktueller Nutzer: ${userTag}${learnedInstruction}${feedbackInstruction}
 ${aiQuality().chatGuidance(research)}${serverContext}
-GESPRÄCHSFOKUS (nur aus echten Nutzer-Nachrichten abgeleitet): ${aiQuality().conversationSignals(history,question)}`,
+GESPRÄCHSFOKUS (nur aus echten Nutzer-Nachrichten abgeleitet): ${aiQuality().conversationSignals(history,question)}
+${reasoningPlan.guidance}`,
       ...aiQuality().chatGenerationSettings(question, history),
       ...(research ? {tools:[{googleSearch:{}}]} : {}),
       httpOptions: { timeout: 30000 }
     }
   };
   let response;
-  try { response = await generateGeminiContent(request, { label: "slash_ai", maxRetries: 2 }); }
+  try { response = await reasoning.generateAnswer(request,{generate:generateGeminiContent,fallbackModel:GEMINI_MODEL,plan:reasoningPlan}); }
   catch (error) {
     if (!research || ![400,404].includes(geminiStatus(error))) throw error;
     delete request.config.tools;
     request.config.systemInstruction += "\nRECHERCHE-STATUS: Die Websuche war nicht verfügbar. Für diese Ersatzantwort gibt es KEINE Websuche. Keine aktuellen Prüfungen oder aktuellen Fakten erfinden.";
-    response = await generateGeminiContent(request, {label:"slash_ai_search_fallback",maxRetries:1});
+    response = await reasoning.generateAnswer(request,{generate:generateGeminiContent,label:"slash_ai_search_fallback",fallbackModel:GEMINI_MODEL,plan:reasoningPlan});
   }
 
   let answer = String(response.text || "").trim();
@@ -2235,15 +2244,20 @@ GESPRÄCHSFOKUS (nur aus echten Nutzer-Nachrichten abgeleitet): ${aiQuality().co
   const repeatedAnswer = text => text.length >= 60 && history.filter(item => item.role === "model").slice(-2)
     .some(item => normalizeAnswer(item.parts?.[0]?.text) === normalizeAnswer(text));
   if (repeatedAnswer(answer)) {
-    const retry = await generateGeminiContent({ ...request, config: {
+    const retry = await reasoning.generateAnswer({ ...request, config: {
       ...request.config,
       systemInstruction: request.config.systemInstruction + "\nDein letzter Versuch hat eine frühere Antwort wortgleich wiederholt. Beantworte die neueste Frage mit einer neuen Erklärung oder neuen konkreten Informationen."
-    } }, { label: "slash_ai_repetition", maxRetries: 1 });
+    } }, {generate:generateGeminiContent,label:"slash_ai_repetition",fallbackModel:GEMINI_MODEL,plan:reasoningPlan});
     answer = String(retry.text || "").trim();
     response = retry;
     if (!answer) throw new Error("AI_EMPTY_RESPONSE");
     if (repeatedAnswer(answer)) throw new Error("AI_REPEATED_RESPONSE");
   }
+  response = await reasoning.reviewAnswer(request,response,{generate:generateGeminiContent,plan:reasoningPlan,
+    enabled:typeof process === "undefined" || process.env.GEMINI_ANSWER_REVIEW !== "false"});
+  answer = String(response.text || "").trim();
+  if (!answer) throw new Error("AI_EMPTY_RESPONSE");
+  if (repeatedAnswer(answer)) throw new Error("AI_REPEATED_RESPONSE");
   const sources = aiQuality().researchSources(response);
   if (sources.length) answer += "\n\nQuellen: " + sources.map(s => `[${s.title}](${s.url})`).join(" • ");
   rememberAiExchange(guildId, userId, question, answer, channelId);
@@ -2729,7 +2743,7 @@ ${await aiServerContext(message.guild?.id,ticket.ownerId || message.author.id)}`
     input,
     system_instruction: systemInstruction,
     tools: [{type: "google_search"}],
-    generation_config: {thinking_level: "high", max_output_tokens: 6000}
+    generation_config: {thinking_level: "high", max_output_tokens: 12000}
   };
   if (ticket.previousInteractionId) request.previous_interaction_id = ticket.previousInteractionId;
   let interaction, answer;
@@ -2749,6 +2763,7 @@ ${await aiServerContext(message.guild?.id,ticket.ownerId || message.author.id)}`
     answer = formatSupportAnswer(interaction);
   } catch (error) {
     if (["AI_BLOCKED_RESPONSE", "AI_QUEUE_FULL", "AI_QUEUE_TIMEOUT", "AI_SHUTTING_DOWN"].includes(error?.message)) throw error;
+    if (geminiStatus(error) === 429) throw error;
     console.warn("Ticket AI: using local-context fallback", geminiStatus(error) || error?.name || "Error");
     // A separate supported API path, with the SAME facts, feedback, dialogue and images.
     const response = await generateGeminiContent({
@@ -2756,11 +2771,11 @@ ${await aiServerContext(message.guild?.id,ticket.ownerId || message.author.id)}`
       contents: [{role: "user", parts: input.map(part => part.type === "image"
         ? {inlineData: {data: part.data, mimeType: part.mime_type}}
         : {text: part.text})}],
-      config: {
+      config: require("./ai_reasoning").modelConfig(GEMINI_MODEL || GEMINI_FALLBACK_MODEL,{deep:true,detailed:true},{
         systemInstruction: systemInstruction + "\nRECHERCHE-STATUS: Für diese Ersatzantwort steht KEINE Websuche zur Verfügung. Behaupte keine aktuelle Prüfung. Gib zeitstabile Schritte und kennzeichne unverifizierbare aktuelle Informationen knapp.",
         maxOutputTokens: 4000, temperature: 0.35, topP: 0.9,
         httpOptions: {timeout: 45000}
-      }
+      })
     }, {label: "ticket_ai_fallback", maxRetries: 1});
     answer = String(response.text || "").trim();
     if (!answer) throw new Error("AI_EMPTY_RESPONSE");
@@ -2822,13 +2837,15 @@ async function runTicketAi(message) {
     if (!db.tickets[message.channel.id]?.aiEnabled || ticket.status === "closed") { await petResponse?.cancel(); return true; }
     if (err?.message === "GEMINI_NOT_CONFIGURED") {
       await sendTicketAiError("⚙️ **AI ist noch nicht eingerichtet.** Der Owner muss `GEMINI_API_KEY` in Railway eintragen. Dein Ticket bleibt für menschlichen Support offen.");
+    } else if (Number(err?.status || err?.statusCode) === 429) {
+      await sendTicketAiError("⏳ **Das Gemini-Kontingent oder Anfragelimit ist erreicht.** Pixel wartet vor weiteren Anfragen. Dein Ticket und Verlauf bleiben erhalten; nutze bei Bedarf **Get Human Support**.").catch(() => {});
     } else if (["AI_QUEUE_FULL", "AI_QUEUE_TIMEOUT", "AI_SHUTTING_DOWN"].includes(err?.message)) {
       await sendTicketAiError(chatAiErrorMessage(err) + " Dein Ticket bleibt offen; du kannst **Get Human Support** nutzen.").catch(() => {});
     } else if (String(err?.message || "").includes("TIMEOUT")) {
       console.error("Ticket AI timeout:", err?.message || err);
       await sendTicketAiError("⏱️ **Die AI antwortet gerade zu langsam.** Ich habe die Anfrage abgebrochen, damit das Ticket nicht hängen bleibt. Bitte versuche es erneut oder nutze **Get Human Support**.").catch(() => {});
     } else {
-      console.error("Ticket AI error:", err);
+      console.error("Ticket AI error:", Number(err?.status || err?.statusCode) || err?.name || "Error");
       await sendTicketAiError("❌ **Die AI hatte ein technisches Problem.** Dein Ticket bleibt offen. Bitte versuche es erneut oder nutze **Get Human Support**.").catch(() => {});
     }
   }
@@ -3780,6 +3797,11 @@ function setupCheckPayload(guild, smartSetup, setupResult = {}) {
     embed.addFields({ name: "Konnte nicht eingerichtet werden", value: lines.join("\n").slice(0, 1024) });
   }
 
+  if (setupResult.roles) {
+    const roles=setupResult.roles;
+    embed.addFields({name:"🌈 Rollen-Design",value:`${roles.created} neu · ${roles.edited} gestaltet · ${roles.reused} übernommen.\n${roles.failed.length ? roles.failed.slice(0,3).map(r=>`${r.name}: ${r.code}`).join("\n").slice(0,850) : "Rollenfarben und Namen sind eingerichtet. Vorhandene Zuweisungen und Rechte bleiben erhalten."}`});
+  }
+
   if (missingLines.length) embed.addFields({ name: "Fehlende Kanäle", value: missingLines.join("\n").slice(0, 1024) });
   else embed.addFields({ name: "✅ Alle benötigten Kanäle erkannt", value: "Es wurde kein neuer Kanal erstellt." });
 
@@ -3905,10 +3927,20 @@ async function runSetupCheck(interaction) {
     console.warn("Setup check failed:", err?.message || err);
     return { scanned: 0, reused: 0, selected: [], aiUsed: false, scanFailed: true };
   });
+  let roles;
+  if (!smartSetup.scanFailed) {
+    try {
+      const roleTools=require("./setup_roles"),gd=guildData(interaction.guild.id),style=gd.roleDesign?.style || "clean";
+      if (interaction.guild.members.fetchMe) await interaction.guild.members.fetchMe({force:true});
+      const operations=await roleTools.prepareRoleOperations(interaction.guild,gd,style,true);
+      roles=await roleTools.applyRoleOperations(interaction.guild,gd,operations,saveDB,style);
+    } catch { roles={created:0,edited:0,reused:0,failed:[{name:"Setup-Rollen",code:"Rollen konnten nicht eingerichtet werden. Bot-Rechte prüfen und /setup erneut ausführen."}]}; }
+  }
   const setupResult = await configureFoundSetupChannels(interaction.guild, smartSetup).catch(err => {
     console.warn("Setup auto-configure failed:", err?.message || err);
     return { configured: [], connected: [], failed: [{ canonical: "setup", channelId: null, error: String(err?.message || err) }] };
   });
+  if (roles) setupResult.roles=roles;
   return interaction.editReply({ content: "", ...setupCheckPayload(interaction.guild, smartSetup, setupResult) });
 }
 
@@ -4038,6 +4070,8 @@ function getServerSetupDesigner() {
       guildData, saveDB, generateGeminiContent,
       model: GEMINI_MODEL,
       aiConfigured: () => Boolean(GEMINI_API_KEY),
+      prepareRoles: (guild,gd,style,restyle) => require("./setup_roles").prepareRoleOperations(guild,gd,style,restyle),
+      applyRoles: (guild,gd,operations,style) => require("./setup_roles").applyRoleOperations(guild,gd,operations,saveDB,style),
       purposeAliases: SMART_SETUP_PURPOSES,
       getStaffChannels: guildId => db.staff?.[guildId]?.channels || {},
       setupLocks: setupInProgress,
@@ -5027,6 +5061,9 @@ client.on("interactionCreate", async interaction => {
         }
 
         case "ai": {
+          if (!interaction.guild?.id) {
+            return interaction.reply({content:"🤖 Nutze `/ai` bitte in einem Server-Textkanal. In einer Direktnachricht ist kein Server-Kontext verfügbar.",flags:MessageFlags.Ephemeral});
+          }
           if (!serverSettings(interaction.guild.id).aiEnabled) {
             return interaction.reply({ content: "🤖 Die normale AI ist auf diesem Server in `/settings` ausgeschaltet.", flags: MessageFlags.Ephemeral });
           }

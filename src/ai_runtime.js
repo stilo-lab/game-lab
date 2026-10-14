@@ -21,7 +21,13 @@ function retryAfterMs(error, now = Date.now()) {
     if (Number.isFinite(date)) return Math.max(0, date - now);
   }
   const match = String(error?.message || '').match(/retry[- ]?after[^0-9]{0,12}(\d+)/i);
-  return match ? Number(match[1]) * 1000 : null;
+  if (match) return Number(match[1])*1000;
+  for (const row of [...(Array.isArray(error?.details)?error.details:[]),...(Array.isArray(error?.error?.details)?error.error.details:[])]) {
+    const delay=String(row?.retryDelay || '').match(/^(\d+(?:\.\d+)?)s$/);
+    if(delay)return Math.ceil(Number(delay[1])*1000);
+  }
+  const embedded=String(error?.message || '').match(/"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"|please retry in\s*(\d+(?:\.\d+)?)s/i);
+  return embedded?Math.ceil(Number(embedded[1] || embedded[2])*1000):null;
 }
 function delay(ms, signal) {
   return new Promise((resolve, reject) => {
@@ -78,18 +84,22 @@ function createScheduler({ queues = new Map(), maxQueued = 8, maxTotalQueued = 4
         const aborted = new Promise((resolve, reject) => { rejectAbort = () => reject(attemptController.signal.reason); });
         attemptController.signal.addEventListener('abort', rejectAbort, { once: true });
         try {
-          return await Promise.race([Promise.resolve().then(() => {
+          const value=await Promise.race([Promise.resolve().then(() => {
             if (attemptController.signal.aborted) throw attemptController.signal.reason;
             return job.task(attemptController.signal);
           }), aborted]);
+          queue.lastStatus=null;
+          return value;
         } catch (error) {
           if (attemptController.signal.aborted) throw attemptController.signal.reason;
-          if (!isRetryable(error) || attempt >= retries) throw error;
+          if (!isRetryable(error)) throw error;
           const retryAfter = retryAfterMs(error);
-          const backoff = retryAfter ?? Math.min(30000, 2500 * 2 ** attempt + Math.floor(random() * 600));
+          const status=Number(error?.status || error?.statusCode);
+          const backoff = retryAfter ?? (status===429?60000:Math.min(30000, 2500 * 2 ** attempt + Math.floor(random() * 600)));
           // Keep a server-requested cooldown, but do not hold this job for hours.
           queue.nextAt = Math.max(queue.nextAt, Date.now() + backoff);
-          if (backoff >= deadline - Date.now()) throw error;
+          queue.lastStatus=status;
+          if (attempt >= retries || backoff >= deadline - Date.now() || (status===429 && backoff>=queueTimeoutMs)) throw error;
           onRetry({ label: job.options.label, attempt: attempt + 1, maxRetries: retries, delayMs: backoff, status: error?.status || error?.statusCode });
         } finally {
           clearTimeout(timer);
@@ -113,6 +123,11 @@ function createScheduler({ queues = new Map(), maxQueued = 8, maxTotalQueued = 4
     const key = String(model || 'default');
     let queue = queues.get(key);
     if (!queue) { queue = { active: false, pending: [], nextAt: 0 }; queues.set(key, queue); }
+    if(queue.lastStatus===429 && queue.nextAt-Date.now()>=bounded(options.queueTimeoutMs,queueTimeoutMs,5,120000)) {
+      totals.rejected+=1;
+      const error=failure('AI_QUEUE_TIMEOUT');error.status=429;error.retryAfterMs=queue.nextAt-Date.now();
+      return Promise.reject(error);
+    }
     const pending = [...queues.values()].reduce((count, item) => count + item.pending.length, 0);
     if (queue.active && (queue.pending.length >= maxQueued || pending >= maxTotalQueued)) {
       totals.rejected += 1; prune(); return Promise.reject(failure('AI_QUEUE_FULL'));

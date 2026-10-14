@@ -36,8 +36,23 @@ function parseFeed(xml, expectedChannelId) {
     throw new Error('YouTube hat keinen gültigen Video-Feed geliefert.');
   }
   const header = xml.split(/<entry\b/i)[0];
-  const channelId = textTag(header, 'yt:channelId');
-  if (channelId !== expectedChannelId) throw new Error('Die Kanal-ID im YouTube-Feed stimmt nicht überein.');
+  const identities=[];
+  const declared=textTag(header,'yt:channelId');
+  if(declared)identities.push(declared);
+  const atomId=textTag(header,'id');
+  if(atomId.startsWith('yt:channel:'))identities.push(atomId.slice('yt:channel:'.length));
+  for(const link of header.matchAll(/<link\b[^>]*>/gi)) {
+    const a=attrs(link[0]);
+    if(a.rel!=='self')continue;
+    try {
+      const url=safeYoutubeUrl(a.href);
+      if(['/feeds/videos.xml','/xml/feeds/videos.xml'].includes(url.pathname) && url.searchParams.has('channel_id')) identities.push(url.searchParams.get('channel_id'));
+    } catch {}
+  }
+  // Official Atom notifications can omit a top-level yt:channelId. The self link
+  // still identifies the feed, and every video below must belong to that channel.
+  if(!identities.length || identities.some(id=>id!==expectedChannelId)) throw new Error('Die Kanal-ID im YouTube-Feed stimmt nicht überein oder fehlt. Das Abo wurde nicht verändert; direkten Kanal-Link bzw. YOUTUBE_API_KEY prüfen.');
+  const channelId=expectedChannelId;
   const videos = [];
   const ids = new Set();
   const entries = [...xml.matchAll(/<entry(?:\s[^>]*)?>([\s\S]*?)<\/entry>/gi)];

@@ -224,6 +224,7 @@ function createServerSetupDesigner({ guildData, saveDB, generateGeminiContent, m
   purposeAliases = [], setupLocks = new Set(), configure, findSupportRole, upsertPanel,
   getStaffChannels = () => ({}),
   canResetServer = () => false, getResetBlockers = () => [], onResetPrepared = async () => {},
+  prepareRoles = null, applyRoles = null,
   isMaintenance = () => false, now = () => Date.now(), logger = console }) {
   const sessions = new Map();
   const userId = i => i.user?.id;
@@ -281,6 +282,13 @@ function createServerSetupDesigner({ guildData, saveDB, generateGeminiContent, m
     }
     embeds.push(new EmbedBuilder().setColor(0x5b9cff).setTitle(`🎨 ${s.plan.title}`)
       .setDescription(previewText).setFooter({text:`Vorschau ${s.page+1}/${pages} · ➕ neu · ✏️ gestalten · ♻️ übernehmen`}));
+    if (ops.roles) {
+      const roleCounts=ops.roles.reduce((out,r)=>{out[r.action]=(out[r.action] || 0)+1;return out;},{});
+      const roleLines=ops.roles.map(r=>`${r.action==='create'?'➕':r.action==='edit'?'🎨':r.action==='blocked'?'⚠️':'♻️'} ${r.action==='keep'?r.existing.name:r.name} · #${r.color.toString(16).padStart(6,'0')} · ${r.group}`);
+      files.push({attachment:Buffer.from(roleLines.join('\n'),'utf8'),name:'pixel-rollen-vorschau.txt'});
+      embeds.push(new EmbedBuilder().setColor(0xc69aff).setTitle('🌈 Rollen passend zu deinem Design')
+        .setDescription(`${roleCounts.create || 0} neu · ${roleCounts.edit || 0} gestalten · ${roleCounts.keep || 0} übernehmen${roleCounts.blocked?` · ${roleCounts.blocked} Zuordnung prüfen`:''}\n\n${roleLines.slice(0,9).join('\n')}\n\nAlle Rollen stehen in der Vorschau-Datei. Bestehende Zuweisungen und Rechte bleiben erhalten. Neue Rollen vergeben keine Verwaltungsrechte; Team-Rollen werden manuell zugewiesen.`));
+    }
     return safe({
       content:`${notice ? notice+'\n\n' : ''}**${counts.create} neu · ${counts.edit} umbenennen/verschieben · ${counts.keep} übernehmen**\n**Design: ${PRESETS.find(p => p.id === s.style)?.label || 'Eigenes KI-Design'}**${s.wish ? `\nWunsch: ${s.wish.slice(0,350)}` : ''}\n${s.reset ? `🗑️ **${s.operations.deletions.length} alte Kanäle/Kategorien löschen.** Liste und Struktursicherung stehen in den angehängten Dateien. Nachrichten, Threads, Webhooks und Einladungen dieser Kanäle gehen verloren; die Sicherung enthält keine Nachrichten. Vor dem Start verlangt der Bot „${resetTools.CONFIRMATION}“. Er baut zuerst den neuen Aufbau und löscht erst nach erfolgreicher Einrichtung.` : '♻️ **Alte Kanäle behalten.** Chatverläufe und bestehende Kanalrechte bleiben erhalten.'}\nNeue Team-Kanäle sind privat. Bot-Panels und benötigte Bot-Rollen werden eingerichtet. Die Reihenfolge der Vorschau wird angewendet; Discord gruppiert Text und Voice innerhalb einer Kategorie getrennt.\n${extra ? 'Die vollständige Seite steht zusätzlich in der Textdatei.\n' : ''}**Erst „Anwenden“ verändert deinen Server.**`,
       embeds, attachments:[],
@@ -301,6 +309,10 @@ function createServerSetupDesigner({ guildData, saveDB, generateGeminiContent, m
     if (s.pending && (!pending || pending.id !== s.pending.id)) throw new Error('Dieser gespeicherte Neustart wurde inzwischen beendet oder ersetzt. Starte /serversetup neu.');
     if (pending && pending.id !== s.pending?.id) throw new Error('Auf diesem Server ist ein Neustart offen. Starte /serversetup neu, um dessen gespeicherte Vorschau zu prüfen.');
     s.operations = buildOperations(s.plan, guild, guildData(guild.id), s.reset ? true : s.restyle, purposeAliases, getStaffChannels(guild.id), s.reset ? (s.pending || {}) : null);
+    if (prepareRoles) {
+      s.operations.roles=await prepareRoles(guild,guildData(guild.id),s.style,s.restyle);
+      s.operations.fingerprint=digest({channels:s.operations.fingerprint,roles:s.operations.roles});
+    }
     s.revision++; s.expires = now()+TTL;
   }
   async function open(interaction) {
@@ -366,13 +378,15 @@ function createServerSetupDesigner({ guildData, saveDB, generateGeminiContent, m
     if (guild.members.fetchMe) await guild.members.fetchMe({force:true});
     botCanApply(guild);
     const gd = guildData(guild.id);
+    const roleResult=applyRoles && s.operations.roles ? await applyRoles(guild,gd,s.operations.roles,s.style) : null;
+    if (roleResult?.failed.length) return {created:0,edited:0,reused:0,roles:roleResult,failed:roleResult.failed,deleted:0,remaining:s.operations.deletions?.length || 0};
     const reset=s.reset ? resetTools.startReset(guild,gd,s,getStaffChannels(guild.id),saveDB) : null;
     if (reset) {s.pending=reset;resetTools.assertOldChannelsUnchanged(guild,reset);}
     const supportRole = await findSupportRole(guild);
     if (supportRole) gd.supportRoleId = supportRole.id;
     const record = reset ? reset.replacements : (gd.serverDesign ||= {categories:{},channels:{}});
     record.categories ||= {}; record.channels ||= {};
-    const done = {created:0,edited:0,reused:0,failed:[]};
+    const done = {created:0,edited:0,reused:0,failed:[],...(roleResult?{roles:roleResult}:{})};
     const parents = new Map();
     const reason = 'Pixel Server-Setup: bestätigte Design-Vorschau';
     for (const cat of s.operations.categories) {
@@ -561,7 +575,7 @@ function createServerSetupDesigner({ guildData, saveDB, generateGeminiContent, m
         const result = await apply(s,interaction.guild);
         const problems = result.failed.slice(0,8).map(x => `• ${x.name}: ${x.code}`).join('\n');
         s.done = true;
-        const finalPayload=safe({content:`${result.failed.length ? '⚠️ Setup teilweise abgeschlossen' : '✅ Server-Setup fertig'}\n**${result.created} neu · ${result.edited} gestaltet · ${result.reused} übernommen**\n${s.reset ? `🗑️ ${result.deleted} alte Kanäle/Kategorien gelöscht · ${result.remaining} verblieben. Die Struktursicherung ist gespeichert.\n` : ''}${problems ? `\n${problems}\n${result.failed.length > 8 ? `Weitere Fehler: ${result.failed.length-8}.\n` : ''}Du kannst /serversetup erneut starten; bereits erstellte Kanäle werden wiederverwendet.` : s.reset ? 'Dein neuer Aufbau ist fertig und die Bot-Funktionen sind damit verbunden.' : 'Dein Design ist gespeichert. Vorhandene Nachrichten und Kanalrechte sind erhalten.'}`,embeds:[],components:[]});
+        const finalPayload=safe({content:`${result.failed.length ? '⚠️ Setup teilweise abgeschlossen' : '✅ Server-Setup fertig'}\n**${result.created} neu · ${result.edited} gestaltet · ${result.reused} übernommen**\n${result.roles ? `🌈 Rollen: ${result.roles.created} neu · ${result.roles.edited} gestaltet · ${result.roles.reused} übernommen.\n` : ''}${s.reset ? `🗑️ ${result.deleted} alte Kanäle/Kategorien gelöscht · ${result.remaining} verblieben. Die Struktursicherung ist gespeichert.\n` : ''}${problems ? `\n${problems}\n${result.failed.length > 8 ? `Weitere Fehler: ${result.failed.length-8}.\n` : ''}Du kannst /serversetup erneut starten; bereits erstellte Kanäle werden wiederverwendet.` : s.reset ? 'Dein neuer Aufbau ist fertig und die Bot-Funktionen sind damit verbunden.' : 'Dein Design ist gespeichert. Vorhandene Nachrichten und Kanalrechte sind erhalten.'}`,embeds:[],components:[]});
         try {await interaction.editReply(finalPayload);} catch(error) {
           if (!s.reset) throw error;
           // The command's original channel may now be gone. Keep the journal and report in a new public channel.
