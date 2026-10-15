@@ -332,7 +332,6 @@ function createServerSetupDesigner({ guildData, saveDB, generateGeminiContent, m
     return interaction.reply({...(s.pending ? previewPayload(s,`Ein Neustart wurde unterbrochen (${pending.deleted.length} bereits gelöscht). Prüfe die verbliebenen alten Kanäle. „Fortsetzen“ nutzt die vorhandenen neuen Kanäle; die ursprüngliche Löschliste wird nicht erweitert. „Neustart beenden“ behält den aktuellen Aufbau und beendet weitere Löschungen.`) : choicePayload(s)),flags:MessageFlags.Ephemeral});
   }
   async function modal(interaction,s) {
-    if (!aiConfigured()) return reject(interaction,'⚙️ Für ein eigenes KI-Design fehlt GEMINI_API_KEY. Die drei Vorlagen funktionieren auch ohne KI.');
     const input = new TextInputBuilder().setCustomId('wish').setLabel('Wie soll dein Server aussehen?').setStyle(TextInputStyle.Paragraph)
       .setRequired(true).setMinLength(3).setMaxLength(1800)
       .setPlaceholder(s.style && s.style !== 'custom' && !s.freeModal ? 'Gaming-Voice über Chill; Minecraft-Kategorie; drei Voice-Chats. Dein Stil bleibt.' : 'Blau, keine Schmuckschrift, fünf Textkanäle, zwei Voice-Kanäle, privater Team-Bereich.');
@@ -347,6 +346,7 @@ function createServerSetupDesigner({ guildData, saveDB, generateGeminiContent, m
       responseMimeType:'application/json', temperature:0.6, maxOutputTokens:6500, httpOptions:{timeout:45000}
     }},{label:'server_setup_design',maxRetries:1}); }
     catch (error) {
+      if(error.offline)throw error;
       const code = Number(error?.status || error?.statusCode);
       throw new Error(code === 429 ? 'Das KI-Limit ist erreicht. Versuche es später oder wähle eine Vorlage.' : 'Die KI konnte gerade keinen Entwurf erstellen. Versuche es erneut oder wähle eine Vorlage.');
     }
@@ -522,7 +522,6 @@ function createServerSetupDesigner({ guildData, saveDB, generateGeminiContent, m
         if (!interaction.isModalSubmit?.()) throw new Error('Ungültige Eingabe.');
         const wish = interaction.fields.getTextInputValue('wish').trim();
         if (wish.length < 3 || wish.length > 1800) throw new Error('Beschreibe deinen Wunsch in 3–1800 Zeichen.');
-        if (!aiConfigured()) throw new Error('GEMINI_API_KEY fehlt. Die drei Vorlagen funktionieren ohne KI.');
         s.busy = true;
         await interaction.deferReply({flags:MessageFlags.Ephemeral});
         await interaction.editReply(safe({content:'🪄 Ich entwerfe deine Kanalstruktur …'}));

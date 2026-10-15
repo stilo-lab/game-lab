@@ -1563,7 +1563,7 @@ function sleep(ms) {
 }
 
 async function getGeminiClient() {
-  if (!GEMINI_API_KEY) return null;
+  if (!GEMINI_API_KEY || (typeof process !== "undefined" && process.env.PIXEL_AI_MODE === "offline")) return null;
   if (!geminiClientPromise) {
     geminiClientPromise = import("@google/genai").then(({ GoogleGenAI }) =>
       new GoogleGenAI({ apiKey: GEMINI_API_KEY })
@@ -1599,7 +1599,7 @@ async function runGeminiTask(task, { label = "gemini", maxRetries = 3, model = G
 
 async function generateGeminiContent(request, { label = "generateContent", maxRetries = 3 } = {}) {
   const ai = await getGeminiClient();
-  if (!ai) throw new Error("GEMINI_NOT_CONFIGURED");
+  if (!ai) return require("./offline_assistant").request(request,label);
   const primary = request.model || GEMINI_MODEL;
   try {
     return await runGeminiTask(signal => ai.models.generateContent({ ...request, model: primary, config: {
@@ -1608,11 +1608,13 @@ async function generateGeminiContent(request, { label = "generateContent", maxRe
   } catch (err) {
     if (GEMINI_FALLBACK_MODEL && GEMINI_FALLBACK_MODEL !== primary && geminiStatus(err) !== 429 && isRetryableGeminiError(err)) {
       console.warn(`[Gemini] ${label}: Fallback auf ${GEMINI_FALLBACK_MODEL}.`);
-      return runGeminiTask(signal => ai.models.generateContent({ ...request, model: GEMINI_FALLBACK_MODEL, config: {
+      try { return await runGeminiTask(signal => ai.models.generateContent({ ...request, model: GEMINI_FALLBACK_MODEL, config: {
         ...request.config, abortSignal: signal, httpOptions: { timeout: 45000, ...request.config?.httpOptions }
-      } }), { label: `${label}_fallback`, maxRetries: 1, model: GEMINI_FALLBACK_MODEL });
+      } }), { label: `${label}_fallback`, maxRetries: 1, model: GEMINI_FALLBACK_MODEL }); }
+      catch (fallbackError) {if(["AI_QUEUE_FULL","AI_QUEUE_TIMEOUT","AI_SHUTTING_DOWN"].includes(fallbackError?.message) && geminiStatus(fallbackError)!==429)throw fallbackError;}
     }
-    throw err;
+    if(["AI_QUEUE_FULL","AI_QUEUE_TIMEOUT","AI_SHUTTING_DOWN"].includes(err?.message) && geminiStatus(err)!==429)throw err;
+    return require("./offline_assistant").request(request,label);
   }
 }
 
@@ -2129,6 +2131,10 @@ async function generateAiChatAnswer(question, userTag, guildId, userId, channelI
   const history = getAiConversation(guildId, userId, channelId);
   const contextQuery = aiQuality().knowledgeQuery(question, history);
   const learnedContext = getGuildLearnContext(guildId, "ai", 4000, 5000, contextQuery);
+  if ((typeof GEMINI_API_KEY !== "undefined" && !GEMINI_API_KEY) || (typeof process !== "undefined" && process.env.PIXEL_AI_MODE === "offline")) {
+    const answer=require("./offline_assistant").chat(question,{knowledge:learnedContext.knowledge,history});
+    rememberAiExchange(guildId,userId,question,answer,channelId);return answer;
+  }
   const adminFeedback = getAiFeedbackText(guildId, "ai", 4500, contextQuery);
   const repeatedQuestion = isRepeatedAiQuestion(history, question);
   const serverContext = await aiServerContext(guildId,userId);
@@ -2241,7 +2247,7 @@ ${reasoningPlan.guidance}`,
   let answer = String(response.text || "").trim();
   if (!answer) throw new Error("AI_EMPTY_RESPONSE");
   const normalizeAnswer = text => String(text).toLowerCase().replace(/\s+/g, " ").trim();
-  const repeatedAnswer = text => text.length >= 60 && history.filter(item => item.role === "model").slice(-2)
+  const repeatedAnswer = text => !response.offline && text.length >= 60 && history.filter(item => item.role === "model").slice(-2)
     .some(item => normalizeAnswer(item.parts?.[0]?.text) === normalizeAnswer(text));
   if (repeatedAnswer(answer)) {
     const retry = await reasoning.generateAnswer({ ...request, config: {
@@ -2265,6 +2271,8 @@ ${reasoningPlan.guidance}`,
 }
 
 const ticketAiQueues = new Map();
+const ticketAiPending = new Map();
+const ticketAiQueueWarnings = new Map();
 
 function ticketOwnerId(channel) {
   const topic = channel?.topic || "";
@@ -2700,7 +2708,13 @@ function aiPulseButtons(id) {
 
 async function askGeminiSupport(message, ticket) {
   const ai = await getGeminiClient();
-  if (!ai) throw new Error("GEMINI_NOT_CONFIGURED");
+  if (!ai) {
+    const quality=aiQuality(),text=message.content?.trim() || "Bitte beschreibe den Inhalt des Anhangs als Text.";
+    const recent=quality.ticketContext(await withTimeout(fetchTicketMessages(message.channel,60),10000,"offline_ticket_context").catch(()=>[]),message,client.user?.id);
+    const query=[text,...recent.filter(m=>m.role==='user').slice(-3).map(m=>m.text)].join('\n');
+    const learned=getGuildLearnContext(message.guild?.id,'support',4000,5500,query);
+    return require("./offline_assistant").chat(text,{support:true,faq:findFaqMatch(text)||findFaqMatch(query),knowledge:learned.knowledge,history:recent.map(m=>({role:m.role==='user'?'user':'model',parts:[{text:m.text}]}))});
+  }
   const quality = aiQuality();
   const text = message.content?.trim() || (message.attachments.size ? "Bitte prüfe die angehängten Bilder und hilf mir bei dem sichtbaren Problem." : "Bitte hilf mir bei meinem Support-Anliegen.");
   const [imageParts, recentMessages] = await Promise.all([
@@ -2763,7 +2777,6 @@ ${await aiServerContext(message.guild?.id,ticket.ownerId || message.author.id)}`
     answer = formatSupportAnswer(interaction);
   } catch (error) {
     if (["AI_BLOCKED_RESPONSE", "AI_QUEUE_FULL", "AI_QUEUE_TIMEOUT", "AI_SHUTTING_DOWN"].includes(error?.message)) throw error;
-    if (geminiStatus(error) === 429) throw error;
     console.warn("Ticket AI: using local-context fallback", geminiStatus(error) || error?.name || "Error");
     // A separate supported API path, with the SAME facts, feedback, dialogue and images.
     const response = await generateGeminiContent({
@@ -2854,11 +2867,22 @@ async function runTicketAi(message) {
 
 function enqueueTicketAi(message) {
   const channelId = message.channel.id;
+  if((ticketAiPending.get(channelId)||0)>=3) {
+    const last=ticketAiQueueWarnings.get(channelId),now=Date.now();
+    if(last===undefined || now-last>=10000) {
+      ticketAiQueueWarnings.set(channelId,now);
+      message.reply({content:"⏳ Ich bearbeite in diesem Ticket bereits mehrere Nachrichten. Warte bitte auf die Antwort; dein Chat bleibt erhalten.",allowedMentions:{parse:[],repliedUser:false}}).catch(()=>{});
+    }
+    return Promise.resolve(true);
+  }
+  ticketAiPending.set(channelId,(ticketAiPending.get(channelId)||0)+1);
   const previous = ticketAiQueues.get(channelId) || Promise.resolve();
   const next = previous
     .catch(() => {})
     .then(() => runTicketAi(message))
     .finally(() => {
+      const left=(ticketAiPending.get(channelId)||1)-1;
+      if(left<=0){ticketAiPending.delete(channelId);ticketAiQueueWarnings.delete(channelId);}else ticketAiPending.set(channelId,left);
       if (ticketAiQueues.get(channelId) === next) ticketAiQueues.delete(channelId);
     });
   ticketAiQueues.set(channelId, next);
@@ -2914,6 +2938,7 @@ function startAiCooldown(userId) {
 }
 
 const commands = [
+  require("./security_guard").command(),
   new SlashCommandBuilder()
     .setName("diagnose")
     .setDescription("Prüft Pixel-Rechte, Kanal-Zuordnungen, AI und Voice privat für dich."),
@@ -3343,6 +3368,13 @@ client.on("messageDelete", message => {
   staff.onMessageDelete(message).catch(() => {});
 });
 
+client.on("messageUpdate", async (_oldMessage,message) => {
+  if(message.partial)try{message=await message.fetch();}catch{return;}
+  if(!message.guild || !isGuildApproved(message.guild.id) || message.author?.bot || hasMassMention(message))return;
+  const guard=getSecurityGuard(),decision=guard.observe({id:message.id+':edit:'+String(message.editedTimestamp || Date.now()),guild:message.guild,author:message.author,member:message.member,content:message.content,mentions:message.mentions,webhookId:message.webhookId});
+  if(decision)await guard.enforce(message,decision);
+});
+
 client.on("voiceStateUpdate", (oldState, newState) => {
   mimicParty?.handleVoiceState(oldState, newState).catch(err => console.warn("Mimic voice-state handler failed:", err?.message || err));
   spotifyParty.handleVoiceState(oldState, newState).catch(err => console.warn("Spotify voice-state handler failed:", err?.message || err));
@@ -3364,7 +3396,12 @@ client.on("messageReactionAdd", async (reaction, user) => {
   await community.onReactionAdd(reaction, user).catch(() => {});
 });
 
-const spamMap = new Map();
+let securityGuard=null;
+function getSecurityGuard() {
+  if(!securityGuard)securityGuard=require("./security_guard").createGuard({guildData,saveDB,ownerId:typeof OWNER_ID==='undefined'?null:OWNER_ID,
+    recordPunishment:(...args)=>staff.recordPunishment(...args),alert:(guild,text)=>staff.auditLog(guild,'🛡️ Security',text)});
+  return securityGuard;
+}
 
 client.on("channelCreate", async channel => {
   const guildId = channel.guild?.id;
@@ -3386,6 +3423,11 @@ client.on("messageCreate", async message => {
   // AI-/Support-Antwort, keine Moderation, kein Counting, keine Übersetzung,
   // kein Suggestions-/Community-System und keine Ticket-Erkennung.
   if (hasMassMention(message)) return;
+
+  if(!message.author.bot) {
+    const guard=getSecurityGuard(),decision=guard.observe(message);
+    if(decision){await guard.enforce(message,decision);return;}
+  }
 
   const gd = repairGuildBindings(message.guild);
   // Commit each number synchronously, before Discord reactions, AI or moderation wait.
@@ -3443,26 +3485,7 @@ client.on("messageCreate", async message => {
   if (serverSettings(message.guild.id).autoModEnabled && await staff.onMessage(message).catch(() => false)) return;
   await community.onMessage(message).catch(() => {});
 
-  // Anti-Spam: sehr schnelles Klick-/Nachrichten-Spammen erkennen, normales Chatten nicht bestrafen.
   const now = Date.now();
-  const key = `${message.guild.id}:${message.author.id}`;
-  const state = spamMap.get(key) || { times: [], strikes: 0 };
-  state.times = state.times.filter(t => now - t < 6000);
-  state.times.push(now);
-
-  if (state.times.length >= 8) {
-    state.strikes += 1;
-    state.times = [];
-    const member = message.member;
-    const minutes = Math.min(60 * 24, 5 * Math.pow(3, state.strikes - 1));
-    try {
-      await member.timeout(minutes * 60000, `Anti-Spam Strike ${state.strikes}`);
-      await staff.recordPunishment(message.guild, message.author.id, null, "timeout", minutes * 60000, `Anti-Spam Strike ${state.strikes}`, "anti-spam");
-      await message.channel.send(`🛡️ ${member} wurde wegen extrem schnellem Spam für **${minutes} Minuten** getimeoutet.`);
-      await ownerNotify(client, `⚠️ Anti-Spam: ${message.author.tag} auf **${message.guild.name}**, Strike ${state.strikes}, Timeout ${minutes} Minuten.`);
-    } catch {}
-  }
-  spamMap.set(key, state);
 
   // Leveling: absichtlich langsam + 60s Cooldown.
   const cooldown = gd.xpCooldowns[message.author.id] || 0;
@@ -4870,6 +4893,10 @@ client.on("interactionCreate", async interaction => {
       return interaction.reply({ content: "🔧 Der Bot ist gerade im Wartungsmodus.", flags: MessageFlags.Ephemeral });
     }
 
+    if(interaction.isChatInputCommand() && interaction.guild && !getSecurityGuard().commandGate(interaction)) {
+      return interaction.reply({content:"🛡️ Zu viele aufwendige Befehle in kurzer Zeit. Warte bitte etwa 20 Sekunden.",flags:MessageFlags.Ephemeral,allowedMentions:{parse:[]}});
+    }
+
     if (String(interaction.customId || "").startsWith("pxnew:")) {
       await getNewAssistant().handleInteraction(interaction);
       return;
@@ -4980,6 +5007,8 @@ client.on("interactionCreate", async interaction => {
         return interaction.reply({ content: `✅ **${canonical}** ist jetzt fest ${channel} zugeordnet. /setup verwendet diese Zuordnung vor der AI-Erkennung.`, flags: MessageFlags.Ephemeral });
       }
       switch (interaction.commandName) {
+        case "security":
+          return await require("./security_guard").handle(interaction,{guildData,saveDB,canManage:canManageBotSettings});
         case "diagnose": {
           return await require("./bot_health").diagnose(interaction, {
             data: db.guilds?.[interaction.guild?.id] || {}, staffChannels: db.staff?.[interaction.guild?.id]?.channels || {},
@@ -5078,10 +5107,6 @@ client.on("interactionCreate", async interaction => {
           if (!interaction.guild || !interaction.channel?.isTextBased?.()) {
             return interaction.reply({ content: "❌ AI Pulse funktioniert nur in einem Server-Textchannel.", flags: MessageFlags.Ephemeral });
           }
-          if (!GEMINI_API_KEY) {
-            return interaction.reply({ content: "⚙️ AI Pulse braucht `GEMINI_API_KEY` in Railway.", flags: MessageFlags.Ephemeral });
-          }
-
           const limit = interaction.options.getInteger("nachrichten") || 50;
           await interaction.deferReply();
           try {
@@ -5572,19 +5597,6 @@ ${lines.join("\n\n")}`.slice(0, 1900), flags: MessageFlags.Ephemeral });
             saveDB();
             return interaction.reply({ content: "🎫 Die Support-AI ist auf diesem Server aktuell in `/settings` ausgeschaltet.", flags: MessageFlags.Ephemeral });
           }
-          if (!GEMINI_API_KEY) {
-            ticket.aiEnabled = false;
-            ticket.previousInteractionId = null;
-            ticket.humanRequested = true;
-            saveDB();
-            await interaction.update({
-              content: "⚙️ **AI support ist noch nicht eingerichtet.** In Railway fehlt `GEMINI_API_KEY`. Das Ticket bleibt für menschlichen Support offen.",
-              components: [ticketEditMessageRow(channelId, interaction.message.id)]
-            });
-            await supportLog(interaction.guild, "⚠️ AI support unavailable", `${interaction.channel} • GEMINI_API_KEY missing`);
-            return;
-          }
-
           ticket.aiEnabled = true;
           ticket.allowAiAfterHandoff = false;
           ticket.previousInteractionId = null;
@@ -5621,7 +5633,6 @@ ${lines.join("\n\n")}`.slice(0, 1900), flags: MessageFlags.Ephemeral });
         if (!ticket || channelId !== interaction.channel.id || ticket.status === "closed") return interaction.reply({ content: "❌ Dieses Ticket ist nicht mehr verfügbar.", flags: MessageFlags.Ephemeral });
         if (!serverSettings(interaction.guild.id).supportAiEnabled) return interaction.reply({ content: "🎫 Die Support-AI ist auf diesem Server aktuell in `/settings` ausgeschaltet.", flags: MessageFlags.Ephemeral });
         if (interaction.user.id !== ticket.ownerId && !isSupportMember(interaction.member, interaction.guild.id)) return interaction.reply({ content: "❌ Nur der Ticket-Ersteller oder das Support-Team kann die AI weiterlaufen lassen.", flags: MessageFlags.Ephemeral });
-        if (!GEMINI_API_KEY) return interaction.reply({ content: "⚙️ Die AI ist noch nicht eingerichtet (`GEMINI_API_KEY` fehlt).", flags: MessageFlags.Ephemeral });
         ticket.aiEnabled = true;
         ticket.humanRequested = true;
         ticket.allowAiAfterHandoff = true;

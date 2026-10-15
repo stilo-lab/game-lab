@@ -73,6 +73,18 @@ function createStaffSystem(ctx) {
   const duplicateSignals = new Map();
   const recentModeratorPunishments = new Map();
   const moderationClassifyCooldowns = new Map();
+  let signalChecks=0;
+  function pruneLocalSignals() {
+    if(++signalChecks%100!==0)return;
+    const cutoff=Date.now()-Math.max(30*60000,INSULT_WINDOW_MS);
+    for(const map of [messageSignals,conflictSignals,joinSignals,duplicateSignals,recentModeratorPunishments,moderationClassifyCooldowns]) {
+      for(const [key,value]of map) {
+        const last=typeof value==='number'?value:Array.isArray(value)?(value.at(-1)?.at ?? value.at(-1) ?? 0):value?.at ?? value?.flags?.at(-1)?.at ?? 0;
+        if(Number(last)<cutoff)map.delete(key);
+      }
+      while(map.size>10000)map.delete(map.keys().next().value);
+    }
+  }
 
   function nowDay(ts = Date.now()) {
     return new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ts));
@@ -450,7 +462,7 @@ function createStaffSystem(ctx) {
   async function answerMediation(message, dispute) {
     const ai = await getGeminiClient();
     if (!ai) {
-      await message.reply({ content: "⚙️ Die AI-Schlichtung braucht `GEMINI_API_KEY`. Der private Channel bleibt offen, damit ihr und das Staff-Team den Fall trotzdem klären könnt.", allowedMentions: { repliedUser: false } });
+      await message.reply({ content: "🧩 Offline-Schlichtung: Beschreibt bitte nacheinander den konkreten Vorfall und eure gewünschte Lösung. Das Team prüft Belege und entscheidet. Der private Kanal bleibt offen; Bilder kann der Offline-Modus nicht auswerten.", allowedMentions: {parse:[], repliedUser: false } });
       return;
     }
     const history = (dispute.history || []).slice(-14).map(h => `${h.userId}: ${h.text}`).join("\n");
@@ -553,6 +565,7 @@ function createStaffSystem(ctx) {
 
   async function onMessage(message) {
     if (!message.guild || message.author.bot) return false;
+    pruneLocalSignals();
     const b = dailyBucket(message.guild.id);
     b.messages += 1;
     b.activeUsers[message.author.id] = true;
@@ -564,6 +577,7 @@ function createStaffSystem(ctx) {
   }
 
   async function onMemberAdd(member) {
+    pruneLocalSignals();
     dailyBucket(member.guild.id).joins += 1;
     const key = member.guild.id;
     const arr = (joinSignals.get(key) || []).filter(t => Date.now() - t < 60000);
@@ -690,8 +704,6 @@ function createStaffSystem(ctx) {
   }
 
   async function askStaffAI(guild, question) {
-    const ai = await getGeminiClient();
-    if (!ai) throw new Error("GEMINI_NOT_CONFIGURED");
     const s = ensureGuild(guild.id);
     const openCases = Object.values(s.cases).filter(c => c.status !== "closed").slice(-20).map(c => ({ id: c.id, userId: c.userId, type: c.type, summary: c.summary, status: c.status }));
     let knowledge = [];
@@ -841,7 +853,6 @@ function createStaffSystem(ctx) {
         if (!c) { await interaction.reply({ content: "❌ Fall nicht gefunden.", flags: MessageFlags.Ephemeral }); return true; }
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         try {
-          const ai = await getGeminiClient(); if (!ai) throw new Error("GEMINI_NOT_CONFIGURED");
           const dispute = c.disputeId ? s.disputes[c.disputeId] : null;
           const material = { case: c, disputeHistory: dispute?.history?.slice(-30) || [] };
           const r = await generateGeminiContent({ model: GEMINI_MODEL, contents: JSON.stringify(material), config: { systemInstruction: "Summarize this Discord moderation case for human staff in German. Include what happened, claims from each side, available evidence, actions already taken, unresolved questions, and what staff should verify next. Do not decide guilt or recommend an automatic punishment.", maxOutputTokens: 1200 } });
@@ -933,7 +944,6 @@ function createStaffSystem(ctx) {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const text = interaction.options.getString("text");
       try {
-        const ai = await getGeminiClient(); if (!ai) throw new Error("GEMINI_NOT_CONFIGURED");
         const r = await generateGeminiContent({ model:GEMINI_MODEL, contents:text, config:{ systemInstruction:"Review this Discord staff application neutrally. Do NOT accept/reject, rank, score, or infer personality. Summarize relevant experience, identify missing/unclear information, flag obvious contradictions or copied/generic phrasing only when supported by the text, and propose 5 interview questions. Answer in German.", maxOutputTokens:1200 } });
         await interaction.editReply(String(r.text || "Keine Analyse.").slice(0,1900));
       } catch(e) { await interaction.editReply(e?.message === "GEMINI_NOT_CONFIGURED" ? "⚙️ `GEMINI_API_KEY` fehlt." : "❌ Review fehlgeschlagen."); }

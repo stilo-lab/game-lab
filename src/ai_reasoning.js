@@ -53,7 +53,7 @@ async function generateAnswer(request,{generate,label='slash_ai',fallbackModel,p
   return response;
 }
 async function reviewAnswer(request,response,{generate,plan,enabled=true}={}) {
-  if(!enabled || !plan.review || !String(response?.text || '').trim()) return response;
+  if(response?.offline || !enabled || !plan.review || !String(response?.text || '').trim()) return response;
   const draft=String(response.text).trim();
   const reviewRequest={model:request.model,contents:[...(Array.isArray(request.contents)?request.contents:[{role:'user',parts:[{text:String(request.contents || '')}]}]),
     {role:'model',parts:[{text:draft}]},
