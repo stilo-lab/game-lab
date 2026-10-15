@@ -1,40 +1,21 @@
-PIXEL START-FIX + MIMIC-SPIELLEITER – VERSION 1.10.1
+PIXEL UPDATE 1.13.0 – NUR UPDATE-DATEIEN
 
-1. ZIP entpacken.
-2. Deinen vorhandenen GitHub-Ordner src öffnen.
-3. ALLE 39 Dateien aus dem ZIP-Ordner src direkt dort hochladen.
-   Gleichnamige Dateien ersetzen. Neue Dateien hinzufügen.
-4. Im Hauptordner package.json und package-lock.json ersetzen.
-5. Falls bei dir Assets fehlen: enthaltenen assets-Ordner samt Unterordnern
-   im Hauptordner übernehmen. Die alten Dateien behalten.
-6. Bot neu deployen / neu starten.
+Für deinen vorhandenen Pixel-Bot aus dieser Unterhaltung
+(ab Version 1.10.1). Enthält alle seitdem nötigen Programmänderungen.
 
-Die Dateien gehören direkt in den vorhandenen src-Ordner.
-Für dieses Update brauchst du keine neuen assets-Ordner.
-Alle bisherigen Dateien und Ordner behalten.
+1. Vorhandenen Botordner sichern und diese ZIP entpacken.
+2. Die 10 Dateien aus src in den VORHANDENEN src-Ordner kopieren:
+   Gleichnamige Dateien ersetzen, neue Dateien hinzufügen.
+   Den vorhandenen src-Ordner behalten, nicht vorher löschen!
+   Richtig: src/security_guard.js – nicht src/src/security_guard.js.
+3. package.json und package-lock.json im Hauptordner ersetzen.
+4. In GitHub den Commit speichern und den Railway-Deploy abwarten.
+   Bei lokalem Betrieb: Bot neu starten (npm start).
 
-Nur wenn du automatische Tests nutzt:
-Auch die Dateien aus tests an ihren jeweiligen Pfaden übernehmen.
+Vorhandene Assets, Datenbank, Zugangsdaten und Variablen behalten.
+Die ZIP ergänzt deinen vorhandenen Bot; sie ist kein komplettes Projekt.
 
-Zum Ausprobieren:
-/new wunsch:Erstelle eine Rolle Helfer, gib ihr Nachrichten verwalten
-und weise sie @DEIN-MITGLIED zu.
-
-In einen Voice-Chat gehen und /mimic lobby verwenden.
-Pixel lädt dann die vorgeschlagenen Originalclips aus dem Internet.
-Mit /mimic originals erneut laden, mit /mimic preview vorhören.
-Weitere echte Aufnahmen kannst du mit /mimic upload hochladen.
-/mimic mic prüft dein Mikrofon.
-
-Die Streamer-Audiodateien sind nicht in der ZIP; der Bot lädt sie nach.
-Die bisherigen KI-Sprachvorlagen sind im normalen Spiel ausgeschaltet.
-Der fehlende src/ai_runtime.js ist jetzt im vollständigen src-Ordner dabei.
-
-Mimic verwendet nur importierte Aufnahmen und deine Uploads.
-Keine erzeugten Übungstöne und keine KI-Sprachvorlagen in der normalen Auswahl.
-Der Spielleiter sagt Ready / Start / Finish / Congratulations.
-/mimic spielleiter lädt und zeigt die Ansagen.
-/mimic ansage erlaubt eigene deutsche Originalansagen.
-Die Ansagen-Audiodateien werden ebenfalls vom Bot nachgeladen.
-
-Weitere Infos, Quellen und Upload-Schritte: README-START-FIX.md
+/security status: Schutz prüfen.
+/security config: Schutz einstellen.
+Ohne Gemini-Verbindung steht die begrenzte lokale Offline-Hilfe bereit.
+Optional erzwingt PIXEL_AI_MODE=offline diesen Modus.
