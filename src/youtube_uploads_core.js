@@ -153,6 +153,16 @@ function channelInput(input) {
   return { page: `https://www.youtube.com/${parts.slice(0, count).join('/')}` };
 }
 
+function jsonObjectAfter(source, marker) {
+  const match=source.match(marker);if(!match)return null;
+  let start=match.index+match[0].length;while(/\s/.test(source[start]||'')&&start<source.length)start++;if(source[start]!=='{')return null;
+  let depth=0,quoted=false,escape=false;
+  for(let i=start;i<Math.min(source.length,start+200000);i++){
+    const ch=source[i];if(quoted){if(escape)escape=false;else if(ch==='\\')escape=true;else if(ch==='"')quoted=false;continue;}
+    if(ch==='"')quoted=true;else if(ch==='{')depth++;else if(ch==='}'&&--depth===0){try{return JSON.parse(source.slice(start,i+1));}catch{return null;}}
+  }
+  return null;
+}
 function channelIdFromPage(html) {
   // Only channel-specific metadata, never arbitrary IDs from recommended videos.
   for (const match of html.matchAll(/<link\b[^>]*>/gi)) {
@@ -163,9 +173,9 @@ function channelIdFromPage(html) {
       if (a.rel === 'canonical' && /^\/channel\/(UC[A-Za-z0-9_-]{22})\/?$/.test(u.pathname)) return u.pathname.split('/')[2];
     } catch {}
   }
-  const metadata = html.match(/"channelMetadataRenderer"\s*:\s*\{([^{}]{0,30000})\}/)?.[1];
-  const id = metadata?.match(/"externalId"\s*:\s*"(UC[A-Za-z0-9_-]{22})"/)?.[1];
-  if (id) return id;
+  const metadata = jsonObjectAfter(html,/"channelMetadataRenderer"\s*:/);
+  const id = metadata?.externalId;
+  if (CHANNEL_ID.test(id)) return id;
   for (const match of html.matchAll(/<meta\b[^>]*>/gi)) {
     const a = attrs(match[0]);
     if (a.itemprop === 'channelId' && CHANNEL_ID.test(a.content)) return a.content;
@@ -176,25 +186,44 @@ function channelIdFromPage(html) {
 async function readFeed(channelId, options = {}) {
   if (!CHANNEL_ID.test(channelId)) throw new Error('Ungültige YouTube-Kanal-ID.');
   const api = options.apiClient === undefined ? configuredApi() : options.apiClient;
-  if (api) return api.readFeed(channelId);
-  const xml = await fetchYoutubeText(`https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`, { ...options, maxBytes: 1_000_000 });
-  return parseFeed(xml, channelId);
+  let apiError;
+  if (api) {try{return {...await api.readFeed(channelId,{force:options.force===true}),source:'api'};}catch(error){apiError=error;}}
+  let feedError;
+  for(const host of ['www.youtube.com','youtube.com']){
+    try{
+      const xml=await fetchYoutubeText(`https://${host}/feeds/videos.xml?channel_id=${channelId}`,{...options,maxBytes:1_000_000});
+      return {...parseFeed(xml,channelId),source:'rss'};
+    }catch(error){feedError=error;}
+  }
+  throw new Error(apiError?`${apiError.message} Auch der öffentliche Upload-Feed ist gerade nicht abrufbar.`:feedError.message);
 }
 
 async function resolveChannel(input, options = {}) {
   const parsed = channelInput(input);
   const api = options.apiClient === undefined ? configuredApi() : options.apiClient;
-  if (api) {
-    if (parsed.id) return api.resolve({ id: parsed.id });
+  if (api) {try{
+    if (parsed.id) return await api.resolve({ id: parsed.id });
     const parts = new URL(parsed.page).pathname.split('/').filter(Boolean).map(decodeURIComponent);
-    if (parts[0].startsWith('@')) return api.resolve({ forHandle: parts[0] });
-    if (parts[0] === 'user') return api.resolve({ forUsername: parts[1] });
+    if (parts[0].startsWith('@')) return await api.resolve({ forHandle: parts[0] });
+    if (parts[0] === 'user') return await api.resolve({ forUsername: parts[1] });
     // Older /c/ names have no API filter. Never guess a different channel by search.
     const id = channelIdFromPage(await fetchYoutubeText(parsed.page, options));
-    return api.resolve({ id });
+    return await api.resolve({ id });
+  }catch{/* A rejected/quota-limited API key must not disable public channel feeds. */}}
+  let html;
+  const channelId = parsed.id || channelIdFromPage(html=await fetchYoutubeText(parsed.page, options));
+  try{return await readFeed(channelId,{...options,apiClient:null});}
+  catch(error){
+    // A verified channel can be saved while its feed is unavailable. sinceAt
+    // still prevents old videos from being posted when the feed recovers.
+    try{
+      html ||= await fetchYoutubeText(`https://www.youtube.com/channel/${channelId}`,options);
+      if(channelIdFromPage(html)!==channelId)throw Error('Channel mismatch');
+      const meta=jsonObjectAfter(html,/"channelMetadataRenderer"\s*:/);
+      const title=meta?.title||textTag(html,'title').replace(/\s*-\s*YouTube$/i,'')||'YouTube-Kanal';
+      return {channelId,title:String(title).slice(0,100),videos:[],deferred:true,warning:String(error.message).slice(0,250)};
+    }catch{throw error;}
   }
-  const channelId = parsed.id || channelIdFromPage(await fetchYoutubeText(parsed.page, options));
-  return readFeed(channelId, options);
 }
 
 function validSubscription(s) {
@@ -287,7 +316,7 @@ function createUploadMonitor({ store, canRun, deliver, fetchFeed = readFeed, now
       if (own.some(s => s.channelId === feed.channelId && s.targetId === targetId)) throw new Error('Dieser YouTube-Kanal ist für diesen Discord-Kanal bereits eingerichtet.');
       if (own.length >= MAX_PER_GUILD) throw new Error(`Maximal ${MAX_PER_GUILD} YouTube-Abos pro Server.`);
       const row = { id, guildId, targetId, channelId: feed.channelId, title: feed.title, sinceAt, pingRoleId,
-        paused: false, seenIds: feed.videos.map(v => v.id).slice(-MAX_SEEN), pending: [], lastCheckedAt: now(), lastSentAt: null, lastError: null };
+        paused: false, seenIds: feed.videos.map(v => v.id).slice(-MAX_SEEN), pending: [], lastCheckedAt: feed.deferred?null:now(), lastSentAt: null, lastError: feed.warning||null };
       if (!validSubscription(row)) throw new Error('Die YouTube-Einstellungen sind ungültig.');
       rows.push(row);
     });
@@ -314,14 +343,14 @@ function createUploadMonitor({ store, canRun, deliver, fetchFeed = readFeed, now
     const actual = assertOwned(id, guildId).id;
     return withLock(actual, () => { assertOwned(actual, guildId); store.commit(rows => rows.splice(rows.findIndex(s => s.id === actual), 1)); });
   }
-  async function processSub(snapshot, feeds) {
+  async function processSub(snapshot, feeds, force = false) {
     if (!canRun(snapshot.guildId) || snapshot.paused) return;
     let feed = null, feedError = null;
     if (!feeds.has(snapshot.channelId)) {
       feeds.set(snapshot.channelId, (async () => {
         const wait = backoff.get(snapshot.channelId);
-        if (wait && wait.until > now()) throw new Error(wait.message);
-        try { const result = await fetchFeed(snapshot.channelId); backoff.delete(snapshot.channelId); return result; }
+        if (!force && wait && wait.until > now()) throw new Error(wait.message);
+        try { const result = await fetchFeed(snapshot.channelId,{force});if(result.channelId!==snapshot.channelId)throw Error('Die gelieferte Kanal-ID stimmt nicht mit dem Abo überein.'); backoff.delete(snapshot.channelId); return result; }
         catch (err) {
           const count = Math.min(6, (wait?.count || 0) + 1);
           backoff.set(snapshot.channelId, { count, until: now() + Math.min(30 * 60_000, 60_000 * 2 ** (count - 1)), message: String(err.message || err).slice(0, 250) });
@@ -362,7 +391,7 @@ function createUploadMonitor({ store, canRun, deliver, fetchFeed = readFeed, now
       }
     });
   }
-  async function tick(guildId = null) {
+  async function tick(guildId = null, {force = false} = {}) {
     if (running) return false;
     running = true;
     try {
@@ -372,7 +401,7 @@ function createUploadMonitor({ store, canRun, deliver, fetchFeed = readFeed, now
       const worker = async () => {
         while (index < queue.length) {
           const sub = queue[index++];
-          try { await processSub(sub, feeds); }
+          try { await processSub(sub, feeds, force); }
           catch (err) { logger.warn('[YouTube uploads] Check failed:', String(err.message || err)); }
         }
       };

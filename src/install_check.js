@@ -2,7 +2,7 @@
 const fs=require('node:fs'),path=require('node:path');
 // Check local core modules before loading the application; optional games keep their isolation.
 function checkInstallation(directory=__dirname){
-  const ignored=new Set(['mimic_party','youtube_uploads']);const seen=new Set(),missing=new Set();
+  const ignored=new Set(['mimic_party','youtube_uploads','vc_music']);const seen=new Set(),missing=new Set();
   function scan(file){
     if(seen.has(file))return;seen.add(file);
     if(!fs.existsSync(file)){missing.add(path.relative(directory,file));return;}

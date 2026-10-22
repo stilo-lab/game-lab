@@ -30,7 +30,8 @@ function buildYouTubeUploadCommands() {
       .addSubcommand(s => s.setName('list').setDescription('YouTube-Abos anzeigen und verwalten.'))
       .addSubcommand(s => s.setName('remove').setDescription('YouTube-Abo entfernen.').addStringOption(o => o.setName('id').setDescription('Abo-ID aus der Übersicht.').setRequired(true)))
       .addSubcommand(s => s.setName('test').setDescription('Letzten Upload als Testmeldung senden.').addStringOption(o => o.setName('id').setDescription('Abo-ID aus der Übersicht.').setRequired(true)))
-      .addSubcommand(s => s.setName('check').setDescription('Neue Uploads dieses Servers jetzt prüfen.'))];
+      .addSubcommand(s => s.setName('check').setDescription('Neue Uploads dieses Servers jetzt frisch prüfen.'))
+      .addSubcommand(s => s.setName('diagnose').setDescription('Upload-Status, Zielrechte und gespeicherte Fehler prüfen.'))];
 }
 
 function createYouTubeUploads({ client, OWNER_ID, isGuildApproved, isMaintenance = () => false,
@@ -157,7 +158,7 @@ function createYouTubeUploads({ client, OWNER_ID, isGuildApproved, isMaintenance
       await validateTarget(i, targetId);
       await validateRole(i.guild.id, targetId, pingRoleId);
       const sub = monitor.add(i.guild.id, targetId, feed, sinceAt, pingRoleId);
-      return i.editReply(detail(sub, '✅ Eingerichtet! Ab jetzt melde ich neue Uploads. Vorhandene Videos werden nicht nachträglich gepostet.'));
+      return i.editReply(detail(sub, feed.deferred?'⚠️ Kanal verifiziert und Abo gespeichert. Der Upload-Abruf ist noch gestört; der Bot versucht es erneut. Details stehen unten.':'✅ Eingerichtet! Ab jetzt melde ich neue Uploads. Vorhandene Videos werden nicht nachträglich gepostet.'));
     }
     const token = makePending(i, { feed, sinceAt, pingRoleId });
     return i.editReply(chooseChannel(token, feed.title));
@@ -178,8 +179,17 @@ function createYouTubeUploads({ client, OWNER_ID, isGuildApproved, isMaintenance
           else if (action === 'list') await i.editReply(overview(i.guild.id));
           else if (action === 'check') {
             rateLimit(`check:${i.guild.id}`, 60_000);
-            const checked = await monitor.tick(i.guild.id);
-            await i.editReply(overview(i.guild.id, checked ? '✅ Prüfung abgeschlossen. Fehler stehen beim jeweiligen Abo.' : 'Eine Prüfung läuft bereits oder konnte nicht beendet werden.'));
+            const checked = await monitor.tick(i.guild.id,{force:true});
+            const problems=monitor.list(i.guild.id).filter(s=>!s.paused&&s.lastError);
+            await i.editReply(overview(i.guild.id, !checked?'Eine Prüfung läuft bereits oder konnte nicht beendet werden.':problems.length?`⚠️ Prüfung beendet: ${problems.length} Abo(s) mit Fehler. ${clean(problems[0].title,60)}: ${clean(problems[0].lastError,250)}`:'✅ Frische Prüfung abgeschlossen. Keine Abruffehler bei aktiven Abos.'));
+          } else if(action==='diagnose') {
+            const lines=[`YouTube-API-Schlüssel: ${process.env.YOUTUBE_API_KEY?.trim()?'gesetzt (öffentlicher Feed als Ersatzweg)':'nicht gesetzt (öffentlicher Feed)'}`,`Automatische Prüfung: ${enabled(i.guild.id)?'aktiv':'angehalten'}; alle ${Math.round(pollMs/60000)} Minuten.`];
+            for(const sub of monitor.list(i.guild.id)){
+              let target='Zielrechte OK';try{await validateTarget(i,sub.targetId);await validateRole(i.guild.id,sub.targetId,sub.pingRoleId);}catch(error){target=error.message;}
+              lines.push(`${clean(sub.title,50)} (${sub.id}): ${sub.paused?'pausiert':'aktiv'}; ${clean(target,150)}; ${sub.pending.length} wartend. ${sub.lastError?'Letzter Fehler: '+clean(sub.lastError,220):'Kein gespeicherter Fehler.'}`);
+            }
+            if(!monitor.list(i.guild.id).length)lines.push('Noch kein Abo vorhanden. Nutze /uploads oder /youtube add.');
+            await i.editReply({content:lines.join('\n').slice(0,1900),embeds:[],components:[],allowedMentions:{parse:[]}});
           } else {
             const sub = monitor.get(i.options.getString('id', true).trim(), i.guild.id);
             if (action === 'remove') { await monitor.remove(sub.id, i.guild.id); await i.editReply(overview(i.guild.id, '✅ Abo entfernt.')); }
@@ -224,7 +234,7 @@ function createYouTubeUploads({ client, OWNER_ID, isGuildApproved, isMaintenance
           await validateRole(i.guild.id, i.values[0], pingRoleId);
           const sub = draft.subId ? await monitor.edit(draft.subId, i.guild.id, { targetId: i.values[0] }) : monitor.add(i.guild.id, i.values[0], draft.feed, draft.sinceAt, pingRoleId);
           pending.delete(id);
-          await i.editReply(detail(sub, '✅ Gespeichert! Neue Uploads werden in diesem Discord-Kanal gemeldet.'));
+          await i.editReply(detail(sub, draft.feed?.deferred?'⚠️ Abo gespeichert. Der Upload-Feed ist noch nicht erreichbar; Details stehen unten.':'✅ Gespeichert! Neue Uploads werden in diesem Discord-Kanal gemeldet.'));
         } finally { draft.busy = false; }
       } else {
         let sub = monitor.get(id, i.guild.id);
@@ -255,7 +265,7 @@ function createYouTubeUploads({ client, OWNER_ID, isGuildApproved, isMaintenance
   }
   async function sendTest(sub) {
     rateLimit(`test:${sub.id}`, 60_000);
-    const feed = await fetchFeed(sub.channelId);
+    const feed = await fetchFeed(sub.channelId,{force:true});
     const video = feed.videos.at(-1);
     if (!video) throw new Error('Dieser Kanal hat noch kein öffentliches Video im Feed.');
     await deliver(sub, video, null, true);

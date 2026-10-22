@@ -1,44 +1,15 @@
 'use strict';
 
 // Deterministic offline helpers: no eval, model downloads, network or server writes.
-const normalize=value=>String(value || '').normalize('NFKC').toLowerCase().replace(/ß/g,'ss').normalize('NFKD').replace(/\p{M}/gu,'').replace(/\s+/g,' ').trim();
-const clean=value=>String(value || '').replace(/@everyone|@here/gi,'[Gruppen-Ping]').slice(0,6000);
+const intelligence=require('./offline_intelligence');
+const offlineActions=require('./offline_actions');
+const normalize=intelligence.normalize,clean=intelligence.safe;
 function texts(request) {
   if(typeof request?.contents==='string')return [request.contents];
   return (Array.isArray(request?.contents)?request.contents:[]).filter(m=>m && (!m.role || m.role==='user')).flatMap(m=>(m.parts || []).filter(p=>typeof p.text==='string').map(p=>p.text));
 }
 function payload(request) {for(const text of texts(request)){try{const value=JSON.parse(text);if(value && typeof value==='object')return value;}catch{}}return {};}
-function arithmetic(question) {
-  const match=String(question).match(/(?:^|\b(?:berechne|rechne|was ist|wieviel ist|wie viel ist)\s*:?)\s*([\d.,\s()+*/^−-]+)\s*\??$/i);
-  if(!match || !/[+*/^−-]/.test(match[1]))return null;
-  const expression=match[1].replace(/,/g,'.').replace(/−/g,'-').replace(/\s/g,'');
-  if(expression.length>300)return null;
-  const tokens=expression.match(/\d+(?:\.\d+)?|[()+*/^-]/g)||[];
-  if(tokens.join('')!==expression || tokens.length>200)return null;
-  let pos=0,operations=0;
-  function primary(){const token=tokens[pos++];if(token==='+' || token==='-'){const value=primary();return token==='-'?-value:value;}if(token==='('){const value=sum();if(tokens[pos++]!==')')throw Error('Klammer fehlt');return value;}if(!/^\d+(?:\.\d+)?$/.test(token || ''))throw Error('Ungültige Rechnung');return Number(token);}
-  function unary(){if(tokens[pos]==='+' || tokens[pos]==='-'){const op=tokens[pos++],value=unary();return op==='-'?-value:value;}return power();}
-  function power(){let value=primary();if(tokens[pos]==='^'){pos++;const exponent=unary();if(Math.abs(exponent)>100)throw Error('Exponent zu groß');value=value**exponent;}return value;}
-  function product(){let value=unary();while(['*','/'].includes(tokens[pos])){const op=tokens[pos++],right=unary();if(++operations>100 || op==='/' && right===0)throw Error('Division durch null');value=op==='*'?value*right:value/right;}return value;}
-  function sum(){let value=product();while(['+','-'].includes(tokens[pos])){const op=tokens[pos++],right=product();if(++operations>100)throw Error('Zu groß');value=op==='+'?value+right:value-right;}return value;}
-  try{const value=sum();if(pos!==tokens.length || !Number.isFinite(value))return null;return `${expression} = ${Number(value.toPrecision(12))}`;}catch{return 'Diese Rechnung ist ungültig oder überschreitet die Grenzen des Offline-Rechners.';}
-}
-function chat(question,{knowledge='',faq=null,history=[],support=false}={}) {
-  history=Array.isArray(history)?history:[];
-  const q=clean(question).trim(),n=normalize(q),math=arithmetic(q);
-  if(math)return math+'\n\n🧩 Offline berechnet.';
-  if(/^(?:hi|hey|yo|hallo|moin|servus)[!?.,\s]*$/.test(n))return 'yo, offline-modus läuft. was brauchst du?';
-  if(/^(?:danke|thx|passt|gelost|geht wieder)[!?.,\s]*$/.test(n))return 'passt, freut mich 🙂';
-  if(faq?.answer)return `📚 Lokale Hilfe:\n${clean(faq.answer)}\n\n🧩 Offline-Modus`;
-  if(String(knowledge).trim())return `📚 Gespeichertes Serverwissen:\n${clean(knowledge).replace(/\[[^\]\n]{1,90}\]/g,'').slice(0,3500)}\n\n🧩 Offline-Modus: aus hinterlegten Angaben, ohne Websuche.`;
-  const previous=history.filter(m=>m.role==='user').slice(-3).map(m=>m.parts?.[0]?.text || m.text || '').join(' ');
-  const focus=/^(?:geht nicht|geht nd|nope|hat nix gebracht|warum|weiter)[!?.,\s]*$/.test(n)?q+' '+previous:q;
-  if(/(?:anti.?spam|security|sicherheit)/i.test(focus))return '🛡️ Nutze `/security status` für den Schutzstatus. Als Serververwaltung kannst du mit `/security config` die Schwellen ändern. Der globale AutoMod-Schalter steht in `/settings`.\n\n🧩 Offline-Hilfe';
-  if(/(?:setup|kanal|rollen?|berechtigung)/i.test(focus))return 'Nutze `/serversetup` für ein Design mit Wunschfeld oder `/new` für gezielte Änderungen. Offline kannst du zum Beispiel schreiben: „Erstelle eine Rolle Helfer“, „Erstelle einen Textkanal clips“ oder „Setze Slowmode in #chat auf 5 Sekunden“. Die Vorschau zeigt, was tatsächlich umgesetzt werden kann.\n\n🧩 Offline-Hilfe';
-  if(/(?:railway|bot.*offline|restart|neustart|cannot find module)/i.test(focus))return 'Prüfe im Railway-Deploy die erste Fehlermeldung und die angezeigte Paketversion. Bei „Cannot find module“ müssen alle mitgelieferten src-Dateien direkt im vorhandenen src-Ordner liegen. Ein Neustart behebt keine fehlende Datei. Welche genaue Meldung steht dort?\n\n🧩 Offline-Hilfe';
-  if(/(?:youtube|upload|404)/i.test(focus))return 'Nutze den direkten YouTube-Kanal-Link oder @Handle, keinen einzelnen Video-Link. Falls YouTube den Feed ablehnt, prüfe das gespeicherte Abo und optional YOUTUBE_API_KEY. Abos und bereits erkannte Videos bleiben erhalten. Welche genaue Meldung erscheint?\n\n🧩 Offline-Hilfe';
-  return support?'🧩 Der Offline-Support ist aktiv. Beschreibe bitte die genaue Fehlermeldung und den letzten Versuch. Ich kann gespeicherte FAQ und Serverwissen nutzen; bei einem unbekannten Problem hilft „Get Human Support“. Bilder und aktuelle Webseiten kann dieser Offline-Modus nicht auswerten.':'🧩 Offline-Modus: Ich kann gespeichertes /learn-Wissen, Bot-Hilfe und einfache Rechnungen nutzen. `/new` und `/serversetup` verstehen unterstützte lokale Wünsche. Für freie Texte, beliebigen Code oder aktuelle Recherchen ist ein KI-Modell nötig. Welchen konkreten Bot-Wunsch soll ich umsetzen?';
-}
+const arithmetic=intelligence.arithmetic,chat=intelligence.chat;
 function resolve(ref,rows,kind) {
   ref=String(ref || '').trim().replace(/^["'„“]|["'„“]$/g,'');
   const mention=ref.match(/^<[@#]&?!?(\d+)>$/);if(mention)return mention[1];
@@ -48,57 +19,115 @@ function resolve(ref,rows,kind) {
   return matches.length===1?matches[0].id:ref;
 }
 function duration(text) {
-  const m=normalize(text).match(/(\d+)\s*(sekunden?|s|minuten?|min|m|stunden?|h)\b/);
+  const m=normalize(text).match(/(\d+)\s*(sekunden?|sek|s|minuten?|min|m|stunden?|h)\b/);
   return m?Number(m[1])*({s:1,m:60,h:3600}[m[2]] || (/^sek/.test(m[2])?1:/^min/.test(m[2])?60:3600)):null;
 }
 const RIGHTS={'nachrichten verwalten':'ManageMessages','rollen verwalten':'ManageRoles','kanale verwalten':'ManageChannels','server verwalten':'ManageGuild','mitglieder moderieren':'ModerateMembers','nachrichten senden':'SendMessages','kanal ansehen':'ViewChannel','verlauf lesen':'ReadMessageHistory','verbinden':'Connect','sprechen':'Speak','administrator':'Administrator','mitglieder bannen':'BanMembers','mitglieder kicken':'KickMembers'};
-function newPlan(data) {
-  const original=String(data.request || '').trim(),context=data.server_context || {},actions=[];
+const COLORS={blau:'#3498db',rot:'#e74c3c',grun:'#2ecc71',gelb:'#f1c40f',lila:'#9b59b6',violett:'#9b59b6',orange:'#e67e22',pink:'#e91e63',weiss:'#ffffff',schwarz:'#000000',grau:'#95a5a6',gold:'#f1c40f'};
+function color(value){const n=normalize(value).replace(/^(?:der\s+)?farbe\s+/,'');return /^#[0-9a-f]{6}$/i.test(n)?n:COLORS[n]||null;}
+function unquote(value){return String(value).trim().replace(/^["'„“]([\s\S]*)["'“]$/,'$1');}
+function permissions(value){
+  return offlineActions.rights(value);
+}
+function clauses(request){
+  const result=[];let buffer='',quote=null;
+  for(let i=0;i<request.length;i++){
+    const ch=request[i];
+    if(quote){buffer+=ch;if(ch===quote||quote==='„'&&ch==='“')quote=null;continue;}
+    if(['"',"'",'„','“'].includes(ch)){quote=ch==='“'?'“':ch;buffer+=ch;continue;}
+    // A post body is literal text, even if it contains semicolons or command words.
+    if(ch===':'&&/^(?:(?:bitte|kannst du)\s+)*(?:(?:schreibe|poste|sende)\b|(?:erstelle|mache|mach)\s+(?:eine\s+)?umfrage\b)/i.test(buffer)){buffer+=request.slice(i);i=request.length;break;}
+    if(/^\s+wegen\s+/i.test(request.slice(i))&&/^(?:kicke?|banne?|entbanne|timeout|setze timeout)\b/i.test(buffer)){buffer+=request.slice(i);i=request.length;break;}
+    const join=request.slice(i).match(/^\s+und(?: dann)?\s+(?=(?:erstelle|erstell|mache|mach|lege|gib|gebe|weise|setze|setz|schalte|aktiviere|deaktiviere|benenne|sperre|entsperre|verschiebe|entferne|entziehe|andere|ändere|nimm|nehme|kicke|banne|entbanne|pinne|entpinne|erlaube|verbiete|vererbe|hebe|losche|lösche)\b)/i);
+    if(ch===';'||ch==='\n'||join){if(buffer.trim())result.push(buffer.trim());buffer='';if(join)i+=join[0].length-1;continue;}
+    buffer+=ch;
+  }
+  if(quote)throw Error('Ein Anführungszeichen ist noch offen.');
+  if(buffer.trim())result.push(buffer.trim());return result;
+}
+function commandText(raw){
+  const polite=/^(?:kannst du|konntest du|könntest du|wurdest du|würdest du)\s+/i.test(raw);
+  let text=String(raw).trim().replace(/^(?:kannst du|konntest du|könntest du|wurdest du|würdest du)\s+/i,'').replace(/^(?:bitte\s+)+/i,'').replace(/^mir\s+/i,'');
+  if(polite&&/\s+(?:erstellen|anlegen|machen)[?.!]*$/i.test(text))text='erstelle '+text.replace(/\s+(?:erstellen|anlegen|machen)[?.!]*$/i,'').replace(/\s+bitte$/i,'');
+  if(/^lege\b/i.test(text))text=text.replace(/\s+an$/i,'');
+  text=text.replace(/^(?:mache|mach|lege|erstell)\s+/i,'erstelle ').replace(/^(erstelle\s+(?:mir\s+)?)(?:nen|n)\s+/i,'$1einen ').replace(/^(erstelle\s+(?:mir\s+)?)(?:ne|eine)\s+/i,'$1eine ')
+    .replace(/^(erstelle\s+(?:mir\s+)?(?:einen?\s+|die\s+)?)(?:channel|kanal)\s+/i,'$1Textkanal ').replace(/^(erstelle\s+(?:mir\s+)?(?:einen?\s+)?)(?:voice|vc)\s+/i,'$1Sprachkanal ');
+  return text;
+}
+function newPlan(data){
+  const original=String(data.request||'').trim(),context=structuredClone(data.server_context||{}),actions=[];
   const answer=text=>({summary:'Offline-Wunsch',actions:[{kind:'answer',text:'🧩 '+text}]});
-  if(!original || original.length>1800)return answer('Bitte beschreibe einen konkreten Bot-Wunsch.');
-  const clauses=original.split(/\s*;\s*|\n+|\s+und dann\s+/i).filter(Boolean);
-  if(clauses.length>12)return answer('Maximal zwölf klare Teilaufträge pro Wunsch.');
+  if(!original||original.length>1800)return answer('Bitte beschreibe einen konkreten Bot-Wunsch mit höchstens 1800 Zeichen.');
+  if(/^(?:hilfe|help|moglichkeiten|möglichkeiten|was kannst du|was kann new|alles)[!?.,\s]*$/i.test(original))return answer(offlineActions.HELP);
+  const listing=normalize(original).match(/^(?:zeige|liste)\s+(?:mir\s+)?(?:alle\s+)?(rollen|kanale|mitglieder)(?:\s+auf)?$/);
+  if(listing){const key={rollen:'roles',kanale:'channels',mitglieder:'members'}[listing[1]],rows=context[key]||[];return answer('Verfügbare '+listing[1]+':\n'+rows.map(r=>clean(r.name)+' — '+r.id).join('\n').slice(0,5400));}
   let previousRole=null;
-  try {
-    for(const clause of clauses) {
-      const n=normalize(clause);let m;
-      if((m=clause.match(/^(?:bitte\s+)?(?:erstelle|erstell|mache|mach|lege)\s+(?:mir\s+)?(?:eine[n]?\s+|die\s+)?(rolle|textkanal|text.?channel|sprachkanal|voice.?kanal|voice.?channel|kategorie)\s+(?:namens\s+|mit (?:dem )?namen\s+)?(.+)$/i))) {
-        const type=normalize(m[1]),rest=m[2].trim();
-        const label=rest.match(/^["„']([^"“']+)["“']/)?.[1] || rest.split(/\s+(?:mit|in|unter|und)\s+|,/i)[0].trim();
-        if(!label || label.length>100)throw Error('Name fehlt oder ist zu lang.');
-        const color=rest.match(/#[0-9a-f]{6}\b/i)?.[0];
-        if(type==='rolle') {
-          actions.push({kind:'role',name:label,...(color?{color}:{})});previousRole=label;
-          const explicit=rest.match(/\s+mit\s+(.+)/i)?.[1];
-          if(explicit){const grant=Object.entries(RIGHTS).filter(([word])=>normalize(explicit).includes(word)).map(([,key])=>key);if(grant.length)actions.push({kind:'role_permissions',role:label,grant});else if(!color)throw Error('Diese Berechtigung ist offline nicht eindeutig.');}
-        } else {
+  try{
+    const parts=clauses(original);if(parts.length>12)throw Error('Maximal zwölf klare Teilaufträge pro Wunsch.');
+    for(const raw of parts){
+      const clause=commandText(raw),start=actions.length;let m;
+      const extra=offlineActions.parse(clause,context);
+      if(extra)actions.push(...extra);
+      else if((m=clause.match(/^erstelle\s+(?:mir\s+)?(?:eine[n]?\s+|die\s+)?(rolle|textkanal|text.?channel|sprachkanal|voice.?kanal|voice.?channel|kategorie)\s+(?:namens\s+|mit (?:dem )?namen\s+)?(.+)$/i))){
+        const type=normalize(m[1]),rest=m[2].trim(),quoted=rest.match(/^["'„“]([^"'“]+)["'“]\s*(.*)$/);
+        const boundary=rest.search(/\s+(?:mit|in|unter|und|ohne|aber)\s+|,/i),label=unquote(quoted?quoted[1]:boundary>=0?rest.slice(0,boundary):rest),tail=quoted?quoted[2]:boundary>=0?rest.slice(boundary).trim():'';
+        if(!label||label.length>100||/[\u0000-\u001f]/.test(label))throw Error('Name fehlt oder ist zu lang.');
+        if(type==='rolle'){
+          let roleColor=null,grant=[];
+          if(tail){
+            const attrs=tail.replace(/^(?:mit|in)\s+/i,'').split(/\s*(?:,|\bund\b)\s*/i).filter(Boolean),rights=[];
+            for(const attr of attrs){const c=color(attr);if(c){if(roleColor)throw Error('Bitte nur eine Rollenfarbe nennen.');roleColor=c;}else rights.push(attr);}
+            if(rights.length)grant=permissions(rights.join(' und '));
+          }
+          actions.push({kind:'role',name:label,...(roleColor?{color:roleColor}:{})});previousRole=label;
+          if(grant.length)actions.push({kind:'role_permissions',role:label,grant});
+        }else{
           const kind=type==='kategorie'?'category':/sprach|voice/.test(type)?'voice_channel':'text_channel';
-          const parent=rest.match(/\s+(?:in|unter)\s+(?:der\s+)?(?:kategorie\s+)?(.+)$/i)?.[1];
-          actions.push({kind,name:label,...(parent?{parent:resolve(parent,context.channels,'Kategorie')}:{})});
+          let parent;
+          if(tail){const p=tail.match(/^(?:in|unter)\s+(?:der\s+)?(?:kategorie\s+)?(.+)$/i);if(!p||kind==='category')throw Error('Für diesen Zusatz fehlt ein eindeutiger Wunsch.');parent=resolve(unquote(p[1]),context.channels,'Kategorie');}
+          actions.push({kind,name:label,...(parent?{parent}:{})});
         }
-      } else if((m=clause.match(/^(?:gib|weise)\s+(mir|<@!?\d+>)\s+(?:die\s+)?rolle\s+(.+?)(?:\s+zu)?$/i))) {
-        actions.push({kind:'assign_role',member:m[1]==='mir'?'self':m[1],role:resolve(m[2],context.roles,'Rolle')});
-      } else if((m=clause.match(/^(?:gib|gebe)\s+(?:der\s+)?rolle\s+(.+?)\s+(?:die\s+)?(?:rechte?|berechtigungen?)\s*:?\s+(.+)$/i))) {
-        const grant=Object.entries(RIGHTS).filter(([word])=>normalize(m[2]).includes(word)).map(([,key])=>key);
-        if(!grant.length)throw Error('Rechte nicht erkannt.');actions.push({kind:'role_permissions',role:resolve(m[1],context.roles,'Rolle'),grant});
-      } else if((m=clause.match(/^(?:setze|setz|aktiviere)\s+(?:den\s+)?slowmode\s+(?:in|fur|für)\s+(.+?)\s+(?:auf\s+)?(\d+\s*(?:sekunden?|s))$/i))) {
-        actions.push({kind:'slowmode',target:resolve(m[1],context.channels,'Kanal'),seconds:duration(m[2])});
-      } else if((m=clause.match(/^(?:schalte|aktiviere|deaktiviere)\s+(ai|ki|support.?ai|support.?ki|automod|anti.?spam|ubersetzung|übersetzung|welcome)(?:\s+(an|ein|aus))?$/i))) {
-        const key=normalize(m[1]),feature=/support/.test(key)?'supportAiEnabled':/automod|spam/.test(key)?'autoModEnabled':/ubersetzung/.test(key)?'translationEnabled':/welcome/.test(key)?'welcomeEnabled':'aiEnabled';
-        actions.push({kind:'feature',feature,enabled:!/^deaktiviere/i.test(clause)&&normalize(m[2])!=='aus'});
-      } else if((m=clause.match(/^benenne\s+(?:den\s+)?(?:kanal\s+)?(.+?)\s+in\s+(.+?)\s+um$/i))) {
-        actions.push({kind:'rename_channel',target:resolve(m[1],context.channels,'Kanal'),name:m[2].replace(/^["„']|["“']$/g,'')});
-      } else if((m=clause.match(/^(?:sperre|entsperre)\s+(?:den\s+)?(?:kanal\s+)?(.+)$/i))) {
+      }else if((m=clause.match(/^(?:gib|gebe|weise|entferne)\s+(mir|<@!?\d+>)\s+(?:die\s+)?rolle\s+(.+?)(?:\s+zu)?$/i))){
+        const roleRef=/^(?:diese|diese rolle|gerade erstellte)$/i.test(m[2])?previousRole:m[2];if(!roleRef)throw Error('Welche Rolle meinst du?');
+        actions.push({kind:/^entferne/i.test(clause)?'remove_role':'assign_role',member:normalize(m[1])==='mir'?'self':m[1],role:resolve(roleRef,context.roles,'Rolle')});
+      }else if((m=clause.match(/^(gib|gebe|entziehe)\s+(?:der\s+)?rolle\s+(.+?)\s+(?:die\s+)?(?:rechte?|berechtigungen?)\s*:?\s+(.+)$/i))){
+        actions.push({kind:'role_permissions',role:resolve(m[2],context.roles,'Rolle'),[/^entziehe$/i.test(m[1])?'revoke':'grant']:permissions(m[3])});
+      }else if((m=clause.match(/^(?:setze|setz|aktiviere)\s+(?:den\s+)?slowmode\s+(?:in|fur|für)\s+(.+?)\s+(?:auf\s+)?(\d+\s*(?:sekunden?|sek|s|minuten?|min|m|stunden?|h))$/i))){
+        const seconds=duration(m[2]);if(seconds===null||seconds>21600)throw Error('Slowmode unterstützt 0 bis 6 Stunden.');
+        actions.push({kind:'slowmode',target:normalize(m[1])==='hier'?context.currentChannel:resolve(m[1],context.channels,'Kanal'),seconds});
+      }else if((m=clause.match(/^(?:schalte|deaktiviere)\s+(?:den\s+)?slowmode\s+(?:in|fur|für)\s+(.+?)(?:\s+aus)$/i))){
+        actions.push({kind:'slowmode',target:normalize(m[1])==='hier'?context.currentChannel:resolve(m[1],context.channels,'Kanal'),seconds:0});
+      }else if((m=clause.match(/^(schalte|aktiviere|deaktiviere)\s+(ai|ki|support.?ai|support.?ki|automod|anti.?spam|ubersetzung|übersetzung|welcome|ticket.?feedback)(?:\s+(an|ein|aus))?$/i))){
+        const key=normalize(m[2]);if(/^schalte$/i.test(m[1])&&!m[3])throw Error('Soll die Funktion an oder aus?');
+        if(/^deaktiviere$/i.test(m[1])&&m[3]&&m[3]!=='aus'||/^aktiviere$/i.test(m[1])&&m[3]==='aus')throw Error('An und Aus widersprechen sich.');
+        const feature=/support/.test(key)?'supportAiEnabled':/automod|spam/.test(key)?'autoModEnabled':/ubersetzung/.test(key)?'translationEnabled':/welcome/.test(key)?'welcomeEnabled':/feedback/.test(key)?'ticketFeedbackEnabled':'aiEnabled';
+        actions.push({kind:'feature',feature,enabled:!/^deaktiviere$/i.test(m[1])&&normalize(m[3])!=='aus'});
+      }else if((m=clause.match(/^benenne\s+(?:den\s+)?(?:kanal\s+)?(.+?)\s+in\s+(.+?)\s+um$/i))){
+        actions.push({kind:'rename_channel',target:resolve(m[1],context.channels,'Kanal'),name:unquote(m[2])});
+      }else if((m=clause.match(/^(?:sperre|entsperre)\s+(?:den\s+)?(?:kanal\s+)?(.+)$/i))){
         actions.push({kind:'lock_channel',target:resolve(m[1],context.channels,'Kanal'),enabled:!/^entsperre/i.test(clause)});
-      } else if((m=clause.match(/^(?:aktiviere|setze)\s+counting\s+(?:in|auf)\s+(.+)$/i))) {
+      }else if((m=clause.match(/^(?:aktiviere|setze)\s+counting\s+(?:in|auf)\s+(.+)$/i))){
         actions.push({kind:'counting',target:resolve(m[1],context.channels,'Kanal')});
-      } else if((m=clause.match(/^(?:schreibe|poste|sende)\s+(?:in|nach)\s+(.+?)\s*:\s*([\s\S]+)$/i))) {
-        actions.push({kind:'post',target:normalize(m[1])==='hier'?context.currentChannel:resolve(m[1],context.channels,'Kanal'),text:clean(m[2])});
-      } else return answer('Diesen Wunsch kann ich offline nicht eindeutig planen. Beispiele: „Erstelle eine Rolle Helfer; gib mir die Rolle Helfer“, „Erstelle einen Textkanal clips“ oder „Setze Slowmode in #chat auf 5 Sekunden“. Es wurde nichts geändert.');
+      }else if((m=clause.match(/^verschiebe\s+(?:den\s+)?(?:kanal\s+)?(.+?)\s+in\s+(?:die\s+)?(?:kategorie\s+)?(.+)$/i))){
+        actions.push({kind:'move_channel',target:resolve(m[1],context.channels,'Kanal'),parent:resolve(m[2],context.channels,'Kategorie')});
+      }else if((m=clause.match(/^(?:andere|ändere|setze)\s+(?:die\s+)?farbe\s+(?:der\s+)?rolle\s+(.+?)\s+auf\s+(.+)$/i))){
+        const c=color(m[2]);if(!c)throw Error('Nenne eine Farbe wie Blau oder einen Wert wie #3498db.');actions.push({kind:'edit_role',role:resolve(m[1],context.roles,'Rolle'),color:c});
+      }else if((m=clause.match(/^(?:schreibe|poste|sende)\s+(?:in|nach)\s+(.+?)\s*:\s*([\s\S]+)$/i))){
+        actions.push({kind:'post',target:normalize(m[1])==='hier'?context.currentChannel:resolve(m[1],context.channels,'Kanal'),text:clean(unquote(m[2]))});
+      }else{
+        if(parts.length===1&&(arithmetic(original)||intelligence.convert(original)||/^(?:was|wie|warum|wo|wann|wer|hilfe|fasse|zusammenfassung)\b/i.test(original)))return answer(chat(original));
+        throw Error('Diesen Wunsch kann ich offline nicht eindeutig planen. Beispiele: „Mach einen Kanal clips und erstelle eine Rolle Helfer in Blau“, „Gib mir die Rolle Helfer“ oder „Setze Slowmode in #chat auf 2 Minuten“.');
+      }
       if(actions.length>12)throw Error('Mehr als zwölf Aktionen.');
+      // Later clauses may refer to explicitly planned objects by their exact name.
+      for(const action of actions.slice(start)){
+        if(action.kind==='role'){context.roles ||= [];if(!context.roles.some(r=>r.name===action.name))context.roles.push({id:action.name,name:action.name});context.previousRole=action.name;}
+        if(['category','text_channel','voice_channel'].includes(action.kind)){context.channels ||= [];if(!context.channels.some(c=>c.name===action.name))context.channels.push({id:action.name,name:action.name,type:{category:4,text_channel:0,voice_channel:2}[action.kind]});}
+      }
     }
+    if(!actions.length)throw Error('Bitte nenne einen konkreten Wunsch.');
     return {summary:'🧩 Offline geplant: '+clean(original).slice(0,500),actions};
-  } catch(error){return answer(error.message+' Bitte formuliere den Wunsch genauer. Es wurde nichts geändert.');}
+  }catch(error){return answer(error.message+' Bitte formuliere den Wunsch genauer. Es wurde nichts geändert.');}
 }
 function setupPlan(data) {
   const plan=structuredClone(data.aktuellerEntwurf || {}),wish=String(data.wunsch || ''),n=normalize(wish);
@@ -154,8 +183,12 @@ function request(request,label='') {
     else if(/community-vorschlag/i.test(system))output='🧩 Offline-Rückmeldung: Dein Vorschlag ist gespeichert. Prüft im Team den Nutzen, den Aufwand und einen kleinen ersten Test. Eine Umsetzung wurde nicht genehmigt.';
     else output='🧩 Lokale Text-/Datenauswertung\n'+clean(last).slice(0,1600)+'\n\nDas Team prüft offene Angaben und Belege. Diese Ausgabe ist ein Auszug der vorhandenen Informationen, keine neue Tatsachenbewertung.';
   } else {
-    const knowledge=system.match(/Server-spezifisches Wissen[^\n]*:\n([\s\S]*?)(?=\n\nAdmin-Verbesserungen|\nANTWORTQUALITÄT|$)/)?.[1] || '';
-    output=chat(last.split('\n\nWichtig:')[0],{knowledge,history:request.contents || []});
+    const knowledge=system.match(/Server-spezifisches Wissen[^\n]*:\n([\s\S]*?)(?=\n\nAdmin-Verbesserungen|\nANTWORTQUALITÄT|$)/)?.[1]
+      || system.match(/PASSENDES SERVERWISSEN AUS \/learn:\n([\s\S]*?)(?=\nFAQ-KONTEXT|$)/)?.[1] || '';
+    const support=/ticket_ai/.test(label)&&typeof data.current_request==='string';
+    let faq=null;try{faq=JSON.parse(system.match(/FAQ-KONTEXT[^\n]*:\n([^\n]*)/)?.[1]||'null');}catch{}
+    const history=support?(Array.isArray(data.recent_ticket_conversation)?data.recent_ticket_conversation:[]).map(m=>({role:m.role==='user'?'user':'model',text:m.text})):request.contents || [];
+    output=chat(support?data.current_request:last.split('\n\nWichtig:')[0],{knowledge,faq,history,support});
   }
   return {text:output,offline:true};
 }

@@ -33,6 +33,17 @@ try {
   youtubeUploadCommands = [];
   console.warn("YouTube uploads module unavailable:", err?.message || err);
 }
+let vcMusicModule = null;
+let vcMusicCommands = [];
+try {
+  vcMusicModule = require("./vc_music");
+  vcMusicCommands = vcMusicModule.buildMusicCommands();
+  for (const command of vcMusicCommands) command.toJSON();
+} catch (err) {
+  vcMusicModule = null;
+  vcMusicCommands = [];
+  console.warn("VC music module unavailable:", err?.message || err);
+}
 const { GAME_CHOICES, gameName, gameListText, randomGamePrompt } = require("./games");
 const {
   Client,
@@ -2130,8 +2141,9 @@ async function askGemini(question, userTag = "Discord user", guildId = null, use
 async function generateAiChatAnswer(question, userTag, guildId, userId, channelId, style = null) {
   const history = getAiConversation(guildId, userId, channelId);
   const contextQuery = aiQuality().knowledgeQuery(question, history);
-  const learnedContext = getGuildLearnContext(guildId, "ai", 4000, 5000, contextQuery);
-  if ((typeof GEMINI_API_KEY !== "undefined" && !GEMINI_API_KEY) || (typeof process !== "undefined" && process.env.PIXEL_AI_MODE === "offline")) {
+  const offlineMode = (typeof GEMINI_API_KEY !== "undefined" && !GEMINI_API_KEY) || (typeof process !== "undefined" && process.env.PIXEL_AI_MODE === "offline");
+  const learnedContext = getGuildLearnContext(guildId, "ai", 4000, offlineMode ? 16000 : 5000, offlineMode ? "" : contextQuery);
+  if (offlineMode) {
     const answer=require("./offline_assistant").chat(question,{knowledge:learnedContext.knowledge,history});
     rememberAiExchange(guildId,userId,question,answer,channelId);return answer;
   }
@@ -2712,7 +2724,7 @@ async function askGeminiSupport(message, ticket) {
     const quality=aiQuality(),text=message.content?.trim() || "Bitte beschreibe den Inhalt des Anhangs als Text.";
     const recent=quality.ticketContext(await withTimeout(fetchTicketMessages(message.channel,60),10000,"offline_ticket_context").catch(()=>[]),message,client.user?.id);
     const query=[text,...recent.filter(m=>m.role==='user').slice(-3).map(m=>m.text)].join('\n');
-    const learned=getGuildLearnContext(message.guild?.id,'support',4000,5500,query);
+    const learned=getGuildLearnContext(message.guild?.id,'support',4000,16000);
     return require("./offline_assistant").chat(text,{support:true,faq:findFaqMatch(text)||findFaqMatch(query),knowledge:learned.knowledge,history:recent.map(m=>({role:m.role==='user'?'user':'model',parts:[{text:m.text}]}))});
   }
   const quality = aiQuality();
@@ -3133,7 +3145,8 @@ const commands = [
   ...buildElementSeasCommands(),
   ...buildSpotifyPartyCommands(),
   ...mimicCommands,
-  ...youtubeUploadCommands
+  ...youtubeUploadCommands,
+  ...vcMusicCommands
 ].map(c => c.toJSON());
 
 async function registerCommands() {
@@ -3233,20 +3246,28 @@ const elementSeas = createElementSeas({
 });
 
 let mimicParty = null;
+let vcMusic = null;
 const spotifyParty = createSpotifyParty({
   client,
   footer,
   isGuildApproved,
-  isVoiceBusy: guildId => Boolean(mimicParty?.hasSession(guildId))
+  isVoiceBusy: guildId => Boolean(mimicParty?.hasSession(guildId)) || Boolean(vcMusic?.isActiveOrStarting(guildId))
 });
 
 try {
   mimicParty = mimicModule?.createMimicParty({
     client, db, saveDB, dataDirectory: BOT_DATA_DIR, OWNER_ID,
     isGuildApproved, isMaintenance: () => db.maintenance,
-    isVoiceBusy: guildId => spotifyParty.isActiveOrStarting(guildId)
+    isVoiceBusy: guildId => spotifyParty.isActiveOrStarting(guildId) || Boolean(vcMusic?.isActiveOrStarting(guildId))
   }) || null;
 } catch (err) { console.warn("Mimic Party initialization failed:", err?.message || err); }
+
+try {
+  vcMusic = vcMusicModule?.createVCMusic({
+    client, isGuildApproved, isMaintenance: () => db.maintenance,
+    isVoiceBusy: guildId => Boolean(mimicParty?.hasSession(guildId)) || spotifyParty.isActiveOrStarting(guildId)
+  }) || null;
+} catch (err) { console.warn("VC music initialization failed:", err?.code || err?.name); }
 
 const backgroundTasks = require("./background_tasks").createBackgroundTasks();
 let shuttingDownVoice = false;
@@ -3261,6 +3282,7 @@ async function shutdownVoiceGames() {
   const draining = Promise.allSettled([backgroundTasks.stop(), Promise.resolve().then(() => community.onShutdown())]);
   try { await mimicParty?.onShutdown(); } catch (err) { console.warn("Mimic shutdown:", err?.message || err); }
   try { await spotifyParty.onShutdown(); } catch (err) { console.warn("Spotify shutdown:", err?.code || err?.name); }
+  try { await vcMusic?.onShutdown(); } catch (err) { console.warn("VC music shutdown:", err?.code || err?.name); }
   await draining;
   try { saveDB(); } catch (err) { console.warn("Shutdown save failed:", err?.code || err?.name); }
   try { client.destroy(); } catch (err) { console.warn("Discord shutdown:", err?.code || err?.name); }
@@ -3378,6 +3400,7 @@ client.on("messageUpdate", async (_oldMessage,message) => {
 client.on("voiceStateUpdate", (oldState, newState) => {
   mimicParty?.handleVoiceState(oldState, newState).catch(err => console.warn("Mimic voice-state handler failed:", err?.message || err));
   spotifyParty.handleVoiceState(oldState, newState).catch(err => console.warn("Spotify voice-state handler failed:", err?.message || err));
+  vcMusic?.handleVoiceState(oldState, newState).catch(err => console.warn("VC music voice-state handler failed:", err?.code || err?.name));
   const guildId = newState.guild?.id || oldState.guild?.id;
   if (!isGuildApproved(guildId)) return;
   community.onVoiceStateUpdate(oldState, newState).catch(() => {});
@@ -4102,6 +4125,7 @@ function getServerSetupDesigner() {
       getResetBlockers: guild => {
         const blockers = [];
         if (mimicParty?.hasSession(guild.id)) blockers.push("aktive Mimic Party");
+        if (vcMusic?.isActiveOrStarting(guild.id)) blockers.push("aktive VC-Musik");
         if (spotifyParty.isActiveOrStarting(guild.id)) blockers.push("aktive Spotify Party");
         const tickets = Object.values(db.tickets || {}).filter(ticket => ticket.guildId === guild.id && ticket.status !== "closed" && !ticket.ignoredAsSystemChannel && guild.channels.cache.has(ticket.channelId));
         const teams = Object.values(db.teams || {}).filter(team => team.guildId === guild.id && team.open && guild.channels.cache.has(team.channelId));
@@ -4984,6 +5008,10 @@ client.on("interactionCreate", async interaction => {
       return interaction.reply({ content:"❌ Mimic ist nicht verfügbar. Bitte Update-Dateien und npm install prüfen; andere Befehle bleiben aktiv.", flags:MessageFlags.Ephemeral });
     }
     if (await spotifyParty.handleInteraction(interaction)) return;
+    if (vcMusic && await vcMusic.handleInteraction(interaction)) return;
+    if (interaction.isChatInputCommand() && interaction.commandName === "music" && !vcMusic) {
+      return interaction.reply({ content:"❌ VC-Musik ist nicht verfügbar. Bitte Update-Dateien und npm install prüfen; andere Befehle bleiben aktiv.", flags:MessageFlags.Ephemeral });
+    }
     if (youtubeUploads && await youtubeUploads.handleInteraction(interaction)) return;
     if (await elementSeas.handleInteraction(interaction)) return;
     if (await staff.handleInteraction(interaction)) return;

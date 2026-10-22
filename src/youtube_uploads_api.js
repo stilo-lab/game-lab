@@ -80,7 +80,8 @@ function createYouTubeApi({ apiKey, fetchImpl = globalThis.fetch, now = Date.now
     remember(channels, JSON.stringify({ id: item.id }), result, 6 * 60 * 60 * 1000);
     return result;
   }
-  async function uploads(meta) {
+  async function uploads(meta, {force = false} = {}) {
+    if(force)feeds.delete(meta.channelId);
     const cached = feeds.get(meta.channelId);
     if (cached?.expires > now()) return structuredClone(cached.value);
     if (inFlight.has(meta.channelId)) return structuredClone(await inFlight.get(meta.channelId));
@@ -109,9 +110,9 @@ function createYouTubeApi({ apiKey, fetchImpl = globalThis.fetch, now = Date.now
     finally { inFlight.delete(meta.channelId); }
   }
   return {
-    async readFeed(channelId) {
+    async readFeed(channelId, options = {}) {
       if (!CHANNEL_ID.test(channelId)) throw new Error('Ungültige YouTube-Kanal-ID.');
-      return uploads(await channel({ id: channelId }));
+      return uploads(await channel({ id: channelId }),options);
     },
     async resolve(filter) { return uploads(await channel(filter)); }
   };

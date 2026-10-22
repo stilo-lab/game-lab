@@ -4,8 +4,10 @@
 function taskPlan(question,history=[]) {
   const q=String(question || '').trim(),quality=require('./ai_quality');
   const text=quality.knowledgeQuery(q,history);
+  const local=require('./offline_reasoning').solve(q,history,{arithmetic:require('./offline_intelligence').arithmetic});
+  const verified=local&&local.kind!=='unsupported'?local:null;
   const technical=/\b(code|script|skript|javascript|typescript|python|lua|luau|programm\w*|debug\w*|function|funktion|error|fehler)\b|```/i.test(text);
-  const math=/\b(berechne|rechnung|rechnen|gleichung\w*|beweis\w*|beweise|integral\w*|ableitung\w*|mathe\w*)\b|\d\s*[+*/=−-]\s*\d/i.test(text);
+  const math=Boolean(verified)||/\b(berechne|rechnung|rechnen|gleichung\w*|beweis\w*|beweise|integral\w*|ableitung\w*|mathe\w*)\b|\d\s*[+*/=−-]\s*\d|\bx\b.*=/i.test(text);
   const planning=/\b(vergleiche|vergleich|architektur|strategie|plan\w*|analysiere|analyse)\b/i.test(text);
   const solving=/\b(schreib\w*|erstell\w*|fix\w*|korrig\w*|prüf\w*|debug\w*|löse|loese|beweise|berechne|implement\w*)\b/i.test(text);
   const failed=[...(quality.isFollowup(q)?history.filter(m=>m.role==='user').slice(-6).map(m=>m.parts?.[0]?.text || ''):[]),q]
@@ -13,8 +15,8 @@ function taskPlan(question,history=[]) {
   const kind=math?'math':technical?'technical':planning?'planning':failed?'troubleshooting':'chat';
   const complex=(technical&&solving)||(math&&(text.length>45 || (text.match(/[+*/=−-]/g)||[]).length>1))||(planning&&text.length>180)||failed>=2||q.length>500;
   const detailed=quality.chatGenerationSettings(q,history).maxOutputTokens>1200 || technical || math || planning || failed>0;
-  return {kind,detailed,deep:complex,review:complex && (technical||math||planning||failed>=2),failed_reports:failed,
-    focus:text.slice(0,6000),guidance:`ARBEITSWEISE: ${kind}. ${complex?'Prüfe Abhängigkeiten, Gegenbeispiele und mögliche Fehler besonders sorgfältig.':'Löse die konkrete Frage direkt.'} Nutze zuerst belegte Angaben und Einschränkungen. Arbeite intern von Ziel über Ursache/Plan zur Lösung und prüfe das Ergebnis. Zeige nur die nützliche Antwort, keine internen Gedankengänge. Bei Code prüfe Variablen, Imports, Laufzeit, Berechtigungen und die Integration mit vorhandenem Code. Bei Mathe prüfe das Ergebnis durch Einsetzen oder eine zweite Rechnung. Bei Fehlersuche nenne den nächsten unterscheidenden Test und sein erwartetes Ergebnis. Erfinde keine aktuellen Fakten, eigenen Aktionen oder fehlenden Serverfunktionen.`};
+  return {kind,detailed,deep:complex,review:complex && (technical||math||planning||failed>=2),failed_reports:failed,verified_local_result:verified,
+    focus:text.slice(0,6000),guidance:`ARBEITSWEISE: ${kind}. ${complex?'Prüfe Abhängigkeiten, Gegenbeispiele und mögliche Fehler besonders sorgfältig.':'Löse die konkrete Frage direkt.'} Nutze zuerst belegte Angaben und Einschränkungen. Arbeite intern von Ziel über Ursache/Plan zur Lösung und prüfe das Ergebnis. Zeige nur die nützliche Antwort, keine internen Gedankengänge. Bei Code prüfe Variablen, Imports, Laufzeit, Berechtigungen und die Integration mit vorhandenem Code. Bei Mathe prüfe das Ergebnis durch Einsetzen oder eine zweite Rechnung. Bei Fehlersuche nenne den nächsten unterscheidenden Test und sein erwartetes Ergebnis. Erfinde keine aktuellen Fakten, eigenen Aktionen oder fehlenden Serverfunktionen.`+(verified?'\nLOKALES RECHENERGEBNIS: '+JSON.stringify(verified)+'. Nutze dieses Ergebnis nur für die Zahlen und Voraussetzungen dieser Eingabe. Es belegt keine externen Fakten und keine Bot-Aktion.':'')};
 }
 function modelConfig(model,plan,base={}) {
   const id=String(model || '').replace(/^models\//,'').toLowerCase();
