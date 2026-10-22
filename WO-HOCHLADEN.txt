@@ -1,21 +1,83 @@
-PIXEL UPDATE 1.13.0 – NUR UPDATE-DATEIEN
+PIXEL KI-UPDATE 1.17.0
 
-Für deinen vorhandenen Pixel-Bot aus dieser Unterhaltung
-(ab Version 1.10.1). Enthält alle seitdem nötigen Programmänderungen.
+Für deinen vorhandenen Pixel-Bot aus dieser Unterhaltung (1.10.1 oder neuer).
+Nur neue/geänderte Update-Dateien; die bisherigen Fixes einschließlich VC-Musik
+sind enthalten. Die ZIP ist kein vollständiges neues Projekt.
 
-1. Vorhandenen Botordner sichern und diese ZIP entpacken.
-2. Die 10 Dateien aus src in den VORHANDENEN src-Ordner kopieren:
-   Gleichnamige Dateien ersetzen, neue Dateien hinzufügen.
-   Den vorhandenen src-Ordner behalten, nicht vorher löschen!
-   Richtig: src/security_guard.js – nicht src/src/security_guard.js.
-3. package.json und package-lock.json im Hauptordner ersetzen.
-4. In GitHub den Commit speichern und den Railway-Deploy abwarten.
-   Bei lokalem Betrieb: Bot neu starten (npm start).
+INSTALLATION
+1. Den vorhandenen Botordner sichern.
+2. Die 20 Dateien aus src in den VORHANDENEN src-Ordner kopieren.
+   Gleichnamige ersetzen, neue hinzufügen. src und alte Dateien behalten!
+   Besonders wichtig: src/assistant_context.js und src/offline_reasoning.js.
+3. package.json und package-lock.json im Hauptverzeichnis ersetzen.
+4. scripts/setup-vc-music.js im Hauptverzeichnis unter scripts ablegen.
+   Gibt es scripts noch nicht, diesen Ordner anlegen.
+5. GitHub-Commit speichern und Railway neu deployen lassen.
+   Build: npm ci oder npm install. Start: npm start.
+   Lokal: npm install, danach npm start. Node.js >=22.12.0.
+Assets, Datenbank, bisherige Variablen und Spotify-Anmeldung behalten.
+Keine neuen npm-Pakete und keine zusätzlichen KI-Schlüssel erforderlich.
 
-Vorhandene Assets, Datenbank, Zugangsdaten und Variablen behalten.
-Die ZIP ergänzt deinen vorhandenen Bot; sie ist kein komplettes Projekt.
+VERBESSERTE KI
+• /ai und Support nutzen dieselbe Erkennung für kurze Folgefragen, Korrekturen,
+  gescheiterte Schritte und Themenwechsel. „Ich habe den Link getestet“ wird
+  als Versuch zum bisherigen Problem verstanden.
+• „Nein, ich meine …“ kann den Gesprächsfokus korrigieren. Bei einem neuen Thema
+  werden unpassende frühere Anweisungen und Vorschläge nicht übernommen.
+• Die Wissenssuche findet passende /learn-Einträge auch mit unterstützten
+  Synonymen und einzelnen Tippfehlern, z. B. „Veranstaltung“ oder „Evnet“.
+• Bei mehreren unterschiedlichen Event-Zeiten wird nachgefragt.
+• YouTube-Musik im VC, YouTube-Upload-Meldungen und Spotify werden unterschieden.
+• Bei verbundenem Gemini-Modell erhält die Antwort zusätzlich den präziseren
+  Gesprächsfokus und lokal berechnete Ergebnisse als überprüfbare Rechenhilfe.
 
-/security status: Schutz prüfen.
-/security config: Schutz einstellen.
-Ohne Gemini-Verbindung steht die begrenzte lokale Offline-Hilfe bereit.
-Optional erzwingt PIXEL_AI_MODE=offline diesen Modus.
+NEUE LOKALE RECHENHILFEN – AUCH OHNE GEMINI
+Diese Beispiele direkt an /ai schicken:
+  Löse 2x + 3 = 11
+  2(x + 3) = 18
+  3 Tickets kosten 12 Euro. Was kosten 5 Tickets?
+  Durchschnitt von 1,5; 2,5; 5
+  Start 23:30, Dauer 2 Stunden
+  15 % von 240
+Danach z. B.:
+  und das mal 2
+  davon 25 Prozent
+  nein, ich meine 15 % von 200
+Lineare Gleichungen mit x werden mit rationaler Arithmetik gelöst und durch
+Einsetzen geprüft. Nichtlineare Gleichungen und unklare Angaben werden lokal
+nicht geraten. Bei Folge-Rechnungen wird aus deinen Eingaben neu gerechnet;
+falsche Zahlen einer früheren KI-Antwort werden nicht als Grundlage verwendet.
+Diese Rechenhilfen ändern keine Rollen, Kanäle oder Serverdaten.
+
+OFFLINE UND ONLINE
+Ohne Gemini-Schlüssel ist die lokale Hilfe automatisch aktiv.
+Optional erzwingt PIXEL_AI_MODE=offline den lokalen Modus.
+Die lokale Hilfe ist um klar begrenzte Text- und Rechenfähigkeiten erweitert;
+sie ist kein neu trainiertes allgemeines Sprachmodell. Freie Wissensfragen,
+Bildverständnis und aktuelle Recherchen brauchen passende Modell-/Suchanbindung.
+Bestehende Gemini-Einstellungen und die Qualitätsprüfung bleiben erhalten.
+
+BISHERIGE FUNKTIONEN
+/new behält die 35 vorhandenen Aktionsarten, Rechte und Bestätigungen.
+Mimic, Spiele, Anti-Spam, Setup-Rollen, Kanalzuordnungen und Daten bleiben erhalten.
+YouTube-Upload-Meldungen: /uploads, /youtube check, /youtube diagnose.
+YouTube-Ton im Sprachkanal: VC beitreten, /music play mit titel als Link/Suchbegriff.
+Steuerung: /music queue, pause, resume, skip, stop und volume.
+Spotify Connect steuert wie bisher ein Spotify-Gerät.
+
+VC-MUSIK – BEI PROBLEMEN
+/music diagnose zeigt YouTube-Abrufdienst und FFmpeg.
+Der Abrufdienst wird beim Installieren automatisch per geprüftem Download
+installiert. Fehlt er: auf dem Bot-Host npm run music:setup ausführen.
+Dafür braucht der Build Zugriff auf GitHub und dessen Release-Downloadserver.
+FFmpeg kommt über das vorhandene optionale Paket ffmpeg-static; bei Bedarf
+FFMPEG_PATH für ein selbst installiertes FFmpeg verwenden.
+Pixel braucht Kanal anzeigen, Verbinden und Sprechen und darf nicht serverweit
+stummgeschaltet sein. YouTube kann Abrufe vom Host oder einzelne Titel blockieren;
+eine erfolgreiche Live-Wiedergabe ist daher nicht garantiert.
+
+PRÜFUNG
+534 automatische Tests bestanden, Syntax und lokale Modul-Vollständigkeit geprüft.
+Darunter 126 zusätzlich generierte Gleichungsbeispiele innerhalb eines Tests.
+Die 198 vorhandenen Asset-Dateien sind unverändert und deshalb nicht mitgepackt.
+Discord, Railway und Gemini wurden für dieses Update nicht live gestartet.
