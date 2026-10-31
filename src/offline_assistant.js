@@ -36,9 +36,9 @@ function clauses(request){
     if(quote){buffer+=ch;if(ch===quote||quote==='„'&&ch==='“')quote=null;continue;}
     if(['"',"'",'„','“'].includes(ch)){quote=ch==='“'?'“':ch;buffer+=ch;continue;}
     // A post body is literal text, even if it contains semicolons or command words.
-    if(ch===':'&&/^(?:(?:bitte|kannst du)\s+)*(?:(?:schreibe|poste|sende)\b|(?:erstelle|mache|mach)\s+(?:eine\s+)?umfrage\b)/i.test(buffer)){buffer+=request.slice(i);i=request.length;break;}
-    if(/^\s+wegen\s+/i.test(request.slice(i))&&/^(?:kicke?|banne?|entbanne|timeout|setze timeout)\b/i.test(buffer)){buffer+=request.slice(i);i=request.length;break;}
-    const join=request.slice(i).match(/^\s+und(?: dann)?\s+(?=(?:erstelle|erstell|mache|mach|lege|gib|gebe|weise|setze|setz|schalte|aktiviere|deaktiviere|benenne|sperre|entsperre|verschiebe|entferne|entziehe|andere|ändere|nimm|nehme|kicke|banne|entbanne|pinne|entpinne|erlaube|verbiete|vererbe|hebe|losche|lösche)\b)/i);
+    if(ch===':'&&/^(?:(?:bitte|kannst du|please|can you)\s+)*(?:(?:schreibe|poste|sende|post|send|write)\b|(?:erstelle|mache|mach|create|make)\s+(?:(?:eine|a)\s+)?(?:umfrage|poll)\b)/i.test(buffer)){buffer+=request.slice(i);i=request.length;break;}
+    if(/^\s+(?:wegen|because|reason:)\s+/i.test(request.slice(i))&&/^(?:kicke?|banne?|entbanne|unban|timeout|time out|setze timeout)\b/i.test(buffer)){buffer+=request.slice(i);i=request.length;break;}
+    const join=request.slice(i).match(/^\s+(?:und(?: dann)?|and(?: then)?|then)\s+(?=(?:erstelle|erstell|mache|mach|lege|gib|gebe|weise|setze|setz|schalte|aktiviere|deaktiviere|benenne|sperre|entsperre|verschiebe|entferne|entziehe|andere|ändere|nimm|nehme|kicke|banne|entbanne|pinne|entpinne|erlaube|verbiete|vererbe|hebe|losche|lösche|create|add|make|give|grant|assign|set|enable|disable|activate|deactivate|turn|rename|lock|unlock|move|remove|revoke|take|change|kick|ban|unban|timeout|pin|unpin|allow|deny|inherit|delete|clear|reset|post|send|write)\b)/i);
     if(ch===';'||ch==='\n'||join){if(buffer.trim())result.push(buffer.trim());buffer='';if(join)i+=join[0].length-1;continue;}
     buffer+=ch;
   }
@@ -58,7 +58,11 @@ function newPlan(data){
   const original=String(data.request||'').trim(),context=structuredClone(data.server_context||{}),actions=[];
   const answer=text=>({summary:'Offline-Wunsch',actions:[{kind:'answer',text:'🧩 '+text}]});
   if(!original||original.length>1800)return answer('Bitte beschreibe einen konkreten Bot-Wunsch mit höchstens 1800 Zeichen.');
-  if(/^(?:hilfe|help|moglichkeiten|möglichkeiten|was kannst du|was kann new|alles)[!?.,\s]*$/i.test(original))return answer(offlineActions.HELP);
+  const supplied=require('./ai_understanding').supplied(original,{language:context.bot_language||'en'});if(supplied)return answer(supplied);
+  const extended=require('./window_parser').parseRequest(original,context);if(extended)return extended;
+  const support=require('./support_playbooks').answer(original,{language:context.bot_language||'en'});if(support)return answer(support);
+  const guide=require('./bot_guides').answer(original,{language:context.bot_language||'en'});if(guide)return answer(guide);
+  if(/^(?:hilfe|help|moglichkeiten|möglichkeiten|was kannst du|was kann new|alles|what can you do)[!?.,\s]*$/i.test(original))return answer(offlineActions.HELP);
   const listing=normalize(original).match(/^(?:zeige|liste)\s+(?:mir\s+)?(?:alle\s+)?(rollen|kanale|mitglieder)(?:\s+auf)?$/);
   if(listing){const key={rollen:'roles',kanale:'channels',mitglieder:'members'}[listing[1]],rows=context[key]||[];return answer('Verfügbare '+listing[1]+':\n'+rows.map(r=>clean(r.name)+' — '+r.id).join('\n').slice(0,5400));}
   let previousRole=null;
@@ -66,7 +70,7 @@ function newPlan(data){
     const parts=clauses(original);if(parts.length>12)throw Error('Maximal zwölf klare Teilaufträge pro Wunsch.');
     for(const raw of parts){
       const clause=commandText(raw),start=actions.length;let m;
-      const extra=offlineActions.parse(clause,context);
+      const extra=require('./offline_commands').parse(clause,context)||offlineActions.parse(clause,context);
       if(extra)actions.push(...extra);
       else if((m=clause.match(/^erstelle\s+(?:mir\s+)?(?:eine[n]?\s+|die\s+)?(rolle|textkanal|text.?channel|sprachkanal|voice.?kanal|voice.?channel|kategorie)\s+(?:namens\s+|mit (?:dem )?namen\s+)?(.+)$/i))){
         const type=normalize(m[1]),rest=m[2].trim(),quoted=rest.match(/^["'„“]([^"'“]+)["'“]\s*(.*)$/);
@@ -115,7 +119,7 @@ function newPlan(data){
       }else if((m=clause.match(/^(?:schreibe|poste|sende)\s+(?:in|nach)\s+(.+?)\s*:\s*([\s\S]+)$/i))){
         actions.push({kind:'post',target:normalize(m[1])==='hier'?context.currentChannel:resolve(m[1],context.channels,'Kanal'),text:clean(unquote(m[2]))});
       }else{
-        if(parts.length===1&&(arithmetic(original)||intelligence.convert(original)||/^(?:was|wie|warum|wo|wann|wer|hilfe|fasse|zusammenfassung)\b/i.test(original)))return answer(chat(original));
+        if(parts.length===1&&(arithmetic(original)||intelligence.convert(original)||/^(?:was|wie|warum|wo|wann|wer|hilfe|fasse|zusammenfassung|what|how|why|where|when|who|help|summarize)\b/i.test(original)))return answer(chat(original));
         throw Error('Diesen Wunsch kann ich offline nicht eindeutig planen. Beispiele: „Mach einen Kanal clips und erstelle eine Rolle Helfer in Blau“, „Gib mir die Rolle Helfer“ oder „Setze Slowmode in #chat auf 2 Minuten“.');
       }
       if(actions.length>12)throw Error('Mehr als zwölf Aktionen.');
@@ -188,7 +192,7 @@ function request(request,label='') {
     const support=/ticket_ai/.test(label)&&typeof data.current_request==='string';
     let faq=null;try{faq=JSON.parse(system.match(/FAQ-KONTEXT[^\n]*:\n([^\n]*)/)?.[1]||'null');}catch{}
     const history=support?(Array.isArray(data.recent_ticket_conversation)?data.recent_ticket_conversation:[]).map(m=>({role:m.role==='user'?'user':'model',text:m.text})):request.contents || [];
-    output=chat(support?data.current_request:last.split('\n\nWichtig:')[0],{knowledge,faq,history,support});
+    output=chat(support?data.current_request:last.split('\n\nWichtig:')[0],{knowledge,faq,history,support,language:/OUTPUT LANGUAGE: German/.test(system)?'de':/OUTPUT LANGUAGE: English/.test(system)?'en':undefined});
   }
   return {text:output,offline:true};
 }

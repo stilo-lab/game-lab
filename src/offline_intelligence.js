@@ -60,17 +60,20 @@ const fmt=value=>Number.isFinite(value)?Number(value.toPrecision(12)).toLocaleSt
 function arithmetic(question){
   const q=normalize(question).replace(/[?!]+$/,'').replace(/[×·]/g,'*').replace(/÷/g,'/').replace(/−/g,'-');
   const amount='([-+]?\\d+(?:[.,]\\d+)?)';let m;
+  if((m=q.match(new RegExp('^what (?:percent|percentage) is '+amount+' of '+amount+'$')))){const a=number(m[1]),b=number(m[2]);return b===0?'A percentage with a base value of zero is undefined.':`${m[1]} of ${m[2]} = ${fmt(a/b*100)} %`;}
+  if((m=q.match(new RegExp('^(increase|decrease|reduce) '+amount+' by '+amount+' (?:%|percent)$'))))return `${m[2]} ${m[1]==='increase'?'+':'−'} ${m[3]} % = ${fmt(number(m[2])*(1+(m[1]==='increase'?1:-1)*number(m[3])/100))}`;
   if((m=q.match(new RegExp('^(?:wie viel |wieviel )?(?:prozent|%) (?:sind|ist) '+amount+' (?:von|vom) '+amount+'$')))){
     const a=number(m[1]),b=number(m[2]);return b===0?'Prozentvergleich mit einem Grundwert von 0 ist nicht definiert.':`${m[1]} von ${m[2]} = ${fmt(a/b*100)} %`;
   }
-  if((m=q.match(new RegExp('^(?:(?:berechne|rechne|was (?:ist|sind)|wie viel (?:ist|sind))\\s+)?'+amount+'\\s*(?:%|prozent)\\s*(?:von|vom)\\s*'+amount+'$'))))return `${m[1]} % von ${m[2]} = ${fmt(number(m[1])*number(m[2])/100)}`;
+  if((m=q.match(new RegExp('^(?:(?:berechne|rechne|was (?:ist|sind)|wie viel (?:ist|sind)|what is|calculate)\\s+)?'+amount+'\\s*(?:%|prozent|percent)\\s*(?:von|vom|of)\\s*'+amount+'$'))))return `${m[1]} % ${q.includes(' of ')?'of':'von'} ${m[2]} = ${fmt(number(m[1])*number(m[2])/100)}`;
   if((m=q.match(new RegExp('^(?:(?:erhohe|senke|reduziere)\\s+)?'+amount+'\\s*(?:um|[+\\-])\\s*'+amount+'\\s*(?:%|prozent)(?:\\s*(erhohen|erhoht|senken|senken|reduzieren|reduziert|rabatt))?$')))){
     const decrease=/^(?:senke|reduziere)/.test(q)||/\d\s*-\s*\d/.test(q)||/senken|reduzier|rabatt/.test(q);
     if(!decrease&&!/erhoh|\+/.test(q))return null;
     return `${m[1]} ${decrease?'−':'+'} ${m[2]} % = ${fmt(number(m[1])*(1+(decrease?-1:1)*number(m[2])/100))}`;
   }
-  let expression=q.replace(/^(?:(?:bitte )?(?:berechne|rechne)(?: mir)?|was (?:ist|sind)|wie ?viel (?:ist|sind))\s*:?\s*/,'')
+  let expression=q.replace(/^(?:(?:bitte )?(?:berechne|rechne)(?: mir)?|was (?:ist|sind)|wie ?viel (?:ist|sind)|what is|calculate|compute)\s*:?\s*/,'')
     .replace(/^teile\s+(.+)\s+durch\s+(.+)$/,'$1 / $2').replace(/\bwurzel aus\s+([-+]?\d+(?:[.,]\d+)?)/g,'sqrt($1)')
+    .replace(/\bsquare root of\s+([-+]?\d+(?:[.,]\d+)?)/g,'sqrt($1)').replace(/\bdivided by\b/g,'/').replace(/\btimes\b/g,'*').replace(/\bto the power of\b/g,'^')
     .replace(/\bquadratwurzel\s+([-+]?\d+(?:[.,]\d+)?)/g,'sqrt($1)').replace(/\bplus\b/g,'+').replace(/\bminus\b/g,'-').replace(/\bmal\b/g,'*').replace(/\bgeteilt durch\b|\bdurch\b/g,'/').replace(/\bhoch\b/g,'^')
     .replace(/,/g,'.').replace(/\s/g,'');
   if(expression.length>300||!/[+*/^%-]|sqrt\(/.test(expression))return null;
@@ -96,11 +99,16 @@ unit('mg|milligramm','mass',.001,'mg');unit('g|gramm','mass',1,'g');unit('kg|kil
 unit('ms|millisekunde|millisekunden','time',.001,'ms');unit('s|sek|sekunde|sekunden','time',1,'Sekunden');unit('min|minute|minuten','time',60,'Minuten');unit('h|stunde|stunden','time',3600,'Stunden');unit('d|tag|tage|tagen','time',86400,'Tage');
 unit('ml|milliliter','volume',.001,'ml');unit('l|liter','volume',1,'l');
 unit('b|byte|bytes','data',1,'Byte');unit('kb','data',1000,'KB');unit('mb','data',1e6,'MB');unit('gb','data',1e9,'GB');unit('kib','data',1024,'KiB');unit('mib','data',1024**2,'MiB');unit('gib','data',1024**3,'GiB');
+unit('millimeters|millimetres','length',.001,'mm');unit('centimeters|centimetres','length',.01,'cm');unit('meters|metres','length',1,'m');unit('kilometers|kilometres','length',1000,'km');
+unit('milligrams','mass',.001,'mg');unit('grams','mass',1,'g');unit('kilograms','mass',1000,'kg');
+unit('milliseconds','time',.001,'ms');unit('second|seconds','time',1,'Sekunden');unit('minutes','time',60,'Minuten');unit('hour|hours','time',3600,'Stunden');unit('day|days','time',86400,'Tage');
+unit('milliliters|millilitres','volume',.001,'ml');unit('liters|litres','volume',1,'l');
 function convert(question){
-  const q=normalize(question).replace(/[?!]+$/,'').replace(/^(?:rechne|wandle)(?: mir)?\s+/,'').replace(/^(?:wie viel(?:e)? (?:ist|sind)|was sind)\s+/,'').replace(/\s+(?:um|bitte)$/,'');
-  const m=q.match(/^([-+]?\d+(?:[.,]\d+)?)\s*([\p{L}°]+)\s+(?:in|zu|nach|=)\s*([\p{L}°]+)$/u);if(!m)return null;
+  const q=normalize(question).replace(/[?!]+$/,'').replace(/^(?:rechne|wandle|convert)(?: mir)?\s+/,'').replace(/^(?:wie viel(?:e)? (?:ist|sind)|was sind)\s+/,'').replace(/\s+(?:um|bitte)$/,'');
+  const m=q.match(/^([-+]?\d+(?:[.,]\d+)?)\s*([\p{L}°]+)\s+(?:in|zu|nach|to|=)\s*([\p{L}°]+)$/u);if(!m)return null;
   const value=number(m[1]),a=UNITS[m[2]],b=UNITS[m[3]];
-  if(a&&b){if(a.dimension!==b.dimension)return 'Diese Einheiten messen unterschiedliche Größen und lassen sich so nicht umrechnen.';return `${m[1]} ${a.label} = ${fmt(value*a.factor/b.factor)} ${b.label}`;}
+  const english=/^convert\b|\b(?:to|seconds?|minutes|hours?|days?|milliseconds|grams|kilograms|milligrams|meters|metres|centimeters|centimetres|kilometers|kilometres|liters|litres|milliliters|millilitres)\b/.test(q),label=value=>english?({Sekunden:'seconds',Minuten:'minutes',Stunden:'hours',Tage:'days'}[value]||value):value,format=english?value=>Number(Number(value).toPrecision(12)).toString():fmt;
+  if(a&&b){if(a.dimension!==b.dimension)return 'Diese Einheiten messen unterschiedliche Größen und lassen sich so nicht umrechnen.';return `${m[1]} ${label(a.label)} = ${format(value*a.factor/b.factor)} ${label(b.label)}`;}
   const temperatures={'c':'c','°c':'c','celsius':'c','f':'f','°f':'f','fahrenheit':'f','k':'k','kelvin':'k'},from=temperatures[m[2]],to=temperatures[m[3]];
   if(from&&to){const c=from==='c'?value:from==='k'?value-273.15:(value-32)*5/9;if(c< -273.15-1e-9)return 'Eine Temperatur unter dem absoluten Nullpunkt ist nicht möglich.';const result=to==='c'?c:to==='k'?c+273.15:c*9/5+32;return `${m[1]} ${from==='k'?'K':'°'+from.toUpperCase()} = ${fmt(result)} ${to==='k'?'K':'°'+to.toUpperCase()}`;}
   return null;
@@ -155,23 +163,30 @@ const GUIDE={
   learn:['Die Serververwaltung kann mit `/learn` Fakten und Abläufe hinterlegen. Frag danach konkret nach dem Thema; die Offline-Hilfe sucht passende Einträge, auch mit einigen Synonymen und Tippfehlern. Normale Chatnachrichten ändern dieses Serverwissen nicht.'],
   ai:['🧩 Die lokale Hilfe versteht Bot-Fragen, gespeichertes `/learn`-Wissen, Folgefragen, Rechnungen, Prozente, Einheiten und Textauszüge. Beispiele: „15 % von 240“, „2 Stunden in Minuten“, „Fasse zusammen: …“. Freie Wissensfragen und aktuelle Recherchen brauchen ein Sprachmodell beziehungsweise Webzugriff.']
 };
-function chat(question,{knowledge='',faq=null,history=[],support=false}={}){
+function chat(question,{knowledge='',faq=null,history=[],support=false,language}={}){
   const q=safe(question).trim(),n=normalize(q),d=dialogue(q,history),focus=d.focus,t=d.domain||topic(d.subject||q),smart=localReasoning.solve(q,history,{arithmetic}),math=arithmetic(q),conversion=convert(q);
+  const supplied=require('./ai_understanding').supplied(q,{language:language||require('./localization').languageFor(require('./localization').currentGuild())});if(supplied)return supplied;
   if(smart&&smart.kind!=='unsupported')return smart.text+'\n\n🧩 Offline berechnet; bei Folgefragen aus deinen Eingaben neu berechnet.';
   if(math||conversion)return (math||conversion)+'\n\n🧩 Offline berechnet.';
   if(/(?:was (?:steht|siehst|ist)|prufe|analysiere).*(?:bild|screenshot|anhang|foto)/.test(n))return '🧩 Offline kann ich Bilder nicht auswerten. Schreib bitte den sichtbaren Text oder die genaue Fehlermeldung hier hinein.';
-  if(/^(?:hi|hey|yo|hallo|moin|servus)[!?.,\s]*$/.test(n))return 'yo 🙂 Was brauchst du? Ich bin im Offline-Modus.';
-  if(/^(?:danke|thx|passt|gelost|geht wieder|hat geklappt)[!?.,\s]*$/.test(n))return 'passt, freut mich 🙂';
+  if(/^(?:hi|hey|yo|hello|hallo|moin|servus)[!?.,\s]*$/.test(n))return 'yo 🙂 Was brauchst du? Ich bin im Offline-Modus.';
+  if(/^(?:danke|thanks|thank you|thx|passt|solved|it works|fixed|gelost|geht wieder|hat geklappt)[!?.,\s]*$/.test(n))return 'passt, freut mich 🙂';
   if(/(?:was habe ich (?:zuletzt )?(?:gesagt|geschrieben|gefragt)|was war meine letzte frage)/.test(n))return d.users.length?'Zuletzt hast du geschrieben:\n'+d.users.slice(-3).map(s=>'• '+safe(s).slice(0,450)).join('\n')+'\n\n🧩 Nur aus diesem Gespräch.':'In diesem Gespräch ist noch keine frühere Nachricht verfügbar.';
   const text=q.match(/^(?:fasse(?: mir)?(?: (?:diesen|den) text)? zusammen|zusammenfassen|kurzfassung|zusammenfassung|mach(?:e)? (?:mir )?stichpunkte)\s*:\s*([\s\S]+)$/i)?.[1];
   if(text){const result=summarize(text);return result?'📄 Textauszug:\n'+result+'\n\n🧩 Offline gekürzt; nur Aussagen aus deinem Text.':'Bitte gib nach dem Doppelpunkt den Text an, den ich kürzen soll.';}
   if(/^(?:kurzer|kurz|mach(?:e)? (?:es |das )?kurzer)[.!?\s]*$/.test(n)&&d.previous){const result=summarize(d.previous,2);if(result)return 'Kurzfassung der vorigen Antwort:\n'+result+'\n\n🧩 Offline gekürzt.';}
+  const botGuide=require('./bot_guides').answer(q,{history,language:language||require('./localization').languageFor(require('./localization').currentGuild())});
+  const playbook=(language||/backup|serverbackup|reinvite|ticketform|giveaway|givaway/.test(n))?require('./support_playbooks').answer(q,{history,language:language||require('./localization').languageFor(require('./localization').currentGuild())}):null;
+  if(playbook&&!knowledge&&!faq?.answer)return playbook;
+  if(botGuide&&!knowledge&&!faq?.answer)return '🧩 '+botGuide;
   if(d.attempts&&t&&GUIDE[t])return GUIDE[t][Math.min(d.attempts,GUIDE[t].length-1)]+'\n\n🧩 Nächster lokaler Prüfschritt.';
   if(d.attempts)return (d.attempts>1?'Für eine gezielte Prüfung braucht das Team die genaue Fehlermeldung, dein Ziel und die bereits gescheiterten Schritte.':'Welche genaue Fehlermeldung oder Reaktion kam beim letzten Schritt?')+(d.subject?'\nBezug: „'+safe(d.subject).slice(0,200)+'“.':'')+'\n\n🧩 Offline-Modus';
   const local=searchKnowledge(knowledge,focus);
   const conflict=localReasoning.knownConflict(local,focus);if(conflict)return conflict+'\n\n🧩 Nur aus dem gespeicherten Serverwissen.';
   if(faq?.answer)return '📚 Lokale Hilfe:\n'+safe(faq.answer)+'\n\n🧩 Offline-Modus';
   if(local.length)return '📚 Passendes Serverwissen:\n'+local.map(s=>'• '+s).join('\n')+'\n\n🧩 Offline-Modus: aus hinterlegten Angaben. Mehrere Angaben sind keine automatische Aktualitätsprüfung.';
+  if(playbook)return playbook;
+  if(botGuide)return '🧩 '+botGuide;
   if(t==='spotify'&&/redirect_uri|redirect uri/.test(n))return GUIDE.spotify[1]+'\n\n🧩 Offline-Hilfe';
   if(t==='music'&&/sign in|confirm.*bot|\b403\b|\b429\b|verweigert|blockiert/.test(n))return GUIDE.music[2]+'\n\n🧩 Offline-Hilfe';
   if(t==='youtube'&&/^(?:youtube|yt)(?: geht (?:nicht|nd))?[!?.,\s]*$/.test(n))return 'Meinst du YouTube-Upload-Meldungen mit `/youtube` und `/uploads` oder Musik im Sprachkanal mit `/music play`?\n\n🧩 Offline-Hilfe';

@@ -11,7 +11,7 @@ function checkInstallation(directory=__dirname){
       const value=match[1],name=path.basename(value).replace(/\.js$/,'');if(ignored.has(name))continue;
       const resolved=path.resolve(path.dirname(file),value);
       if(!resolved.startsWith(directory+path.sep))continue;
-      if(path.extname(resolved)&&path.extname(resolved)!=='.js')continue;
+      if(path.extname(resolved)&&path.extname(resolved)!=='.js'){if(path.extname(resolved)==='.json'&&!fs.existsSync(resolved))missing.add(path.relative(directory,resolved));continue;}
       scan(path.extname(resolved)?resolved:resolved+'.js');
     }
   }

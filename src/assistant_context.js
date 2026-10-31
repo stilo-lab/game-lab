@@ -3,11 +3,11 @@
 const norm=value=>String(value??'').slice(0,24000).normalize('NFKC').replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g,'').toLowerCase().replace(/ß/g,'ss').normalize('NFKD').replace(/\p{M}/gu,'').replace(/\s+/g,' ').trim();
 function messageText(m){return String((Array.isArray(m?.parts)?m.parts.filter(p=>typeof p?.text==='string').map(p=>p.text).join('\n'):'')||m?.text||'').slice(0,6000);}
 const FAILED=/^(?:(?:nein|nee|ne)[,.! ]*)?(?:geht(?: immer noch)? (?:nicht|nd|ned|nich)|(?:das |es )?(?:funktioniert|klappt)(?: immer noch)? (?:nicht|nd|ned)|nope|hat (?:nix|nichts) gebracht|immer noch(?: (?:gleich|kaputt|nicht|nd))?|andere losung|same)[!?.\s]*$/;
-function failed(value){return FAILED.test(norm(value));}
-function correction(value){return /^(?:nein|nee|ne)[,.! ]+\S|^(?:ich meine|ich mein|ich meinte|gemeint ist|korrektur:|stattdessen|sondern)\b/.test(norm(value));}
+function failed(value){return FAILED.test(norm(value))||/^(?:nope|still not working|it (?:does not|doesn't|doesnt) work|(?:it )?(?:did not|didn't|didnt) work|not working|doesn't work|doesnt work|that didn't help|that did not help)[!?.\s]*$/.test(norm(value));}
+function correction(value){return /^(?:no|actually)[,.! ]+\S|^(?:i mean|i meant|correction:|instead)\b|^(?:nein|nee|ne)[,.! ]+\S|^(?:ich meine|ich mein|ich meinte|gemeint ist|korrektur:|stattdessen|sondern)\b/.test(norm(value));}
 function isFollowup(value){
   const n=norm(value);
-  return failed(n)||correction(n)||/^(?:ha|hae|hm|hmm|ok|okay|ne|nein|ja|warum|wieso|weiter|nochmal|genauer|wie(?: genau)?|was jetzt|und (?:jetzt|dann)|was meinst du|kurzer|kurz|ausfuhrlicher|mehr details|mach weiter|erklare(?: es)?(?: genauer)?|noch (?:nicht|nd)|(?:gebe|gib|schick)(?:e)?(?: mir)? (?:den |die )?links?(?: bitte| pls)?|links?(?: bitte| pls)?|was kostet (?:das|es)|wie teuer ist (?:das|es))[!?.,\s]*$/.test(n)
+  return failed(n)||correction(n)||/^(?:i (?:have |already )?(?:tried|tested|restarted|installed|checked)|i've (?:already )?(?:tried|tested|checked)|already (?:tried|tested|checked))\b/.test(n)||/^(?:and (?:now|then|what|how|when|where|that)|what about that|make (?:it|that) (?:shorter|longer)|explain (?:it|that))\b/.test(n)||/^(?:why|how exactly|what now|what next|continue|shorter|more detail|explain that|try again|ha|hae|hm|hmm|ok|okay|ne|nein|ja|warum|wieso|weiter|nochmal|genauer|wie(?: genau)?|was jetzt|und (?:jetzt|dann)|was meinst du|kurzer|kurz|ausfuhrlicher|mehr details|mach weiter|erklare(?: es)?(?: genauer)?|noch (?:nicht|nd)|(?:gebe|gib|schick)(?:e)?(?: mir)? (?:den |die )?links?(?: bitte| pls)?|links?(?: bitte| pls)?|was kostet (?:das|es)|wie teuer ist (?:das|es))[!?.,\s]*$/.test(n)
     ||/^und (?:wie|wann|wo|wer|was|das|dann|jetzt)\b/.test(n)
     ||/^(?:ich habe|ich hab|habe|hab|schon|bereits)\b.{0,500}\b(?:versucht|probiert|getestet|gemacht|neu gestartet|installiert|gepruft)\b/.test(n)
     ||/^(?:mach(?:e)? (?:es |das )?(?:kurzer|langer)|(?:die|der|das|es|dort|da)(?:[?!.]|$)|davon\s+\d|kein(?:en)? (?:ton|sound)\b|error\b|fehler:|exception\b|traceback\b|cannot find module\b|missing permissions\b|redirect_uri\b|sign in to confirm\b|http [45]\d\d\b)/.test(n);
@@ -16,14 +16,14 @@ function domain(value){
   const n=norm(value);
   if(/\bmimi[ck]|spiel.?leiter/.test(n))return 'mimic';
   if(/spotify|redirect_uri|redirect uri/.test(n))return 'spotify';
-  if(/\/music\b|yt-dlp|ffmpeg|\bmusik\b|(?:youtube|\byt\b).*(?:\bvc\b|voice|ton|audio)|(?:\bvc\b|voice).*(?:youtube|\byt\b|song)/.test(n))return 'music';
+  if(/\/music\b|yt-dlp|ffmpeg|\b(?:musik|music)\b|(?:youtube|\byt\b).*(?:\bvc\b|voice|ton|audio)|(?:\bvc\b|voice).*(?:youtube|\byt\b|song)/.test(n))return 'music';
   if(/cannot find module|module_not_found|railway|restart|neustart|deploy|bot.*(?:offline|startet nicht)|invalid.*token|tokeninvalid|disallowed intents/.test(n))return 'railway';
   if(/youtube|\byt\b|uploads?|shorts|\b404\b/.test(n))return 'youtube';
   if(/missing (?:access|permissions)|50013|50001|berechtigung|zugriff verweigert/.test(n))return 'permissions';
   if(/anti.?spam|security|sicherheit|automod/.test(n))return 'security';
   if(/counting|zahlkanal|zahlenkanal/.test(n))return 'counting';
   if(/\blearn\b|serverwissen|wissen (?:lernen|speichern)/.test(n))return 'learn';
-  if(/setup|kanal|\brollen?\b|\bnew\b/.test(n))return 'setup';
+  if(/setup|kanal|\b(?:roles?|channels?|rollen?)\b|\bnew\b/.test(n))return 'setup';
   if(/\b(ai|ki|offline)\b/.test(n))return 'ai';
   return null;
 }
@@ -54,10 +54,10 @@ function conversation(question,history=[]){
     attempts:followup?[...activeUsers,q].filter(failed).length:0,
     domain:correctionDomain||currentDomain||domain(subject),
     corrections:[...activeUsers,q].filter(correction).slice(-4),
-    constraints:[...activeUsers,q].filter(t=>/\b(?:ohne|nur|behalte|behalten|nicht loschen|nichts loschen|zerstore|zerstor|nd loschen|kein|keine|keinen|statt|sondern|don't|without|keep)\b/.test(norm(t))).slice(-5)};
+    constraints:[...activeUsers,q].filter(t=>/\b(?:ohne|nur|behalte|behalten|nicht loschen|nichts loschen|zerstore|zerstor|nd loschen|kein|keine|keinen|statt|sondern|don't|do not|must not|only|without|keep|preserve|never)\b/.test(norm(t))).slice(-5)};
 }
 const STOP=new Set('der die das den dem des ein eine einen einer einem und oder aber ist sind war waren ich du er sie es wir ihr man mein meine dein deine mit ohne fur von auf im in am an zu zum zur so wie was wer wo wann warum bitte pls bro hab habe hat haben geht nicht schon noch auch nur jetzt mal kann konnen will mochte denn doch mir mich sich unser unsere dieses diese welche welcher wird werden wurde the a an and or is are my your it to of for can please this that'.split(' '));
-const FAMILIES=[['youtube','yt','uploads','upload','shorts'],['discord','dc'],['event','events','veranstaltung','veranstaltungen','turnier'],['start','startet','starten','beginn','beginnt','anfang','uhrzeit'],['regel','regeln','rules','erlaubt','verboten'],['bewerbung','bewerben','staff','moderator','mod'],['sicherheit','security','antispam','spam','automod'],['rolle','rollen','role','roles'],['kanal','kanale','channel','channels'],['support','ticket','tickets','hilfe'],['mimic','mimik'],['counting','zahlen','zahlkanal'],['musik','music','song','songs'],['preis','kosten','kostet']];
+const FAMILIES=[['youtube','yt','uploads','upload','shorts'],['discord','dc'],['event','events','veranstaltung','veranstaltungen','turnier'],['start','startet','starten','beginn','beginnt','anfang','uhrzeit','starts','begin','begins'],['regel','regeln','rules','erlaubt','verboten'],['bewerbung','bewerben','staff','moderator','mod','application','applications','applicant','apply'],['sicherheit','security','antispam','spam','automod'],['rolle','rollen','role','roles'],['kanal','kanale','channel','channels'],['support','ticket','tickets','hilfe'],['mimic','mimik'],['counting','zahlen','zahlkanal'],['musik','music','song','songs'],['preis','kosten','kostet','price','prices','cost'],['verfugbarkeit','verfugbar','online','availability','available'],['erfahrung','experience','experienced']];
 const groups=new Map(FAMILIES.flatMap((items,i)=>items.map(word=>[word,i])));
 function words(value){return [...new Set((norm(value).match(/[\p{L}\p{N}]+/gu)||[]).filter(w=>w.length>1&&w.length<=64&&!STOP.has(w)))].slice(0,120);}
 function near(a,b){

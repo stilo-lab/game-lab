@@ -10,20 +10,21 @@ function settings(gd) {
   if(typeof gd?.securitySettings?.enabled==='boolean')out.enabled=gd.securitySettings.enabled;
   return out;
 }
-function canonical(text) {return String(text || '').normalize('NFKC').replace(/[\u200b-\u200f\ufeff]/g,'').toLowerCase().replace(/\s+/g,' ').trim().slice(0,2000);}
+function canonical(text) {return String(text || '').normalize('NFKC').replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g,'').toLowerCase().replace(/\s+/g,' ').trim().slice(0,2000);}
 function createGuard({guildData,saveDB=()=>{},recordPunishment=async()=>{},alert=async()=>{},ownerId,now=Date.now,maxUsers=10000}={}) {
   maxUsers=Math.max(1,Math.min(10000,Number(maxUsers)||10000));
-  const users=new Map(),lastAlerts=new Map(),commands=new Map();let checks=0;
+  const users=new Map(),lastAlerts=new Map(),commands=new Map(),deleteBudgets=new Map();let checks=0;
   function prune() {
     if(++checks%100!==0 && users.size<maxUsers)return;
     for(const [key,value]of users)if(now()-value.at>10*60000)users.delete(key);
     for(const [key,at]of lastAlerts)if(now()-at>10*60000)lastAlerts.delete(key);
     for(const [key,row]of commands)if(now()-row.at>60000)commands.delete(key);
-    while(users.size>=maxUsers)users.delete(users.keys().next().value);
+    while(users.size>maxUsers)users.delete(users.keys().next().value);
+    for(const [key,row]of deleteBudgets)if(now()-row.at>10000)deleteBudgets.delete(key);
   }
   function commandGate(interaction) {
-    if(!interaction.guild?.id || !interaction.user?.id || !['ai','new','serversetup','setup','create','staffai','aipulse','learn','staffapplication'].includes(interaction.commandName))return true;
-    const gd=guildData(interaction.guild.id);if(!settings(gd).enabled || gd.settings?.autoModEnabled===false)return true;
+    if(!interaction.guild?.id || !interaction.user?.id || !['ai','new','command','befehl','invite','game','giveaway','addinvites','resetinvites','rewards','inviteevent','help','diagnose','raid','botsecurity','read','stickers','ticketform','no-bot','backup','serverbackup','serversetup','setup','create','staffai','aipulse','learn','staffapplication'].includes(interaction.commandName))return true;
+    // Resource limits also protect the bot when moderation is disabled.
     prune();const key=interaction.guild.id+':'+interaction.user.id,at=now(),row=commands.get(key)||{at,times:[]};
     row.times=row.times.filter(t=>at-t<20000);row.at=at;
     const limit=interaction.user.id===ownerId || interaction.member?.permissions?.has?.(P.Administrator)?20:6;
@@ -39,26 +40,38 @@ function createGuard({guildData,saveDB=()=>{},recordPunishment=async()=>{},alert
     prune();const at=now(),key=message.guild.id+':'+message.author.id;
     const state=users.get(key)||{at,times:[],duplicates:[],busy:false,until:0,seen:[]};
     if(state.seen.includes(message.id))return null;
-    state.seen=[...state.seen.slice(-29),message.id];state.at=at;users.set(key,state);
+    state.seen=[...state.seen.slice(-29),message.id];state.at=at;users.delete(key);users.set(key,state);while(users.size>maxUsers)users.delete(users.keys().next().value);
     if(state.busy || state.until>at)return {kind:'blocked',key,state};
     const text=canonical(message.content),hash=text.length>=8?createHash('sha256').update(text).digest('hex'):null;
     state.times=state.times.filter(t=>at-t<config.windowSeconds*1000);state.times.push(at);
     state.duplicates=state.duplicates.filter(r=>at-r.at<20000);if(hash)state.duplicates.push({at,hash});state.duplicates=state.duplicates.slice(-40);
     const duplicates=hash?state.duplicates.filter(r=>r.hash===hash).length:0;
     const pings=(message.mentions?.users?.size || 0)+(message.mentions?.roles?.size || 0);
-    const links=(String(message.content || '').match(/https?:\/\/[^\s<>]+/gi)||[]).length;
-    const reason=state.times.length>=config.messageLimit?'Nachrichten-Flut':duplicates>=config.repeatLimit?'Wiederholter gleicher Text':pings>=config.pingLimit?'Zu viele Nutzer-/Rollen-Pings':links>=config.linkLimit?'Link-Flut':null;
+    const massMention=message.mentions?.everyone===true;
+    const links=(String(message.content || '').match(/(?:https?:\/\/|www\.|discord\.(?:gg|com\/invite)\/)[^\s<>]+/gi)||[]).length;
+    const reason=massMention?'Massen-Erwähnung':state.times.length>=config.messageLimit?'Nachrichten-Flut':duplicates>=config.repeatLimit?'Wiederholter gleicher Text':pings>=config.pingLimit?'Zu viele Nutzer-/Rollen-Pings':links>=config.linkLimit?'Link-Flut':null;
     if(!reason)return null;
     // Reserve immediately, before any asynchronous Discord call.
     state.busy=true;state.until=at+10000;state.times=[];state.duplicates=[];
     return {kind:'offense',key,state,reason,config,at};
   }
+  async function removeSpam(message,state){
+    state||={};
+    const bot=message.guild.members?.me;if(!message.deletable||!message.delete||!message.channel?.permissionsFor?.(bot)?.has(P.ManageMessages))return;
+    const at=now(),gid=message.guild.id,previous=deleteBudgets.get(gid),budget=previous&&at-previous.at<10000?previous:{at,count:0};
+    if(!state.deletions||at-state.deletions.at>=10000)state.deletions={at,count:0};
+    if(budget.count>=100||state.deletions.count>=5)return;
+    budget.count++;state.deletions.count++;deleteBudgets.set(gid,budget);while(deleteBudgets.size>maxUsers)deleteBudgets.delete(deleteBudgets.keys().next().value);
+    await message.delete().catch(()=>{});
+  }
   async function enforce(message,decision) {
     if(!decision)return false;
-    if(decision.kind==='blocked')return true;
+    if(decision.handled)return true;decision.handled=true;
+    if(decision.kind==='blocked'){await removeSpam(message,decision.state);return true;}
     const {state,config,reason,at}=decision,gd=guildData(message.guild.id);
     let action='warn',minutes=0;
     try {
+      const previousState=gd.securityState?structuredClone(gd.securityState):undefined;
       gd.securityState ||= {};
       for(const [id,row]of Object.entries(gd.securityState))if(at-Number(row?.at || 0)>24*3600000)delete gd.securityState[id];
       const old=gd.securityState[message.author.id];
@@ -67,9 +80,9 @@ function createGuard({guildData,saveDB=()=>{},recordPunishment=async()=>{},alert
       // Keep persistent state bounded, without erasing current user history.
       const entries=Object.entries(gd.securityState).sort((a,b)=>b[1].at-a[1].at);
       for(const [id]of entries.slice(500))delete gd.securityState[id];
-      saveDB();
+      try{saveDB();}catch(error){if(previousState===undefined)delete gd.securityState;else gd.securityState=previousState;await removeSpam(message,state);throw error;}
       const bot=message.guild.members?.me,member=message.member;
-      if(message.deletable && message.delete && message.channel?.permissionsFor?.(bot)?.has(P.ManageMessages))await message.delete().catch(()=>{});
+      await removeSpam(message,state);
       if(count>=2 && member && member.moderatable!==false && bot?.permissions?.has(P.ModerateMembers) && typeof member.timeout==='function') {
         minutes=Math.min(15,config.timeoutMinutes*(count-1));
         await member.timeout(minutes*60000,'Pixel Security: '+reason);action='timeout';
@@ -122,4 +135,14 @@ async function handle(interaction,{guildData,saveDB,canManage}={}) {
   const c=settings(gd);
   return interaction.reply({content:`🛡️ Anti-Spam: **${c.enabled && gd.settings?.autoModEnabled!==false?'AN':'AUS'}**\n${c.messageLimit} Nachrichten / ${c.windowSeconds}s · ${c.repeatLimit} gleiche Texte / 20s\n${c.pingLimit} Nutzer-/Rollen-Pings oder ${c.linkLimit} Links pro Nachricht\nErster Verstoß: Warnung. Danach kurze Timeouts bis maximal 15 Minuten.\nDer globale AutoMod-Schalter in /settings gilt weiterhin.`,flags:MessageFlags.Ephemeral,allowedMentions:{parse:[]}});
 }
-module.exports={DEFAULTS,settings,createGuard,command,handle};
+async function toggleSetting(i,{serverSettings,metadata,saveDB,canManage,render}={}){
+  await i.deferUpdate();
+  const fail=content=>i.followUp({content,flags:MessageFlags.Ephemeral,allowedMentions:{parse:[]}});
+  let member;try{member=await i.guild.members.fetch({user:i.user.id,force:true});}catch{return fail('Die aktuellen Rechte konnten nicht geprüft werden. Die Einstellungen bleiben erhalten.');}
+  if(!canManage({user:i.user,guild:i.guild,member,memberPermissions:member.permissions}))return fail('Nur die Serververwaltung darf diese Einstellung ändern.');
+  const key=i.values?.[0];if(typeof key!=='string'||!Object.hasOwn(metadata,key))return fail('Unbekannte Einstellung.');
+  const config=serverSettings(i.guild.id),previous=config[key];config[key]=!previous;
+  try{saveDB();}catch{config[key]=previous;return fail('Die Einstellungen konnten nicht gespeichert werden. Der bisherige Schutz bleibt erhalten.');}
+  return i.editReply(render(i.guild.id));
+}
+module.exports={DEFAULTS,settings,createGuard,command,handle,toggleSetting};

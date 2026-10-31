@@ -400,6 +400,7 @@ function createStaffSystem(ctx) {
   }
 
   async function timeoutUser(guild, userId, minutes, reason, source, moderatorId = null) {
+    if (userId === OWNER_ID || userId === guild.ownerId) return false;
     const member = await guild.members.fetch(userId).catch(() => null);
     if (!member || !member.moderatable) return false;
     try { await member.timeout(minutes * 60000, reason); } catch { return false; }

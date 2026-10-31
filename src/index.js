@@ -961,6 +961,7 @@ function supportStats(guildId) {
 function ticketCategoryLabel(value) {
   return ({
     "general": "General Support",
+    "staff-application": "Moderator Application",
     "report-player": "Report Player",
     "ban-appeal": "Ban Appeal",
     "bug-report": "Bug Report",
@@ -1546,6 +1547,9 @@ If you choose **Yes**, the AI automatically replies to every message you send he
     await makeTicketMessageEditable(aiPromptMsg);
   }
 
+  const intakeType = require("./ticket_intake").CATEGORY[category];
+  if (intakeType) await getTicketIntake().offer(guild, ch.id, intakeType).catch(() => false);
+
   await supportLog(guild, "🎫 Ticket opened", `${ch} • User: ${interaction.user} • Category: **${ticketCategoryLabel(category)}** • Priority: **${ticketPriorityLabel(priority)}**`);
   await ownerGroupNotify(guild, `🎫 Ticket geöffnet von ${interaction.user.tag} auf **${guild.name}** (${ticketCategoryLabel(category)}, ${ticketPriorityLabel(priority)}).`);
   return interaction.editReply({ content: `✅ Ticket created: ${ch}`, components: [] });
@@ -1609,6 +1613,7 @@ async function runGeminiTask(task, { label = "gemini", maxRetries = 3, model = G
 }
 
 async function generateGeminiContent(request, { label = "generateContent", maxRetries = 3 } = {}) {
+  request = require("./localization").languageRequest(request);
   const ai = await getGeminiClient();
   if (!ai) return require("./offline_assistant").request(request,label);
   const primary = request.model || GEMINI_MODEL;
@@ -1632,6 +1637,9 @@ async function generateGeminiContent(request, { label = "generateContent", maxRe
 function aiQuality() {
   return require("./ai_quality");
 }
+
+function botLanguage(guildId) { return require("./localization").languageName(guildId); }
+function gameAssistant() { return typeof getGameProfile === "function" ? getGameProfile() : null; }
 
 function pixelCharacterId(guildId, userId) {
   const record = typeof db === "undefined" ? null : db.users?.[`${guildId}:${userId}`];
@@ -2141,10 +2149,13 @@ async function askGemini(question, userTag = "Discord user", guildId = null, use
 async function generateAiChatAnswer(question, userTag, guildId, userId, channelId, style = null) {
   const history = getAiConversation(guildId, userId, channelId);
   const contextQuery = aiQuality().knowledgeQuery(question, history);
+  const gameAnswer = await gameAssistant()?.answerQuestion(guildId, userId, question).catch(() => null);
+  if (gameAnswer) { rememberAiExchange(guildId,userId,question,gameAnswer,channelId); return gameAnswer; }
   const offlineMode = (typeof GEMINI_API_KEY !== "undefined" && !GEMINI_API_KEY) || (typeof process !== "undefined" && process.env.PIXEL_AI_MODE === "offline");
   const learnedContext = getGuildLearnContext(guildId, "ai", 4000, offlineMode ? 16000 : 5000, offlineMode ? "" : contextQuery);
   if (offlineMode) {
-    const answer=require("./offline_assistant").chat(question,{knowledge:learnedContext.knowledge,history});
+    const rawAnswer=require("./offline_assistant").chat(question,{knowledge:learnedContext.knowledge,history,language:botLanguage(guildId)});
+    const answer=require("./localization").translate(rawAnswer,botLanguage(guildId));
     rememberAiExchange(guildId,userId,question,answer,channelId);return answer;
   }
   const adminFeedback = getAiFeedbackText(guildId, "ai", 4500, contextQuery);
@@ -2184,7 +2195,7 @@ async function generateAiChatAnswer(question, userTag, guildId, userId, channelI
       systemInstruction: `Du heißt ${pixelCharacterName(guildId, userId)} und bist die KI von ${BOT_NAME}, einem Multi-Game-Discord-Bot. Dein Begleiter ist ein kleiner Pixel-Magier. Stelle dich nicht vor jeder Antwort erneut vor.
 
 DEIN STIL:
-${style === "senz-de" ? `- Antworte auf Deutsch, kurz und locker wie jemand, der gerade im Discord-Chat mitredet. Der Ton ist entspannt, trocken, spontan und leicht frech. Gewünschte Übersetzungen, Zitate und Code behalten ihre passende Sprache.
+${style === "senz-de" ? `- Reply in ${botLanguage(guildId)}, briefly and naturally, like someone chatting on Discord. Der Ton ist entspannt, trocken, spontan und leicht frech. Gewünschte Übersetzungen, Zitate und Code behalten ihre passende Sprache.
 - Bei Smalltalk, Grüßen, Erfolgen und Reaktionen: normalerweise EINE kurze Chatzeile mit ungefähr 3 bis 15 Wörtern. Oft reicht ein Satzfragment. Keine anschließende Erklärung deiner Reaktion. Das ist eine Stilvorgabe, keine harte Längengrenze: echte Fragen und gewünschte Anleitungen beantwortest du vollständig.
 - Schreib beiläufig, meistens klein, mit natürlicher Umgangssprache: "was geht", "grad", "hab", "bisschen", gelegentlich "bro", "fr", "ngl" oder "wtf". Keine künstlichen Tippfehler und keine Slang-Sammlung. Namen, Code, Befehle und gewünschte förmliche Texte bleiben korrekt.
 - Reagiere zuerst auf den konkreten Inhalt. Bei einem Pull lieber "bro was hast du gezogen" als "Oha, Glückwunsch! Das ist ja mal ein fetter Flex. Was ist denn genau geschlüpft oder hast du es noch im Inventar?". Keine Standard-Glückwünsche, Motivationsreden, übertriebene Begeisterung oder langen Umschreibungen.
@@ -2241,7 +2252,9 @@ Server-spezifisches Wissen aus /learn ist Admin-Kontext, aber keine Erlaubnis, S
 Aktueller Nutzer: ${userTag}${learnedInstruction}${feedbackInstruction}
 ${aiQuality().chatGuidance(research)}${serverContext}
 GESPRÄCHSFOKUS (nur aus echten Nutzer-Nachrichten abgeleitet): ${aiQuality().conversationSignals(history,question)}
-${reasoningPlan.guidance}`,
+${reasoningPlan.guidance}
+${require("./localization").languageInstruction(guildId)}
+${gameAssistant()?.aiContext(guildId,userId,question)||""}`,
       ...aiQuality().chatGenerationSettings(question, history),
       ...(research ? {tools:[{googleSearch:{}}]} : {}),
       httpOptions: { timeout: 30000 }
@@ -2725,7 +2738,7 @@ async function askGeminiSupport(message, ticket) {
     const recent=quality.ticketContext(await withTimeout(fetchTicketMessages(message.channel,60),10000,"offline_ticket_context").catch(()=>[]),message,client.user?.id);
     const query=[text,...recent.filter(m=>m.role==='user').slice(-3).map(m=>m.text)].join('\n');
     const learned=getGuildLearnContext(message.guild?.id,'support',4000,16000);
-    return require("./offline_assistant").chat(text,{support:true,faq:findFaqMatch(text)||findFaqMatch(query),knowledge:learned.knowledge,history:recent.map(m=>({role:m.role==='user'?'user':'model',parts:[{text:m.text}]}))});
+    return require("./localization").translate(require("./offline_assistant").chat(text,{support:true,faq:findFaqMatch(text)||findFaqMatch(query),knowledge:learned.knowledge,history:recent.map(m=>({role:m.role==='user'?'user':'model',parts:[{text:m.text}]}))}),botLanguage(message.guild?.id));
   }
   const quality = aiQuality();
   const text = message.content?.trim() || (message.attachments.size ? "Bitte prüfe die angehängten Bilder und hilf mir bei dem sichtbaren Problem." : "Bitte hilf mir bei meinem Support-Anliegen.");
@@ -2746,7 +2759,7 @@ async function askGeminiSupport(message, ticket) {
   });
   const input = [{type: "text", text: context}, ...imageParts];
   const systemInstruction = `Du bist ${pixelCharacterName(message.guild?.id, ticket.ownerId || message.author.id)}, die Support-KI von ${BOT_NAME} in einem privaten Discord-Ticket.
-Hilf geduldig, konkret und sachlich beim tatsächlichen Problem. Antworte in der Sprache des Nutzers, standardmäßig auf Deutsch. Kein Gaming-Smalltalk, wenn das Anliegen nichts damit zu tun hat.
+Hilf geduldig, konkret und sachlich beim tatsächlichen Problem. Antworte in ${botLanguage(message.guild?.id)}, der gewählten Server-Sprache. Kein Gaming-Smalltalk, wenn das Anliegen nichts damit zu tun hat.
 Die Ticket-Kategorie ist "${ticketCategoryLabel(ticket.category)}", die Priorität "${ticketPriorityLabel(ticket.priority)}".
 Du kannst sichtbare angehängte Bilder analysieren. Behaupte nie, unleserliche oder nicht geladene Details gesehen zu haben.
 Nutze die Google-Suche für veränderliche externe Informationen, wenn sie verfügbar ist und für die Lösung gebraucht wird. Serverregeln ergeben sich aus dem bereitgestellten Serverwissen, nicht aus einer Websuche. Belege recherchierte Aussagen mit tatsächlich zurückgegebenen Quellen.
@@ -2762,7 +2775,9 @@ FAQ-KONTEXT (nur verwenden, wenn er zum konkreten Fall passt):
 ${faq ? JSON.stringify({topic:faq.question || faq.title, answer:faq.answer}) : "Keine passende FAQ."}
 ADMIN-FEEDBACK FÜR ÄHNLICHE ANLIEGEN:
 ${feedback || "Kein weiteres Feedback."}
-${await aiServerContext(message.guild?.id,ticket.ownerId || message.author.id)}`;
+${await aiServerContext(message.guild?.id,ticket.ownerId || message.author.id)}
+${require("./localization").languageInstruction(message.guild?.id)}
+${gameAssistant()?.aiContext(message.guild?.id,ticket.ownerId || message.author.id,text)||""}`;
 
   const request = {
     model: GEMINI_SUPPORT_MODEL,
@@ -2912,6 +2927,15 @@ function getPixelCharacterPicker() {
 }
 
 async function answerPixelQuestion(interaction, question) {
+  if (require("./channel_reader").parseRequest(question)) {
+    if (interaction.deferred || interaction.replied) return interaction.followUp({content: "Use /read for a private channel review. /read question:What do you think of this application?", flags: MessageFlags.Ephemeral, allowedMentions: {parse: []}});
+    return getChannelReader().handleInteraction(new Proxy(interaction, {get(target,key) {
+      if (key === "isChatInputCommand") return () => true;
+      if (key === "commandName") return "ai";
+      if (key === "options") return {getString: () => question};
+      const value = Reflect.get(target,key,target); return typeof value === "function" ? value.bind(target) : value;
+    }}));
+  }
   const remaining = aiCooldownRemaining(interaction.user.id);
   if (remaining > 0) {
     const payload = { content: `⏳ Warte bitte noch ${Math.ceil(remaining / 1000)} Sekunden, bevor du die KI wieder fragst.`, flags: MessageFlags.Ephemeral };
@@ -2932,6 +2956,7 @@ async function answerPixelQuestion(interaction, question) {
     const chunks = splitDiscordText(answer);
     await petResponse.finish(chunks[0]);
     for (const chunk of chunks.slice(1)) await interaction.followUp(aiTextPayload(chunk, "all", characterId));
+    try { await getChatStickers().afterAnswer({interaction, question, answer}); } catch {}
   } catch (err) {
     console.error("Gemini slash error:", geminiStatus(err) || err?.name);
     if (petResponse) return petResponse.finish(chatAiErrorMessage(err), "failed");
@@ -2971,11 +2996,14 @@ const commands = [
   new SlashCommandBuilder()
     .setName("settings")
     .setDescription("Öffnet das Server-Control-Panel für Bot-Funktionen."),
-  new SlashCommandBuilder()
-    .setName("language")
-    .setDescription("Legt deine persönliche Übersetzungssprache fest.")
-    .addStringOption(o => o.setName("sprache").setDescription("Deine Sprache oder Automatisch").setRequired(true)
-      .addChoices(...LANGUAGE_CHOICES.map(([value, name]) => ({ name, value })))),
+  require("./request_commands").buildLanguageCommand(LANGUAGE_CHOICES),
+  ...require("./request_commands").buildRequestCommands(),
+  require("./channel_reader").command(),
+  require("./chat_stickers").command(),
+  require("./ticket_intake").command(),
+  require("./guild_defense").command(),
+  ...require("./server_backups").commands(),
+  ...require("./game_profile").buildGameCommands(),
   new SlashCommandBuilder()
     .setName("setupmap")
     .setDescription("Korrigiert eine Kanal-Zuordnung von /setup manuell.")
@@ -3097,10 +3125,13 @@ const commands = [
   new SlashCommandBuilder()
     .setName("giveaway")
     .setDescription("Startet ein Giveaway.")
-    .addStringOption(o => o.setName("preis").setDescription("Gewinn").setRequired(true))
+    .setDMPermission(false)
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild)
+    .addStringOption(o => o.setName("preis").setDescription("Gewinn").setRequired(true).setMaxLength(300))
     .addStringOption(o => o.setName("dauer").setDescription("z.B. 10m, 2h, 1d").setRequired(true))
     .addIntegerOption(o => o.setName("gewinner").setDescription("Anzahl Gewinner").setRequired(false).setMinValue(1).setMaxValue(10))
-    .addStringOption(o => o.setName("claim_zeit").setDescription("Zeit zum Claimen, z.B. 10m, 2h, 1d (Standard 30m)").setRequired(false)),
+    .addStringOption(o => o.setName("claim_zeit").setDescription("Zeit zum Claimen, z.B. 10m, 2h, 1d (Standard 30m)").setRequired(false))
+    .addIntegerOption(o => o.setName("min_invites").setDescription("Required invites to enter; choose role rules in the preview").setMinValue(0).setMaxValue(1000000)),
   new SlashCommandBuilder()
     .setName("timeout")
     .setDescription("Gibt einem Mitglied einen Timeout.")
@@ -3140,6 +3171,10 @@ const commands = [
     .setName("announce")
     .setDescription("Sendet eine globale Ankündigung in alle eingerichteten Server.")
     .addStringOption(o => o.setName("text").setDescription("Ankündigung").setRequired(true)),
+  ...require("./invite_rewards").buildInviteRewardCommands(),
+  ...require("./help_center").buildCommands(),
+  ...require("./raid_security").buildCommands(),
+  ...require("./bot_security").buildCommands(),
   ...buildCommunityCommands(),
   ...buildStaffCommands(),
   ...buildElementSeasCommands(),
@@ -3187,6 +3222,7 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildInvites,
+    GatewayIntentBits.GuildModeration,
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildMessageReactions
   ],
@@ -3194,6 +3230,8 @@ const client = new Client({
 });
 
 
+require("./localization").configure(guildId => db.guilds?.[guildId]?.botLanguage || "en");
+require("./localization").install(client);
 client.on("error", err => console.error("Discord client error:", err));
 client.on("warn", info => console.warn("Discord client warning:", info));
 process.on("unhandledRejection", reason => console.error("Unhandled promise rejection:", reason));
@@ -3283,6 +3321,7 @@ async function shutdownVoiceGames() {
   try { await mimicParty?.onShutdown(); } catch (err) { console.warn("Mimic shutdown:", err?.message || err); }
   try { await spotifyParty.onShutdown(); } catch (err) { console.warn("Spotify shutdown:", err?.code || err?.name); }
   try { await vcMusic?.onShutdown(); } catch (err) { console.warn("VC music shutdown:", err?.code || err?.name); }
+  try { gameProfile?.onShutdown(); } catch (err) { console.warn("Game data shutdown:", err?.code || err?.name); }
   await draining;
   try { saveDB(); } catch (err) { console.warn("Shutdown save failed:", err?.code || err?.name); }
   try { client.destroy(); } catch (err) { console.warn("Discord shutdown:", err?.code || err?.name); }
@@ -3305,14 +3344,13 @@ const youtubeUploads = (() => {
 })();
 
 async function snapshotInvites(guild) {
-  try {
-    const invites = await guild.invites.fetch();
-    const gd = guildData(guild.id);
-    gd.invites = {};
-    for (const [code, inv] of invites) gd.invites[code] = inv.uses || 0;
-    saveDB();
-  } catch {}
+  try { await getInviteRewards().snapshot(guild); }
+  catch (err) { console.warn("Invite snapshot unavailable:", guild.id, err?.code || err?.name); }
 }
+
+client.on("inviteCreate", invite => {
+  getInviteRewards().inviteCreated(invite).catch(err => console.warn("Invite tracking update failed:", err?.code || err?.name));
+});
 
 client.once("clientReady", async () => {
   if (shuttingDownVoice) return;
@@ -3331,14 +3369,22 @@ client.once("clientReady", async () => {
   for (const guild of client.guilds.cache.values()) {
     if (!isGuildApproved(guild.id)) continue;
     try { repairGuildBindings(guild); } catch (err) { console.warn("Guild binding recovery failed:", err?.code || err?.name); }
+    try { getGuildDefense().prepare(guild.id); } catch (err) { console.warn("Early security profile unavailable:", err?.message); }
     await snapshotInvites(guild).catch(() => {});
     const externalScan = await scanExistingExternalTickets(guild).catch(() => null);
     if (externalScan?.detected) console.log(`External Ticket AI: ${externalScan.detected} Ticket-Kanal/Kanäle auf ${guild.name} erkannt.`);
   }
   backgroundTasks.schedule("giveaways", processGiveaways, 30000);
+  backgroundTasks.schedule("invite-rewards", () => getInviteRewards().tick(), 5 * 60 * 1000);
+  backgroundTasks.schedule("invite-events", () => getInviteRewards().finishEvents(), 15 * 1000);
+  backgroundTasks.schedule("raid-restoration", () => getRaidSecurity().tick(), 15 * 1000);
+  backgroundTasks.schedule("server-backups", () => getServerBackups().tick(), 60 * 1000);
   backgroundTasks.schedule("ticket-inactivity", checkTicketInactivity, 30 * 60 * 1000);
   backgroundTasks.schedule("staff", () => staff.scheduledTick(), 5 * 60 * 1000);
   await backgroundTasks.run("giveaways").catch(() => {});
+  await backgroundTasks.run("invite-rewards").catch(() => {});
+  await backgroundTasks.run("raid-restoration").catch(() => {});
+  await backgroundTasks.run("server-backups").catch(() => {});
   await backgroundTasks.run("ticket-inactivity").catch(() => {});
   await community.onReady().catch(err => console.error("Community startup failed:", err?.message || err));
   await backgroundTasks.run("staff").catch(() => {});
@@ -3351,35 +3397,20 @@ client.on("guildCreate", async guild => {
 
 client.on("guildMemberAdd", async member => {
   if (!isGuildApproved(member.guild.id)) return;
-  const gd = guildData(member.guild.id);
-  try {
-    const newInvites = await member.guild.invites.fetch();
-    let used = null;
-    for (const [code, inv] of newInvites) {
-      if ((inv.uses || 0) > (gd.invites[code] || 0)) {
-        used = inv;
-        break;
-      }
-    }
-    if (used?.inviterId) {
-      const u = userData(member.guild.id, used.inviterId);
-      u.invites += 1;
-      const logId = gd.channels.inviteLog;
-      const log = logId && member.guild.channels.cache.get(logId);
-      if (log) {
-        await log.send(`📨 ${member} wurde von <@${used.inviterId}> eingeladen. **${u.invites} Invites**.`);
-      }
-    }
-    gd.invites = {};
-    for (const [code, inv] of newInvites) gd.invites[code] = inv.uses || 0;
-    saveDB();
-  } catch {}
+  const defenseRemoved = await getGuildDefense().memberJoined(member).catch(() => false);
+  if (defenseRemoved) return;
+  await getInviteRewards().memberJoined(member).catch(err => console.warn("Invite attribution unavailable:", err?.code || err?.name));
   if (serverSettings(member.guild.id).welcomeEnabled) await community.onMemberAdd(member).catch(() => {});
   if (serverSettings(member.guild.id).autoModEnabled) await staff.onMemberAdd(member).catch(() => {});
 });
 
+client.on("guildAuditLogEntryCreate", (entry, guild) => {
+  getGuildDefense().audit(entry, guild).catch(error => console.warn("Early guild defense failed:", error?.code || error?.name));
+});
+
 client.on("guildMemberRemove", member => {
   if (!isGuildApproved(member.guild.id)) return;
+  getInviteRewards().memberLeft(member).catch(err => console.warn("Invite departure update failed:", err?.code || err?.name));
   staff.onMemberRemove(member).catch(() => {});
 });
 client.on("messageDelete", message => {
@@ -3392,7 +3423,12 @@ client.on("messageDelete", message => {
 
 client.on("messageUpdate", async (_oldMessage,message) => {
   if(message.partial)try{message=await message.fetch();}catch{return;}
-  if(!message.guild || !isGuildApproved(message.guild.id) || message.author?.bot || hasMassMention(message))return;
+  if(!message.guild || !isGuildApproved(message.guild.id))return;
+  if(message.author?.bot || message.webhookId) {
+    const guard=getBotSecurity(),decision=guard.observe(message,{edited:true});
+    if(decision)await guard.enforce(message,decision);
+    return;
+  }
   const guard=getSecurityGuard(),decision=guard.observe({id:message.id+':edit:'+String(message.editedTimestamp || Date.now()),guild:message.guild,author:message.author,member:message.member,content:message.content,mentions:message.mentions,webhookId:message.webhookId});
   if(decision)await guard.enforce(message,decision);
 });
@@ -3421,7 +3457,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
 
 let securityGuard=null;
 function getSecurityGuard() {
-  if(!securityGuard)securityGuard=require("./security_guard").createGuard({guildData,saveDB,ownerId:typeof OWNER_ID==='undefined'?null:OWNER_ID,
+  if(!securityGuard)securityGuard=require("./security_guard").createGuard({guildData: id => getGuildDefense().prepare(id),saveDB,ownerId:typeof OWNER_ID==='undefined'?null:OWNER_ID,
     recordPunishment:(...args)=>staff.recordPunishment(...args),alert:(guild,text)=>staff.auditLog(guild,'🛡️ Security',text)});
   return securityGuard;
 }
@@ -3441,16 +3477,18 @@ client.on("messageCreate", async message => {
   if (!message.guild) return;
   if (!isGuildApproved(message.guild.id)) return;
 
-  // HARD IGNORE: Sobald eine Nachricht @everyone oder @here enthält, macht der
-  // Bot mit genau dieser Nachricht gar nichts automatisch. Keine Reaktion, keine
-  // AI-/Support-Antwort, keine Moderation, kein Counting, keine Übersetzung,
-  // kein Suggestions-/Community-System und keine Ticket-Erkennung.
-  if (hasMassMention(message)) return;
-
+  if(message.author.bot || message.webhookId) {
+    const guard=getBotSecurity(),decision=guard.observe(message);
+    if(decision){await guard.enforce(message,decision);return;}
+  }
   if(!message.author.bot) {
     const guard=getSecurityGuard(),decision=guard.observe(message);
     if(decision){await guard.enforce(message,decision);return;}
   }
+
+  // Security runs first. Mass-mention messages still skip AI, counting,
+  // translations, suggestions and ticket detection.
+  if (hasMassMention(message)) return;
 
   const gd = repairGuildBindings(message.guild);
   // Commit each number synchronously, before Discord reactions, AI or moderation wait.
@@ -3486,6 +3524,7 @@ client.on("messageCreate", async message => {
 
   // Ticket activity + optional AI support. This also adopts private ticket channels
   // created by other ticket bots, without taking over their close/delete lifecycle.
+  let intakeHandled = false;
   let ticket = getTicketRecord(message.channel);
   if (!ticket) ticket = await ensureExternalTicketRecord(message.channel, message.author.id, { announce: true });
   if (ticket && ticket.status !== "closed") {
@@ -3498,7 +3537,8 @@ client.on("messageCreate", async message => {
       if (!ticket.firstUserMessageAt) ticket.firstUserMessageAt = Date.now();
       ticket.awaitingFirstUserMessage = false;
       saveDB();
-      if (ticket.aiEnabled && serverSettings(message.guild.id).supportAiEnabled) {
+      intakeHandled = await getTicketIntake().onMessage(message).catch(() => false);
+      if (!intakeHandled && ticket.aiEnabled && serverSettings(message.guild.id).supportAiEnabled) {
         await enqueueTicketAi(message);
         return;
       }
@@ -3538,7 +3578,7 @@ client.on("messageCreate", async message => {
   }
 
   // Gemini AI: Antwortet, wenn der Bot direkt erwähnt wird.
-  if (client.user && message.mentions.has(client.user) && serverSettings(message.guild.id).aiEnabled && gd.community?.channels?.suggestions !== message.channel.id) {
+  if (!intakeHandled && client.user && message.mentions.has(client.user) && serverSettings(message.guild.id).aiEnabled && gd.community?.channels?.suggestions !== message.channel.id) {
     const question = message.content
       .replace(new RegExp(`<@!?${client.user.id}>`, "g"), "")
       .trim();
@@ -3568,6 +3608,7 @@ client.on("messageCreate", async message => {
       const chunks = splitDiscordText(answer);
       await petResponse.finish(chunks[0]);
       for (const chunk of chunks.slice(1)) await message.channel.send(aiTextPayload(chunk, "all", characterId));
+      try { await getChatStickers().afterAnswer({message, question, answer}); } catch {}
     } catch (err) {
       console.error("Gemini mention error:", geminiStatus(err) || err?.name);
       if (petResponse) await petResponse.finish(chatAiErrorMessage(err), "failed");
@@ -4096,9 +4137,145 @@ ${options.serverSetupSummary}` : ""}${supportRole ? `
 
 let serverSetupDesigner = null;
 let newAssistant = null;
+let gameProfile = null;
+let requestCommands = null;
+let inviteRewards = null;
+let giveawayRules = null;
+let commandWindows = null;
+function getCommandWindows() {
+  if (!commandWindows) commandWindows = require("./command_windows").createCommandWindows({guildData, saveDB, canManageBotSettings,
+    isBotOwner: interaction => interaction.user.id === OWNER_ID, getAssistant: getNewAssistant,
+    openTicket: interaction => createSupportTicket(interaction, "other", "normal"),
+    isMaintenance: interaction => db.maintenance && interaction.user.id !== OWNER_ID});
+  return commandWindows;
+}
+function getInviteRewards() {
+  if (!inviteRewards) inviteRewards = require("./invite_rewards").createInviteRewards({client, db, guildData, userData, saveDB, OWNER_ID, isGuildApproved});
+  return inviteRewards;
+}
+let botSecurity;
+function getBotSecurity() {
+  if (!botSecurity) botSecurity = require("./bot_security").createBotSecurity({client, guildData: id => getGuildDefense().prepare(id), saveDB, OWNER_ID, isGuildApproved,
+    recordPunishment: (...args) => staff.recordPunishment(...args), alert: (guild, text) => staff.auditLog(guild, "🤖 Bot security", text)});
+  return botSecurity;
+}
+let raidSecurity;
+function getRaidSecurity() {
+  if (!raidSecurity) raidSecurity = require("./raid_security").createRaidSecurity({client, guildData, saveDB, OWNER_ID, isGuildApproved, setupLocks: setupInProgress, aiConfigured: Boolean(GEMINI_API_KEY)});
+  return raidSecurity;
+}
+let interactionReliability;
+function getInteractionReliability() {
+  if (!interactionReliability) interactionReliability = require("./interaction_reliability").createInteractionReliability();
+  return interactionReliability;
+}
+let helpCenter;
+function getHelpCenter() {
+  if (!helpCenter) helpCenter = require("./help_center").createHelpCenter();
+  return helpCenter;
+}
+function getGiveawayRules() {
+  if (!giveawayRules) giveawayRules = require("./giveaway_rules").createGiveawayRules({saveDB, OWNER_ID,
+    getInviteCount: (guildId, userId) => getInviteRewards().count(guildId, userId), publish: publishGiveaway,
+    syncDisplay: async g => {
+      const channel = client.guilds.cache.get(g.guildId)?.channels.cache.get(g.channelId);
+      const msg = channel && await channel.messages.fetch(g.messageId);
+      if (msg) await syncGiveawayDisplay(g, msg);
+    },
+    notifyClaim: async (interaction, g) => {
+      await Promise.allSettled([
+        interaction.channel.send({content: `🎁 ${interaction.user} hat **${g.prize}** erfolgreich geclaimt.`, allowedMentions: {parse: []}}),
+        ownerGroupNotify(interaction.guild, `🏆 Giveaway-Claim von ${interaction.user.tag} auf **${interaction.guild.name}**: ${g.prize}`)
+      ]);
+    }});
+  return giveawayRules;
+}
+function getGameProfile() {
+  if (!gameProfile) gameProfile = require("./game_profile").createGameProfile({db, guildData, userData, saveDB, OWNER_ID, isGuildApproved});
+  return gameProfile;
+}
+let guildDefense = null;
+function getGuildDefense() {
+  if (!guildDefense) guildDefense = require("./guild_defense").createGuildDefense({
+    client, guildData, saveDB, OWNER_ID, isGuildApproved, isMaintenance: () => Boolean(db.maintenance),
+    alert: (guild, text) => staff.auditLog(guild, "🛡️ Early defense", text)
+  });
+  return guildDefense;
+}
+let serverBackups = null;
+function getServerBackups() {
+  if (!serverBackups) serverBackups = require("./server_backups").createServerBackups({
+    client, OWNER_ID, directory: process.env.BOT_BACKUP_DIR || path.join(BOT_DATA_DIR, "server-backups"),
+    isGuildApproved, isMaintenance: () => Boolean(db.maintenance), setupLocks: setupInProgress,
+    languageFor: guildId => require("./localization").languageFor(guildId),
+    protectedChannels: guildId => [...botRuntime.systemChannelIds(guildData(guildId), db.staff?.[guildId]?.channels)],
+    alert: (guild, text) => staff.auditLog(guild, "💾 Server backup", text),
+    remapBindings: (guildId, mapping) => {
+      const ids = Object.assign(Object.create(null), mapping.roles, mapping.channels, mapping.emojis, mapping.stickers);
+      const walk = (value, depth=0) => {
+        if (depth > 30) throw Error("Binding data too deep.");
+        if (typeof value === "string") return ids[value] || value;
+        if (Array.isArray(value)) return value.map(v => walk(v, depth+1));
+        if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key,v]) => [ids[key] || key, walk(v,depth+1)]));
+        return value;
+      };
+      const previousGuild = db.guilds[guildId], previousStaffChannels = db.staff?.[guildId]?.channels, previousTickets = db.tickets;
+      const nextGuild = walk(previousGuild), nextStaffChannels = previousStaffChannels ? walk(previousStaffChannels) : null;
+      const nextTickets = Object.fromEntries(Object.entries(previousTickets).map(([id,ticket]) => ticket.guildId === guildId ? [ids[id] || id, walk(ticket)] : [id,ticket]));
+      db.guilds[guildId] = nextGuild;
+      if (previousStaffChannels) db.staff[guildId].channels = nextStaffChannels;
+      db.tickets = nextTickets;
+      try { saveDB(); } catch (error) { db.guilds[guildId] = previousGuild; if (previousStaffChannels) db.staff[guildId].channels = previousStaffChannels; db.tickets = previousTickets; throw error; }
+    }
+  });
+  return serverBackups;
+}
+
+let ticketIntake = null;
+function getTicketIntake() {
+  if (!ticketIntake) ticketIntake = require("./ticket_intake").createTicketIntake({
+    getTicket: channelId => db.tickets[channelId], guildData, saveDB, OWNER_ID,
+    isGuildApproved, isMaintenance: () => Boolean(db.maintenance), isSupportMember,
+    isProtected: (guildId, channelId) => botRuntime.systemChannelIds(guildData(guildId), db.staff?.[guildId]?.channels).has(channelId),
+    languageFor: guildId => require("./localization").languageFor(guildId)
+  });
+  return ticketIntake;
+}
+let chatStickers = null;
+function getChatStickers() {
+  if (!chatStickers) chatStickers = require("./chat_stickers").createChatStickers({
+    guildData, saveDB, OWNER_ID, isGuildApproved,
+    isAiEnabled: guildId => serverSettings(guildId).aiEnabled,
+    isMaintenance: interaction => db.maintenance && interaction.user.id !== OWNER_ID,
+    languageFor: guildId => require("./localization").languageFor(guildId)
+  });
+  return chatStickers;
+}
+let channelReader = null;
+function getChannelReader() {
+  if (!channelReader) channelReader = require("./channel_reader").createChannelReader({
+    isGuildApproved, isEnabled: guildId => serverSettings(guildId).aiEnabled,
+    isMaintenance: interaction => db.maintenance && interaction.user.id !== OWNER_ID,
+    languageFor: guildId => require("./localization").languageFor(guildId),
+    aiConfigured: () => Boolean(GEMINI_API_KEY) && process.env.PIXEL_AI_MODE !== "offline",
+    generate: generateGeminiContent, model: GEMINI_MODEL
+  });
+  return channelReader;
+}
+function getRequestCommands() {
+  if (!requestCommands) requestCommands = require("./request_commands").createRequestCommands({
+    getAssistant: getNewAssistant, guildData, userData, saveDB, OWNER_ID, legacyChoices: LANGUAGE_CHOICES,
+    isMaintenance: interaction => db.maintenance && interaction.user.id !== OWNER_ID
+  });
+  return requestCommands;
+}
 function getNewAssistant() {
   if (!newAssistant) newAssistant = require("./new_assistant").createNewAssistant({
     guildData, saveDB, serverSettings, generateGeminiContent, canManageBotSettings,
+    commandWindows: getCommandWindows(),
+    languageFor: guildId => require("./localization").languageFor(guildId),
+    answerQuestion: (guildId,userId,question) => getGameProfile().answerQuestion(guildId,userId,question),
+    gameContext: (guildId,userId,question) => getGameProfile().aiContext(guildId,userId,question),
     isBotOwner: interaction => interaction.user.id === OWNER_ID,
     model: process.env.GEMINI_TASK_MODEL || GEMINI_MODEL,
     setupLocks: setupInProgress, resetMemory: resetAiMemory,
@@ -4190,6 +4367,7 @@ async function startTicketWizard(interaction) {
     .setPlaceholder("Choose a ticket category")
     .addOptions(
       { label: "General Support", value: "general", emoji: "🛟" },
+      { label: "Moderator Application", value: "staff-application", emoji: "📝" },
       { label: "Report Player", value: "report-player", emoji: "🚨" },
       { label: "Ban Appeal", value: "ban-appeal", emoji: "⚖️" },
       { label: "Bug Report", value: "bug-report", emoji: "🐛" },
@@ -4429,17 +4607,24 @@ async function handleTeamButton(interaction, action, channelId) {
 }
 
 async function createGiveaway(interaction) {
-  if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-    return interaction.reply({ content: "❌ Du brauchst `Server verwalten`.", flags: MessageFlags.Ephemeral });
-  }
+  if (!interaction.guild) return interaction.reply({content: "Use this command in a server.", flags: MessageFlags.Ephemeral});
   const prize = interaction.options.getString("preis");
   const duration = parseDuration(interaction.options.getString("dauer"));
   const winnerCount = interaction.options.getInteger("gewinner") || 1;
   const claimInput = interaction.options.getString("claim_zeit") || "30m";
   const claimDuration = parseDuration(claimInput);
-  if (!duration) return interaction.reply({ content: "❌ Dauer z.B. `10m`, `2h` oder `1d`.", flags: MessageFlags.Ephemeral });
-  if (!claimDuration) return interaction.reply({ content: "❌ Claim-Zeit z.B. `10m`, `2h` oder `1d`.", flags: MessageFlags.Ephemeral });
+  if (!prize?.trim() || prize.length > 300) return interaction.reply({content: "Prize must contain 1–300 characters.", flags: MessageFlags.Ephemeral});
+  if (!Number.isSafeInteger(duration) || duration <= 0 || !Number.isSafeInteger(Date.now() + duration)) return interaction.reply({ content: "❌ Dauer z.B. `10m`, `2h` oder `1d`.", flags: MessageFlags.Ephemeral });
+  if (!Number.isSafeInteger(claimDuration) || claimDuration <= 0 || !Number.isSafeInteger(Date.now() + claimDuration)) return interaction.reply({ content: "❌ Claim-Zeit z.B. `10m`, `2h` oder `1d`.", flags: MessageFlags.Ephemeral });
 
+  const minInvites = interaction.options.getInteger("min_invites") || 0;
+  return getGiveawayRules().begin(interaction, {prize, duration, winnerCount, claimInput, claimDuration,
+    rules: {bonusRoleIds: [], excludedRoleIds: [], minInvites}});
+}
+
+async function publishGiveaway(interaction, draft) {
+  const {prize, duration, winnerCount, claimInput, claimDuration} = draft;
+  const ownerSelection = await getGiveawayRules().selectionData(interaction, draft);
   const endAt = Date.now() + duration;
   const embed = footer(new EmbedBuilder()
     .setTitle("🎉 GIVEAWAY")
@@ -4449,7 +4634,16 @@ async function createGiveaway(interaction) {
     new ButtonBuilder().setCustomId("giveaway_enter").setLabel("Teilnehmen").setEmoji("🎉").setStyle(ButtonStyle.Success)
   );
 
-  const msg = await interaction.channel.send({ embeds: [embed], components: [row] });
+  const de = require("./localization").languageFor(interaction.guild.id) === "de";
+  const roleList = ids => ids.length ? ids.map(id => `<@&${id}>`).join(", ") : (de ? "Keine" : "None");
+  embed.addFields(
+    {name: de ? "Doppelte Lose" : "Double tickets", value: roleList(draft.rules.bonusRoleIds)},
+    {name: de ? "Ausgeschlossene Rollen" : "Excluded roles", value: roleList(draft.rules.excludedRoleIds)},
+    {name: de ? "Benötigte Invites" : "Required invites", value: String(draft.rules.minInvites)},
+    {name: de ? "Teilnahmeregeln" : "Entry rules", value: de ? "Bonusrollen sind nicht stapelbar. Regeln werden beim Beitritt und bei der Ziehung geprüft." : "Bonus roles do not stack. Rules are checked when joining and drawing."}
+  );
+  if (ownerSelection.fixedWinnerIds?.length) embed.addFields({name: de ? "Gewinner-Vorauswahl" : "Winner preselection", value: getGiveawayRules().selectionDescription({...draft, ...ownerSelection}, interaction.guild.id)});
+  const msg = await interaction.channel.send({ embeds: [embed], components: [row], allowedMentions: {parse: []} });
 
   db.giveaways[msg.id] = {
     guildId: interaction.guild.id,
@@ -4461,18 +4655,29 @@ async function createGiveaway(interaction) {
     claimDuration,
     claimInput,
     claimDeadlineAt: null,
+    rules: structuredClone(draft.rules),
+    ...ownerSelection,
     entries: [],
     winners: [],
     winnerHistory: [],
     claimedBy: [],
     ended: false
   };
-  saveDB();
-
-  await interaction.reply({ content: "✅ Giveaway gestartet.", flags: MessageFlags.Ephemeral });
+  try { saveDB(); }
+  catch (err) {
+    delete db.giveaways[msg.id];
+    await msg.delete().catch(() => {});
+    throw err;
+  }
+  return msg;
 }
 
 async function giveawayDrawAnimation(channel, giveaway, pool, winners) {
+  if (getGiveawayRules().fixedIds(giveaway).length) {
+    const de = require("./localization").languageFor(giveaway.guildId) === "de";
+    await channel.send({content: de ? "🏆 Gewinner werden mit der veröffentlichten Bot-Owner-Vorauswahl und den aktuellen Teilnahmeregeln bestimmt." : "🏆 Winners are selected using the published bot-owner preselection and current entry rules.", allowedMentions: {parse: []}}).catch(() => {});
+    return;
+  }
   const animation = await channel.send({
     embeds: [footer(new EmbedBuilder()
       .setTitle("🎁 GIVEAWAY-ZIEHUNG")
@@ -4533,6 +4738,8 @@ async function updateGiveawayEndedMessage(g, msg, title = "🏆 GIVEAWAY BEENDET
     .setTitle(title)
     .setDescription(`**Preis:** ${g.prize}\n**Gewinner:** ${winnerText}${deadlineLine}${statusLine}`));
 
+  const selection = getGiveawayRules().selectionDescription(g, g.guildId);
+  if (selection) embed.addFields({name: require("./localization").languageFor(g.guildId) === "de" ? "Gewinner-Vorauswahl" : "Winner preselection", value: selection});
   await msg.edit({ embeds: [embed], components: winners.length ? [giveawayClaimRow(g)] : [] });
 }
 
@@ -4552,22 +4759,20 @@ async function rerollExpiredGiveaway(g) {
   if (!channel || !msg) return;
 
   const history = new Set(Array.isArray(g.winnerHistory) ? g.winnerHistory : winners);
-  const eligible = [...new Set(Array.isArray(g.entries) ? g.entries : [])]
-    .filter(id => !history.has(id) && !claimedBy.includes(id));
+  const eligible = await getGiveawayRules().pool(g, guild, [...history, ...claimedBy]);
+  const replacements = getGiveawayRules().draw(eligible, expired.length);
 
-  const replacements = [];
-  while (eligible.length && replacements.length < expired.length) {
-    const idx = Math.floor(Math.random() * eligible.length);
-    replacements.push(eligible.splice(idx, 1)[0]);
-  }
-
+  const beforeReroll = structuredClone(g);
   const keptClaimed = winners.filter(id => claimedBy.includes(id));
   g.winners = [...keptClaimed, ...replacements];
   g.winnerHistory = [...new Set([...(Array.isArray(g.winnerHistory) ? g.winnerHistory : winners), ...expired, ...replacements])];
   g.claimedBy = claimedBy.filter(id => g.winners.includes(id));
   g.rerollCount = Number(g.rerollCount || 0) + 1;
   g.claimDeadlineAt = replacements.length ? Date.now() + (g.claimDuration || 30 * 60 * 1000) : null;
-  saveDB();
+  g.displayPending = true;
+  g.displayTitle = replacements.length ? "🔄 GIVEAWAY REROLL" : "⏰ GIVEAWAY BEENDET";
+  try { saveDB(); }
+  catch (err) { for (const key of Object.keys(g)) delete g[key]; Object.assign(g, beforeReroll); throw err; }
 
   const expiredText = expired.map(id => `<@${id}>`).join(", ");
   if (replacements.length) {
@@ -4580,23 +4785,40 @@ async function rerollExpiredGiveaway(g) {
     for (const id of replacements) {
       const user = await client.users.fetch(id).catch(() => null);
       if (user) {
-        await user.send(`🔄 Du wurdest beim Reroll auf **${guild?.name || "einem Server"}** als Gewinner für **${g.prize}** gezogen! Du hast jetzt ${g.claimInput || "30m"} Zeit, beim Giveaway auf **Claim** zu klicken.`).catch(() => {});
+        await require("./localization").inGuild(g.guildId, () => user.send(`🔄 Du wurdest beim Reroll auf **${guild?.name || "einem Server"}** als Gewinner für **${g.prize}** gezogen! Du hast jetzt ${g.claimInput || "30m"} Zeit, beim Giveaway auf **Claim** zu klicken.`)).catch(() => {});
       }
     }
     await ownerGroupNotify(guild, `🔄 Giveaway-Reroll auf **${guild?.name || g.guildId}** für **${g.prize}**. Nicht geclaimt: ${expiredText}. Neu gezogen: ${replacementText}.`);
-    await updateGiveawayEndedMessage(g, msg, "🔄 GIVEAWAY REROLL").catch(() => {});
+    await syncGiveawayDisplay(g, msg);
   } else {
     await channel.send({
       content: `⏰ ${expiredText} ${expired.length === 1 ? "hat" : "haben"} **${g.prize}** nicht rechtzeitig geclaimt. Es gibt keine weiteren gültigen Teilnehmer für einen Reroll.`,
       allowedMentions: { users: expired }
     }).catch(() => {});
     await ownerGroupNotify(guild, `⚠️ Giveaway **${g.prize}** auf **${guild?.name || g.guildId}**: Claim-Zeit abgelaufen, aber keine weiteren Teilnehmer für einen Reroll.`);
-    await updateGiveawayEndedMessage(g, msg, "⏰ GIVEAWAY BEENDET").catch(() => {});
+    await syncGiveawayDisplay(g, msg);
+  }
+}
+
+async function syncGiveawayDisplay(g, msg) {
+  try {
+    await updateGiveawayEndedMessage(g, msg, g.displayTitle || "🏆 GIVEAWAY BEENDET");
+    const previous = g.displayPending;
+    g.displayPending = false;
+    try { saveDB(); } catch (error) { g.displayPending = previous; throw error; }
+    return true;
+  } catch (error) {
+    console.warn("Giveaway display pending:", g.guildId, g.messageId, error?.code || error?.message);
+    return false;
   }
 }
 
 async function processGiveaways() {
   for (const g of Object.values(db.giveaways)) {
+    const locks = getGiveawayRules().drawLocks;
+    if (locks.has(g.messageId)) continue;
+    locks.add(g.messageId);
+    try {
     if (!g.ended) {
       if (Date.now() < g.endAt) continue;
       try {
@@ -4607,25 +4829,27 @@ async function processGiveaways() {
 
         // Only commit the draw after Discord has returned the target message.
         // An outage must not turn an unfinished giveaway into an empty ended one.
-        const pool = [...new Set(g.entries)];
-        const drawPool = [...pool];
-        const winners = [];
-        while (drawPool.length && winners.length < g.winnerCount) {
-          const idx = Math.floor(Math.random() * drawPool.length);
-          winners.push(drawPool.splice(idx, 1)[0]);
-        }
+        const weightedPool = await getGiveawayRules().pool(g, guild);
+        const pool = weightedPool.map(row => row.id);
+        const winners = getGiveawayRules().fixedIds(g).length
+          ? getGiveawayRules().choose(g, weightedPool, g.winnerCount)
+          : getGiveawayRules().draw(weightedPool, g.winnerCount);
 
+        const beforeDraw = structuredClone(g);
         g.ended = true;
+        g.displayPending = true;
+        g.displayTitle = "🏆 GIVEAWAY BEENDET";
         g.winners = winners;
         g.winnerHistory = [...new Set([...(Array.isArray(g.winnerHistory) ? g.winnerHistory : []), ...winners])];
         g.claimedBy = Array.isArray(g.claimedBy) ? g.claimedBy.filter(id => winners.includes(id)) : [];
         g.claimDuration = g.claimDuration || 30 * 60 * 1000;
         g.claimInput = g.claimInput || "30m";
         g.claimDeadlineAt = winners.length ? Date.now() + g.claimDuration : null;
-        saveDB();
+        try { saveDB(); }
+        catch (err) { for (const key of Object.keys(g)) delete g[key]; Object.assign(g, beforeDraw); throw err; }
 
-        await giveawayDrawAnimation(channel, g, pool, winners);
-        await updateGiveawayEndedMessage(g, msg);
+        await giveawayDrawAnimation(channel, g, pool, winners).catch(() => {});
+        await syncGiveawayDisplay(g, msg);
 
         const winnerText = winners.length ? winners.map(id => `<@${id}>`).join(", ") : "";
         await channel.send({
@@ -4633,12 +4857,12 @@ async function processGiveaways() {
             ? `🎊 ${winnerText} — ihr habt **${g.prize}** gewonnen! Ihr habt **${g.claimInput}** Zeit zum Claimen. Danach wird automatisch neu gezogen. 🎁`
             : "😢 Das Giveaway ist beendet, aber es gab keine gültigen Teilnehmer.",
           allowedMentions: { users: winners }
-        });
+        }).catch(() => {});
 
         for (const winnerId of winners) {
           const winner = await client.users.fetch(winnerId).catch(() => null);
           if (winner) {
-            await winner.send(`🏆 Du hast auf **${guild?.name || "einem Server"}** das Giveaway **${g.prize}** gewonnen! Du hast **${g.claimInput}** Zeit, beim Giveaway auf **Claim** zu klicken. Sonst wird automatisch neu gezogen.`).catch(() => {});
+            await require("./localization").inGuild(g.guildId, () => winner.send(`🏆 Du hast auf **${guild?.name || "einem Server"}** das Giveaway **${g.prize}** gewonnen! Du hast **${g.claimInput}** Zeit, beim Giveaway auf **Claim** zu klicken. Sonst wird automatisch neu gezogen.`)).catch(() => {});
           }
         }
 
@@ -4651,6 +4875,12 @@ async function processGiveaways() {
       continue;
     }
 
+    if (g.displayPending === undefined) { g.displayPending = true; saveDB(); }
+    if (g.displayPending) {
+      const channel = client.guilds.cache.get(g.guildId)?.channels.cache.get(g.channelId);
+      const msg = channel && await channel.messages.fetch(g.messageId).catch(() => null);
+      if (msg) await syncGiveawayDisplay(g, msg);
+    }
     const winners = Array.isArray(g.winners) ? g.winners : [];
     const claimedBy = Array.isArray(g.claimedBy) ? g.claimedBy : [];
     const hasUnclaimed = winners.some(id => !claimedBy.includes(id));
@@ -4661,6 +4891,7 @@ async function processGiveaways() {
         console.warn("Giveaway reroll failed:", err?.message || err);
       }
     }
+    } finally { locks.delete(g.messageId); }
   }
   saveDB();
 }
@@ -4776,7 +5007,7 @@ client.on("channelDelete", async channel => {
   }
 });
 
-client.on("interactionCreate", async interaction => {
+client.on("interactionCreate", getInteractionReliability().wrap(async interaction => {
   try {
     // Owner approval buttons work in DMs and must be handled before guild gating.
     if (interaction.isButton() && (interaction.customId.startsWith("guild_approve:") || interaction.customId.startsWith("guild_reject:"))) {
@@ -4913,12 +5144,34 @@ client.on("interactionCreate", async interaction => {
     }
 
     const mimicMaintenanceCleanup = interaction.isChatInputCommand() && interaction.commandName === "mimic" && ["stop", "diagnose"].includes(interaction.options.getSubcommand());
-    if (interaction.isChatInputCommand() && db.maintenance && interaction.user.id !== OWNER_ID && !["statuspanel", "diagnose"].includes(interaction.commandName) && !mimicMaintenanceCleanup) {
+    if (interaction.isChatInputCommand() && db.maintenance && interaction.user.id !== OWNER_ID && !["statuspanel", "diagnose", "help"].includes(interaction.commandName) && !mimicMaintenanceCleanup) {
       return interaction.reply({ content: "🔧 Der Bot ist gerade im Wartungsmodus.", flags: MessageFlags.Ephemeral });
     }
 
     if(interaction.isChatInputCommand() && interaction.guild && !getSecurityGuard().commandGate(interaction)) {
       return interaction.reply({content:"🛡️ Zu viele aufwendige Befehle in kurzer Zeit. Warte bitte etwa 20 Sekunden.",flags:MessageFlags.Ephemeral,allowedMentions:{parse:[]}});
+    }
+
+    if (await getBotSecurity().handleInteraction(interaction)) return;
+    if (await getRaidSecurity().handleInteraction(interaction)) return;
+    if (await getHelpCenter().handleInteraction(interaction)) return;
+
+    if (String(interaction.customId || "").startsWith("pxevent:")) {
+      if (db.maintenance && interaction.user.id !== OWNER_ID) return interaction.reply({content: "The bot is in maintenance mode.", flags: MessageFlags.Ephemeral});
+      await getInviteRewards().handleInteraction(interaction);
+      return;
+    }
+
+    if (String(interaction.customId || "").startsWith("pxwindow:")) {
+      await getCommandWindows().handleInteraction(interaction);
+      return;
+    }
+
+    if (["pxgive:", "pxreward:", "pxinvite:"].some(prefix => String(interaction.customId || "").startsWith(prefix))) {
+      if (db.maintenance && interaction.user.id !== OWNER_ID) return interaction.reply({content: "🔧 Der Bot ist gerade im Wartungsmodus.", flags: MessageFlags.Ephemeral});
+      if (String(interaction.customId).startsWith("pxgive:")) await getGiveawayRules().handleInteraction(interaction);
+      else await getInviteRewards().handleInteraction(interaction);
+      return;
     }
 
     if (String(interaction.customId || "").startsWith("pxnew:")) {
@@ -4937,15 +5190,8 @@ client.on("interactionCreate", async interaction => {
     }
 
     if (interaction.isStringSelectMenu() && interaction.customId === "settings_toggle") {
-      if (!canManageBotSettings(interaction)) {
-        return interaction.reply({ content: "❌ Dafür brauchst du **Server verwalten** oder Administrator-Rechte. Der Bot-Owner darf `/settings` immer benutzen.", flags: MessageFlags.Ephemeral });
-      }
-      const key = interaction.values?.[0];
-      if (!SERVER_SETTING_META[key]) return interaction.reply({ content: "❌ Unbekannte Einstellung.", flags: MessageFlags.Ephemeral });
-      const cfg = serverSettings(interaction.guild.id);
-      cfg[key] = !cfg[key];
-      saveDB();
-      return interaction.update({ embeds: [settingsEmbed(interaction.guild.id)], components: settingsComponents(interaction.guild.id) });
+      return require("./security_guard").toggleSetting(interaction, {serverSettings, metadata: SERVER_SETTING_META, saveDB, canManage: canManageBotSettings,
+        render: guildId => ({embeds: [settingsEmbed(guildId)], components: settingsComponents(guildId)})});
     }
 
     if (interaction.isStringSelectMenu() && (interaction.customId === "create_missing_channels" || String(interaction.customId || "").startsWith("create_missing_channels:"))) {
@@ -5003,6 +5249,14 @@ client.on("interactionCreate", async interaction => {
       });
     }
 
+    if (await getInviteRewards().handleInteraction(interaction)) return;
+    if (await getGuildDefense().handleInteraction(interaction)) return;
+    if (await getServerBackups().handleInteraction(interaction)) return;
+    if (await getTicketIntake().handleInteraction(interaction)) return;
+    if (await getChatStickers().handleInteraction(interaction)) return;
+    if (await getChannelReader().handleInteraction(interaction)) return;
+    if (await getRequestCommands().handleInteraction(interaction)) return;
+    if (await getGameProfile().handleInteraction(interaction)) return;
     if (mimicParty && await mimicParty.handleInteraction(interaction)) return;
     if (interaction.isChatInputCommand() && interaction.commandName === "mimic" && !mimicParty) {
       return interaction.reply({ content:"❌ Mimic ist nicht verfügbar. Bitte Update-Dateien und npm install prüfen; andere Befehle bleiben aktiv.", flags:MessageFlags.Ephemeral });
@@ -5042,7 +5296,14 @@ client.on("interactionCreate", async interaction => {
             data: db.guilds?.[interaction.guild?.id] || {}, staffChannels: db.staff?.[interaction.guild?.id]?.channels || {},
             purposes: SMART_SETUP_PURPOSES.map(item => item.canonical), aiConfigured: Boolean(GEMINI_API_KEY),
             aiStatus: geminiTaskScheduler?.snapshot() || {}, maintenance: db.maintenance,
+            ownerId: OWNER_ID,
+            readDetails: ({owner}) => require("./bot_health").operationalDetails({
+              guild: interaction.guild, data: db.guilds?.[interaction.guild.id] || {},
+              tickets: db.tickets, giveaways: db.giveaways, jobs: backgroundTasks.snapshot(),
+              errors: getInteractionReliability().snapshot(interaction.guild.id), backups: getServerBackups, owner
+            }),
             systems: { mimicAvailable: Boolean(mimicParty), mimicActive: Boolean(mimicParty?.hasSession(interaction.guild?.id)),
+              musicAvailable: Boolean(vcMusic),
               spotifyActive: spotifyParty.isActiveOrStarting(interaction.guild?.id), uploadsAvailable: Boolean(youtubeUploads),
               voiceChannel: interaction.member?.voice?.channel }
           });
@@ -5057,23 +5318,6 @@ client.on("interactionCreate", async interaction => {
           return interaction.reply({ embeds: [settingsEmbed(interaction.guild.id)], components: settingsComponents(interaction.guild.id), flags: MessageFlags.Ephemeral });
         }
 
-        case "language": {
-          const choice = interaction.options.getString("sprache", true);
-          const u = userData(interaction.guild.id, interaction.user.id);
-          if (choice === "auto") {
-            u.languageManual = false;
-            const auto = languageFromDiscordLocale(interaction.locale) || null;
-            if (auto) { u.language = auto; u.languageSource = "discord-locale"; }
-            else { delete u.language; u.languageSource = "auto"; }
-            saveDB();
-            return interaction.reply({ content: `🌐 Übersetzungssprache steht jetzt auf **Automatisch**${auto ? ` (aktuell: ${auto})` : ""}.`, flags: MessageFlags.Ephemeral });
-          }
-          u.language = choice;
-          u.languageManual = true;
-          u.languageSource = "manual";
-          saveDB();
-          return interaction.reply({ content: `🌐 Übersetzungen werden für dich ab jetzt nach **${choice}** übersetzt.`, flags: MessageFlags.Ephemeral });
-        }
 
         case "setup":
           return await runSetup(interaction);
@@ -5275,8 +5519,7 @@ ${lines.join("\n\n")}`.slice(0, 1900), flags: MessageFlags.Ephemeral });
         }
 
         case "invites": {
-          const u = userData(interaction.guild.id, interaction.user.id);
-          return interaction.reply(`📨 ${interaction.user}: **${u.invites} gezählte Invites**`);
+          return interaction.reply(getInviteRewards().balancePayload(interaction.guild.id, interaction.user.id));
         }
 
         case "counting": {
@@ -5737,47 +5980,12 @@ ${lines.join("\n\n")}`.slice(0, 1900), flags: MessageFlags.Ephemeral });
       }
 
       if (id === "giveaway_enter") {
-        const g = db.giveaways[interaction.message.id];
-        if (!g || g.ended) return interaction.reply({ content: "Das Giveaway ist beendet.", flags: MessageFlags.Ephemeral });
-        if (!g.entries.includes(interaction.user.id)) g.entries.push(interaction.user.id);
-        saveDB();
-        return interaction.reply({ content: "🎉 Du nimmst teil!", flags: MessageFlags.Ephemeral });
+        return getGiveawayRules().enter(interaction, db.giveaways[interaction.message.id]);
       }
 
       if (id.startsWith("giveaway_claim:")) {
         const messageId = id.split(":")[1];
-        const g = db.giveaways[messageId];
-        if (!g || !g.ended) return interaction.reply({ content: "Dieses Giveaway ist noch nicht beendet.", flags: MessageFlags.Ephemeral });
-
-        const winners = Array.isArray(g.winners) ? g.winners : [];
-        if (!winners.includes(interaction.user.id)) {
-          return interaction.reply({ content: "❌ Nur ein gezogener Gewinner kann diesen Preis claimen.", flags: MessageFlags.Ephemeral });
-        }
-
-        if (!Array.isArray(g.claimedBy)) g.claimedBy = [];
-        if (g.claimedBy.includes(interaction.user.id)) {
-          return interaction.reply({ content: "✅ Du hast deinen Gewinn bereits geclaimt.", flags: MessageFlags.Ephemeral });
-        }
-        if (g.claimDeadlineAt && Date.now() >= g.claimDeadlineAt) {
-          await processGiveaways().catch(() => {});
-          return interaction.reply({ content: "⏰ Deine Claim-Zeit ist bereits abgelaufen. Der Reroll wurde gestartet.", flags: MessageFlags.Ephemeral });
-        }
-
-        g.claimedBy.push(interaction.user.id);
-        saveDB();
-
-        await interaction.channel.send({
-          content: `🎁 ${interaction.user} hat **${g.prize}** erfolgreich geclaimt.`,
-          allowedMentions: { users: [interaction.user.id] }
-        });
-        await ownerGroupNotify(interaction.guild, `🏆 Giveaway-Claim von ${interaction.user.tag} auf **${interaction.guild.name}**: ${g.prize}`);
-
-        const sourceMessage = await interaction.channel.messages.fetch(messageId).catch(() => null);
-        if (sourceMessage) {
-          await updateGiveawayEndedMessage(g, sourceMessage).catch(() => {});
-        }
-
-        return interaction.reply({ content: "✅ Gewinn geclaimt! Der Owner wurde benachrichtigt.", flags: MessageFlags.Ephemeral });
+        return getGiveawayRules().claim(interaction, db.giveaways[messageId]);
       }
 
       if (id.startsWith("team_")) {
@@ -5813,17 +6021,9 @@ ${lines.join("\n\n")}`.slice(0, 1900), flags: MessageFlags.Ephemeral });
       }
     }
   } catch (err) {
-    console.error(err);
-    if (interaction.isRepliable()) {
-      const payload = { content: "❌ Es ist ein Fehler aufgetreten.", flags: MessageFlags.Ephemeral };
-      if (interaction.replied || interaction.deferred) {
-        await interaction.followUp(payload).catch(() => {});
-      } else {
-        await interaction.reply(payload).catch(() => {});
-      }
-    }
+    await getInteractionReliability().report(interaction, err);
   }
-});
+}));
 
 (async () => {
   try {

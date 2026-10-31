@@ -5,6 +5,7 @@ const {PermissionsBitField}=require('discord.js');
 const {normalize}=require('./offline_intelligence');
 const F=PermissionsBitField.Flags;
 const RIGHTS={
+  'manage messages':'ManageMessages','send messages':'SendMessages','view channel':'ViewChannel','read message history':'ReadMessageHistory','manage roles':'ManageRoles','manage channels':'ManageChannels','manage server':'ManageGuild','moderate members':'ModerateMembers','ban members':'BanMembers','kick members':'KickMembers','connect':'Connect','speak':'Speak','add reactions':'AddReactions','attach files':'AttachFiles','embed links':'EmbedLinks','create invites':'CreateInstantInvite','create instant invite':'CreateInstantInvite','mention everyone':'MentionEveryone','view audit log':'ViewAuditLog','manage webhooks':'ManageWebhooks','manage nicknames':'ManageNicknames','change nickname':'ChangeNickname','move members':'MoveMembers','mute members':'MuteMembers','deafen members':'DeafenMembers','stream':'Stream','send polls':'SendPolls','pin messages':'PinMessages','manage threads':'ManageThreads','create public threads':'CreatePublicThreads','create private threads':'CreatePrivateThreads','send messages in threads':'SendMessagesInThreads','use external emojis':'UseExternalEmojis','use external stickers':'UseExternalStickers','use soundboard':'UseSoundboard','manage events':'ManageEvents','create events':'CreateEvents','use application commands':'UseApplicationCommands',
   'administrator':'Administrator','admin':'Administrator','nachrichten verwalten':'ManageMessages','nachrichten senden':'SendMessages','nachrichten lesen':'ViewChannel','kanal ansehen':'ViewChannel','kanal sehen':'ViewChannel','verlauf lesen':'ReadMessageHistory','nachrichtenverlauf lesen':'ReadMessageHistory',
   'rollen verwalten':'ManageRoles','kanale verwalten':'ManageChannels','server verwalten':'ManageGuild','mitglieder moderieren':'ModerateMembers','mitglieder bannen':'BanMembers','mitglieder kicken':'KickMembers','verbinden':'Connect','sprechen':'Speak',
   'reaktionen hinzufugen':'AddReactions','dateien anhangen':'AttachFiles','links einbetten':'EmbedLinks','einladungen erstellen':'CreateInstantInvite','alle erwahnen':'MentionEveryone','audit log ansehen':'ViewAuditLog','webhooks verwalten':'ManageWebhooks',
@@ -17,12 +18,12 @@ function splitList(value){
   const result=[];let quote=null,buffer='';
   for(let i=0;i<value.length;i++){const c=value[i];if(quote){buffer+=c;if(c===quote||quote==='„'&&c==='“')quote=null;continue;}
     if(['"',"'",'„','“'].includes(c)){quote=c;buffer+=c;continue;}
-    const join=value.slice(i).match(/^\s+und\s+/i);if(c===','||join){if(buffer.trim())result.push(unquote(buffer));buffer='';if(join)i+=join[0].length-1;}else buffer+=c;}
+    const join=value.slice(i).match(/^\s+(?:und|and)\s+/i);if(c===','||join){if(buffer.trim())result.push(unquote(buffer));buffer='';if(join)i+=join[0].length-1;}else buffer+=c;}
   if(quote)throw Error('Ein Anführungszeichen ist noch offen.');if(buffer.trim())result.push(unquote(buffer));return result;
 }
 function rights(value){
-  const n=normalize(value).replace(/^(?:die\s+)?(?:rechte?|berechtigungen?)\s*:?\s*/,'');
-  if(n==='alle rechte'||n==='alle berechtigungen'||n==='alle')return Object.keys(F);
+  const n=normalize(value).replace(/^(?:die\s+|the\s+)?(?:rechte?|berechtigungen?|permissions?|rights?)\s*:?\s*/,'');
+  if(['alle rechte','alle berechtigungen','alle','all rights','all permissions','all'].includes(n))return Object.keys(F);
   const list=splitList(n).map(v=>RIGHTS[v]||Object.keys(F).find(k=>normalize(k)===v));
   if(!list.length||list.some(v=>!v))throw Error('Ein Recht ist nicht eindeutig. Nutze deutsche Namen oder genaue Discord-Schlüssel wie ManageMessages.');
   return [...new Set(list)];
@@ -84,4 +85,4 @@ const HELP='Offline versteht /new unter anderem:\n'
   +'• Gib @Nutzer die Rolle Helfer / Nimm @Nutzer die Rolle Helfer weg\n• Gib @Nutzer die Rollen VIP und Helfer\n• Erstelle eine Rolle Helfer mit Farbe Blau\n• Gib Rolle Helfer Rechte Nachrichten verwalten\n• Entziehe Rolle Helfer Rechte ManageMessages\n• Benenne Rolle Helfer in Support um / Verschiebe Rolle Helfer auf Position 3\n• Lösche Rolle Helfer (mit Vorschau)\n'
   +'• Erstelle einen Textkanal clips / Erstelle eine Kategorie Gaming\n• Verschiebe Kanal clips in Kategorie Gaming / Benenne clips in videos um\n• Setze Thema in clips auf Neuigkeiten\n• Erlaube Rolle Helfer in clips: Nachrichten senden\n• Verbiete @Nutzer in clips: Nachrichten senden\n• Vererbe Rolle Helfer in clips: AttachFiles\n• Sperre Kanal clips / Entsperre Kanal clips\n• Setze Slowmode in clips auf 2 Minuten\n• Setze Voicelimit in Lounge auf 5 / Setze Bitrate in Lounge auf 64 kbps\n• Schalte NSFW in clips an / Lösche Kanal clips\n'
   +'• Poste in hier: Hallo / Erstelle Umfrage in hier: Spiel? | Minecraft | Roblox\n• Lösche 10 Nachrichten in hier / Pinne Nachricht 123 in hier an\n• Timeout für @Nutzer für 10 Minuten wegen Spam / Hebe Timeout von @Nutzer auf\n• Kicke @Nutzer wegen Grund / Banne @Nutzer wegen Grund / Entbanne 123456\n• Ändere Nickname von @Nutzer auf Neuer Name\n• Erstelle Einladung für hier gültig 1 Stunde mit 5 Nutzungen\n• Ändere Servernamen auf Neuer Name / Ändere Serverbeschreibung auf Beschreibung\n• Aktiviere Counting in clips / Schalte Anti-Spam an\n• Lösche meinen AI-Verlauf\n\nNutze echte Erwähnungen, eindeutige Namen oder IDs. Rechte und Rollen-Hierarchie prüft der Bot vor der Ausführung. Änderungen mit Risiko erscheinen als Vorschau. Unbekannte Teilaufträge stoppen den gesamten Plan.';
-module.exports={parse,rights,resolve,seconds,HELP};
+module.exports={parse,rights,resolve,seconds,HELP,splitNames:splitList};
