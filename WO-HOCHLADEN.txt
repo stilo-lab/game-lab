@@ -1,83 +1,84 @@
-PIXEL KI-UPDATE 1.17.0
+PIXEL – ALLE UPDATES AB 1.18 BIS EINSCHLIESSLICH 1.32
 
-Für deinen vorhandenen Pixel-Bot aus dieser Unterhaltung (1.10.1 oder neuer).
-Nur neue/geänderte Update-Dateien; die bisherigen Fixes einschließlich VC-Musik
-sind enthalten. Die ZIP ist kein vollständiges neues Projekt.
+Dieses Paket beginnt bei dem im Screenshot gezeigten Update 1.18.
+Update 1.18 selbst UND alle späteren Änderungen bis 1.32 sind enthalten.
+Du musst die einzelnen Zwischenupdates nicht installieren.
+
+VORAUSSETZUNG
+Dein bestehendes Pixel-Projekt mit Stand 1.17 oder bereits installiertem 1.18.
+Das ist ein gezieltes Update-Paket, kein kompletter Bot für einen leeren Ordner.
+Ältere unveränderte Botdateien, Assets und scripts/setup-vc-music.js behalten.
 
 INSTALLATION
-1. Den vorhandenen Botordner sichern.
-2. Die 20 Dateien aus src in den VORHANDENEN src-Ordner kopieren.
-   Gleichnamige ersetzen, neue hinzufügen. src und alte Dateien behalten!
-   Besonders wichtig: src/assistant_context.js und src/offline_reasoning.js.
-3. package.json und package-lock.json im Hauptverzeichnis ersetzen.
-4. scripts/setup-vc-music.js im Hauptverzeichnis unter scripts ablegen.
-   Gibt es scripts noch nicht, diesen Ordner anlegen.
-5. GitHub-Commit speichern und Railway neu deployen lassen.
-   Build: npm ci oder npm install. Start: npm start.
-   Lokal: npm install, danach npm start. Node.js >=22.12.0.
-Assets, Datenbank, bisherige Variablen und Spotify-Anmeldung behalten.
-Keine neuen npm-Pakete und keine zusätzlichen KI-Schlüssel erforderlich.
+1. Deinen Botordner und alle aktuellen Laufzeitdaten sichern: besonders db.json
+   und server-backups einschließlich Snapshot- und Versand-/Restore-Journalen.
+2. Alle Dateien aus dem ZIP-Ordner src in deinen VORHANDENEN src-Ordner kopieren.
+   Gleichnamige ersetzen, neue hinzufügen. Nicht nach src/src kopieren.
+3. package.json und package-lock.json im Hauptordner ersetzen.
+4. Alle anderen vorhandenen Dateien, Assets, Skripte und Daten behalten.
+5. Committen und Railway neu deployen. npm ci bzw. npm install, dann npm start.
+   Node.js >=22.12.0. Keine neuen Paketabhängigkeiten gegenüber Stand 1.17.
+6. Nach dem Start /diagnose und /help prüfen. Slash-Registrierung abwarten.
 
-VERBESSERTE KI
-• /ai und Support nutzen dieselbe Erkennung für kurze Folgefragen, Korrekturen,
-  gescheiterte Schritte und Themenwechsel. „Ich habe den Link getestet“ wird
-  als Versuch zum bisherigen Problem verstanden.
-• „Nein, ich meine …“ kann den Gesprächsfokus korrigieren. Bei einem neuen Thema
-  werden unpassende frühere Anweisungen und Vorschläge nicht übernommen.
-• Die Wissenssuche findet passende /learn-Einträge auch mit unterstützten
-  Synonymen und einzelnen Tippfehlern, z. B. „Veranstaltung“ oder „Evnet“.
-• Bei mehreren unterschiedlichen Event-Zeiten wird nachgefragt.
-• YouTube-Musik im VC, YouTube-Upload-Meldungen und Spotify werden unterschieden.
-• Bei verbundenem Gemini-Modell erhält die Antwort zusätzlich den präziseren
-  Gesprächsfokus und lokal berechnete Ergebnisse als überprüfbare Rechenhilfe.
+Die ZIP enthält nur neue/geänderte Laufzeitdateien und diese Anleitung.
+Keine Tokens, .env, Datenbank, persönlichen Backups, Assets, Tests oder node_modules.
+Deine Railway-Variablen bleiben bestehen. Kein Server-Reset nötig.
 
-NEUE LOKALE RECHENHILFEN – AUCH OHNE GEMINI
-Diese Beispiele direkt an /ai schicken:
-  Löse 2x + 3 = 11
-  2(x + 3) = 18
-  3 Tickets kosten 12 Euro. Was kosten 5 Tickets?
-  Durchschnitt von 1,5; 2,5; 5
-  Start 23:30, Dauer 2 Stunden
-  15 % von 240
-Danach z. B.:
-  und das mal 2
-  davon 25 Prozent
-  nein, ich meine 15 % von 200
-Lineare Gleichungen mit x werden mit rationaler Arithmetik gelöst und durch
-Einsetzen geprüft. Nichtlineare Gleichungen und unklare Angaben werden lokal
-nicht geraten. Bei Folge-Rechnungen wird aus deinen Eingaben neu gerechnet;
-falsche Zahlen einer früheren KI-Antwort werden nicht als Grundlage verwendet.
-Diese Rechenhilfen ändern keine Rollen, Kanäle oder Serverdaten.
+ENTHALTEN AB DEM GEZEIGTEN PUNKT
+- 1.18: Englisch als Standardsprache, /language, /befehl und /command,
+  Spielauswahl mit /game und Steal-an-Egg-Index-/Trade-Hilfe.
+- 1.19–1.22: Giveaway-Regeln mit Bonus-/Ausschlussrollen und Invite-Voraussetzungen,
+  Invite-Gutschriften, Rennen mit /rewards, getrennte aktuelle/Lifetime-Invites,
+  /resetinvites, Zeitlimit-Invite-Events sowie Aktionsfenster, Formulare und geprüfte DMs.
+- 1.23–1.25: interaktive Hilfe, stabilere Community-Abläufe, defensiver /raid,
+  Anti-Spam-/Bot-Schutz mit Vertrauenslisten, Rechten und Rollen-Hierarchie.
+- 1.26–1.29: berechtigtes privates Kanal-Lesen, bessere lokale Text-/Kontexthilfe,
+  vorhandene Server-Sticker sowie automatische Ticket-Formulare.
+- 1.30–1.31: /no-bot, sechs Stunden automatische Server-Snapshots, geprüfter Restore
+  mit /serverbackup und Rückkehr-Einladungen an frühere Mitglieder.
+- 1.32: gezieltere Offline-Prüfhilfen, zentrale sichere Fehlerhinweise mit Referenz,
+  verbesserte private Diagnose und Hilfesuche mit kleinen Tippfehlern.
 
-OFFLINE UND ONLINE
-Ohne Gemini-Schlüssel ist die lokale Hilfe automatisch aktiv.
-Optional erzwingt PIXEL_AI_MODE=offline den lokalen Modus.
-Die lokale Hilfe ist um klar begrenzte Text- und Rechenfähigkeiten erweitert;
-sie ist kein neu trainiertes allgemeines Sprachmodell. Freie Wissensfragen,
-Bildverständnis und aktuelle Recherchen brauchen passende Modell-/Suchanbindung.
-Bestehende Gemini-Einstellungen und die Qualitätsprüfung bleiben erhalten.
+Rollen-/Serveraktionen behalten die bestehenden Vorschauen und Rechteprüfungen.
+Keine unbegrenzte Spam-/Serverzerstörungsfunktion. Spielwerte ohne aktuelle Quelle
+sind keine bestätigten Live-Preise. Lokale Hilfe ist begrenzt und ersetzt kein
+allgemeines Sprachmodell. Bestehende Musik-/Mimic-Funktionen bleiben erhalten.
 
-BISHERIGE FUNKTIONEN
-/new behält die 35 vorhandenen Aktionsarten, Rechte und Bestätigungen.
-Mimic, Spiele, Anti-Spam, Setup-Rollen, Kanalzuordnungen und Daten bleiben erhalten.
-YouTube-Upload-Meldungen: /uploads, /youtube check, /youtube diagnose.
-YouTube-Ton im Sprachkanal: VC beitreten, /music play mit titel als Link/Suchbegriff.
-Steuerung: /music queue, pause, resume, skip, stop und volume.
-Spotify Connect steuert wie bisher ein Spotify-Gerät.
+BACKUPS UND DATEN AUF RAILWAY
+Dauerhafte Sicherungen brauchen ein dauerhaft gemountetes Volume, z. B. /data.
+Empfohlene Variablen:
+  BOT_DATA_DIR=/data
+  BOT_BACKUP_DIR=/data/server-backups
+Alternativ berücksichtigt Pixel RAILWAY_VOLUME_MOUNT_PATH.
+Vor einem Pfad-/Volume-Wechsel die vorhandenen Daten übernehmen; ein leeres Volume
+enthält deine alte db.json oder alte Backups nicht automatisch. Ein eingetragener
+Pfad allein beweist keine dauerhafte Speicherung. Dieses Paket richtet kein Volume
+in deinem Konto ein und enthält keine deiner Laufzeitdaten.
 
-VC-MUSIK – BEI PROBLEMEN
-/music diagnose zeigt YouTube-Abrufdienst und FFmpeg.
-Der Abrufdienst wird beim Installieren automatisch per geprüftem Download
-installiert. Fehlt er: auf dem Bot-Host npm run music:setup ausführen.
-Dafür braucht der Build Zugriff auf GitHub und dessen Release-Downloadserver.
-FFmpeg kommt über das vorhandene optionale Paket ffmpeg-static; bei Bedarf
-FFMPEG_PATH für ein selbst installiertes FFmpeg verwenden.
-Pixel braucht Kanal anzeigen, Verbinden und Sprechen und darf nicht serverweit
-stummgeschaltet sein. YouTube kann Abrufe vom Host oder einzelne Titel blockieren;
-eine erfolgreiche Live-Wiedergabe ist daher nicht garantiert.
+/backup create | list | export | auto | status
+/serverbackup backup:BACKUP_ID [mode:exact|merge]
+Nur die exakt konfigurierte Discord-OWNER_ID darf Backups verwalten/wiederherstellen.
+Vor Restore: private Vorschau, Bestätigung und frische Sicherheitskopie. Exakter
+Modus kann zusätzliche änderbare Rollen/Kanäle löschen. Geschützte Objekte und
+Discord-Grenzen bleiben; gelöschte Nachrichten, ursprüngliche IDs und fehlende
+Mitglieder lassen sich damit nicht vollständig rekonstruieren. Nach Bann Pixel
+entbannen/neu einladen und benötigte Rechte/Rollenhöhe/Freigabe wiederherstellen.
+
+/backup reinvite id:BACKUP_ID channel:#willkommen
+Private Empfängerliste und DM-Vorschau, dann Bestätigung durch den Bot-Owner.
+Bots, gebannte/anwesende Mitglieder, Abmeldungen und frühere Versuche überspringen.
+Maximal 1 Versuch/Minute, 20/Stunde, 100/24 Stunden über Wiederherstellungs-Queues.
+Je Empfänger und Server nur ein Versuch; geschlossene DMs können scheitern.
+Unklare Zustellungen werden nicht blind wiederholt. Link: 24 Stunden, einmal
+nutzbar, nicht an den Empfänger gebunden. Beitritt bleibt freiwillig.
+/backup invite-status | invite-stop | invite-resume
+Die ganze server-backups-Struktur bei Migrationen behalten. Stop und Historie
+bleiben nur erhalten, solange der Host die gespeicherten Dateien aufbewahrt.
 
 PRÜFUNG
-534 automatische Tests bestanden, Syntax und lokale Modul-Vollständigkeit geprüft.
-Darunter 126 zusätzlich generierte Gleichungsbeispiele innerhalb eines Tests.
-Die 198 vorhandenen Asset-Dateien sind unverändert und deshalb nicht mitgepackt.
-Discord, Railway und Gemini wurden für dieses Update nicht live gestartet.
+Der enthaltene Stand 1.32 hat 1.097 lokale Tests bestanden.
+Dieses Paket enthält dieselben geprüften Laufzeitbytes, ohne neue Codeänderungen.
+Es wurde als Overlay sowohl auf 1.17 als auch auf 1.18 geprüft: alle benötigten
+aktuellen Laufzeitmodule/JSON-Dateien stimmen mit dem vollständigen Stand überein.
+Unveränderte Dateien werden bewusst nicht erneut geliefert. Keine echten Discord-
+Aktionen, DMs oder Railway-Deploys wurden bei der Paket-Erstellung durchgeführt.
