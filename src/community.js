@@ -105,6 +105,9 @@ function createCommunity(ctx) {
   const { client, db, saveDB, guildData, userData, footer, cleanName, findOrCreateCategory, findOrCreateText, findOrCreateRole, generateGeminiContent, GEMINI_MODEL } = ctx;
   const isGuildApproved = typeof ctx.isGuildApproved === "function" ? ctx.isGuildApproved : (() => true);
   const isAiEnabled = typeof ctx.isAiEnabled === "function" ? ctx.isAiEnabled : (() => true);
+  const welcomeVideo = require("./welcome_video").createWelcomeVideo({
+    client, enabled: guildId => isGuildApproved(guildId) && guildData(guildId).settings?.welcomeEnabled !== false
+  });
   const backgroundTasks = require("./background_tasks").createBackgroundTasks();
   let readyPromise = null;
   let firstFeedCheck = true;
@@ -481,7 +484,7 @@ function createCommunity(ctx) {
       new ButtonBuilder().setCustomId("welcome_support").setLabel("Support").setEmoji("🎫").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId("welcome_member").setLabel("Member Hub").setEmoji("✨").setStyle(ButtonStyle.Secondary)
     );
-    await ch.send({ content: `${member}`, embeds: [embed], components: [row] }).catch(() => {});
+    await welcomeVideo.send(member, ch, { content: `${member}`, embeds: [embed], components: [row] });
   }
 
   async function onVoiceStateUpdate(oldState, newState) {
