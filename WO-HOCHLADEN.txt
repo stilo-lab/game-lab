@@ -1,84 +1,183 @@
-PIXEL – ALLE UPDATES AB 1.18 BIS EINSCHLIESSLICH 1.32
+PIXEL UPDATE 1.37.0 – STEAL AN EGG + STEAL A BRAINROT
 
-Dieses Paket beginnt bei dem im Screenshot gezeigten Update 1.18.
-Update 1.18 selbst UND alle späteren Änderungen bis 1.32 sind enthalten.
-Du musst die einzelnen Zwischenupdates nicht installieren.
-
-VORAUSSETZUNG
-Dein bestehendes Pixel-Projekt mit Stand 1.17 oder bereits installiertem 1.18.
-Das ist ein gezieltes Update-Paket, kein kompletter Bot für einen leeren Ordner.
-Ältere unveränderte Botdateien, Assets und scripts/setup-vc-music.js behalten.
+Kumulatives Update für dein VORHANDENES Pixel-Projekt. Enthält alle bisherigen
+Updates bis 1.36, Welcome-Video, Welcome-/Invite-Log-Fixes und FFmpeg-Konfiguration.
+Nur benötigte Update-Dateien; kein kompletter neuer Bot für einen leeren Ordner.
+Keine Tokens, .env, persönliche Datenbank, Backups, Tests oder node_modules enthalten.
 
 INSTALLATION
-1. Deinen Botordner und alle aktuellen Laufzeitdaten sichern: besonders db.json
-   und server-backups einschließlich Snapshot- und Versand-/Restore-Journalen.
-2. Alle Dateien aus dem ZIP-Ordner src in deinen VORHANDENEN src-Ordner kopieren.
-   Gleichnamige ersetzen, neue hinzufügen. Nicht nach src/src kopieren.
-3. package.json und package-lock.json im Hauptordner ersetzen.
-4. Alle anderen vorhandenen Dateien, Assets, Skripte und Daten behalten.
+1. Vorhandenes Projekt UND Laufzeitdaten sichern. db.json und server-backups-Dateien
+   niemals durch leere Dateien ersetzen. Eigene Originalclips und übrige Assets behalten.
+2. Alle src-Dateien aus der ZIP in den VORHANDENEN src-Ordner übernehmen.
+   Gleichnamige ersetzen, neue ergänzen. Neue benötigte Dateien:
+     src/game_reference.js
+     src/game_answers.js
+     src/game_reference.json
+   Die JSON-Datei ist die notwendige lokale Wissensdatenbank; bitte mit hochladen.
+3. package.json und package-lock.json ersetzen. Keine neuen npm-Abhängigkeiten.
+4. scripts/setup-vc-music.js, railpack.json und assets/welcome/welcome.mp4 wie bisher
+   übernehmen. Eigene Railpack-Konfiguration nur um ffmpeg ergänzen, nicht blind ersetzen.
 5. Committen und Railway neu deployen. npm ci bzw. npm install, dann npm start.
-   Node.js >=22.12.0. Keine neuen Paketabhängigkeiten gegenüber Stand 1.17.
-6. Nach dem Start /diagnose und /help prüfen. Slash-Registrierung abwarten.
+   Node.js >=22.12.0 wie bisher. Slash-Befehlsregistrierung kurz abwarten.
 
-Die ZIP enthält nur neue/geänderte Laufzeitdateien und diese Anleitung.
-Keine Tokens, .env, Datenbank, persönlichen Backups, Assets, Tests oder node_modules.
-Deine Railway-Variablen bleiben bestehen. Kein Server-Reset nötig.
+DIE RICHTIGEN SPIELE
+Steal An Egg, mit Laufband/Speed:
+  https://www.roblox.com/games/107778070777162/Steal-An-Egg
+Steal a Brainrot, kurz SAB:
+  https://www.roblox.com/games/109983668079237/Steal-a-Brainrot
+Steal a Egg von Crazay Minds ist ein anderes Spiel und wird nicht in diese Daten gemischt.
+Die bestätigte bisherige Steal-An-Egg-Auswahl bleibt erhalten. SAB ist eine zusätzliche
+Auswahl; andere bestehende Spiele und ihre gespeicherten Trade-Schätzungen bleiben.
 
-ENTHALTEN AB DEM GEZEIGTEN PUNKT
-- 1.18: Englisch als Standardsprache, /language, /befehl und /command,
-  Spielauswahl mit /game und Steal-an-Egg-Index-/Trade-Hilfe.
-- 1.19–1.22: Giveaway-Regeln mit Bonus-/Ausschlussrollen und Invite-Voraussetzungen,
-  Invite-Gutschriften, Rennen mit /rewards, getrennte aktuelle/Lifetime-Invites,
-  /resetinvites, Zeitlimit-Invite-Events sowie Aktionsfenster, Formulare und geprüfte DMs.
-- 1.23–1.25: interaktive Hilfe, stabilere Community-Abläufe, defensiver /raid,
-  Anti-Spam-/Bot-Schutz mit Vertrauenslisten, Rechten und Rollen-Hierarchie.
-- 1.26–1.29: berechtigtes privates Kanal-Lesen, bessere lokale Text-/Kontexthilfe,
-  vorhandene Server-Sticker sowie automatische Ticket-Formulare.
-- 1.30–1.31: /no-bot, sechs Stunden automatische Server-Snapshots, geprüfter Restore
-  mit /serverbackup und Rückkehr-Einladungen an frühere Mitglieder.
-- 1.32: gezieltere Offline-Prüfhilfen, zentrale sichere Fehlerhinweise mit Referenz,
-  verbesserte private Diagnose und Hilfesuche mit kleinen Tippfehlern.
+BENUTZUNG
+/game select -> Steal An Egg oder Steal a Brainrot (SAB)
+Die Auswahl gilt pro Nutzer UND Server. Ein Server-Standard kann wie bisher nur mit
+Server verwalten bzw. bestehenden Owner-Rechten geändert werden.
 
-Rollen-/Serveraktionen behalten die bestehenden Vorschauen und Rechteprüfungen.
-Keine unbegrenzte Spam-/Serverzerstörungsfunktion. Spielwerte ohne aktuelle Quelle
-sind keine bestätigten Live-Preise. Lokale Hilfe ist begrenzt und ersetzt kein
-allgemeines Sprachmodell. Bestehende Musik-/Mimic-Funktionen bleiben erhalten.
+/game index
+  Namen, Seltenheit, Biom, Ei oder Erwerbsquelle suchen. Mit page weiterblättern.
+  Optional category wählen:
+    items       Pets / Brainrots
+    mutations   Mutationen
+    traits      SAB-Traits
+    rebirths    SAB-Rebirthstufen
+    zones       Steal-An-Egg-Gebiete
+    treadmills  Steal-An-Egg-Laufbänder
+    trails      Steal-An-Egg-Trails
+  Nicht jede Kategorie existiert in beiden Spielen. Dafür werden keine Regeln aus
+  dem anderen Spiel übernommen. Beispiel: Rebirth wird nicht für Steal An Egg erfunden.
 
-BACKUPS UND DATEN AUF RAILWAY
-Dauerhafte Sicherungen brauchen ein dauerhaft gemountetes Volume, z. B. /data.
-Empfohlene Variablen:
-  BOT_DATA_DIR=/data
-  BOT_BACKUP_DIR=/data/server-backups
-Alternativ berücksichtigt Pixel RAILWAY_VOLUME_MOUNT_PATH.
-Vor einem Pfad-/Volume-Wechsel die vorhandenen Daten übernehmen; ein leeres Volume
-enthält deine alte db.json oder alte Backups nicht automatisch. Ein eingetragener
-Pfad allein beweist keine dauerhafte Speicherung. Dieses Paket richtet kein Volume
-in deinem Konto ein und enthält keine deiner Laufzeitdaten.
+/game ask question: ...
+  Neue lokale Wissensfragen OHNE Gemini oder andere AI-Modellverbindung.
+  Beispiele:
+    How much does Kitsune earn?
+    Where do I get Kitsune?
+    What does Rainbow do?
+    Tell me about Nitro mutation
+    What are the requirements for rebirth 1 in SAB?
+    What is Noobini Pizzanini in SAB?
+    Which pet has the highest base income?
+  Dieselben Arten von Fragen werden auch in /ai, normalen AI-Antworten und über die
+  vorhandenen /new-/Befehl-Wege erkannt. Ein konkreter Spielname oder SAB in einer
+  Frage kann das Spiel nur für diese Antwort festlegen, ohne deine Auswahl zu ändern.
+  Beispielsweise kann ein Steal-An-Egg-Nutzer eine einzelne Frage zu SAB stellen.
 
-/backup create | list | export | auto | status
-/serverbackup backup:BACKUP_ID [mode:exact|merge]
-Nur die exakt konfigurierte Discord-OWNER_ID darf Backups verwalten/wiederherstellen.
-Vor Restore: private Vorschau, Bestätigung und frische Sicherheitskopie. Exakter
-Modus kann zusätzliche änderbare Rollen/Kanäle löschen. Geschützte Objekte und
-Discord-Grenzen bleiben; gelöschte Nachrichten, ursprüngliche IDs und fehlende
-Mitglieder lassen sich damit nicht vollständig rekonstruieren. Nach Bann Pixel
-entbannen/neu einladen und benötigte Rechte/Rollenhöhe/Freigabe wiederherstellen.
+/game sources bzw. /game status
+  Zeigt das richtige Roblox-Spiel, Quellen, Prüfdatum und gespeicherte Abdeckung.
+/game refresh
+  Versucht einen begrenzten Abruf des öffentlichen Item-Katalogs für das gewählte Spiel.
+  Alte Daten werden bei Fehlern behalten. Der Quellenstand ist nicht dasselbe wie das
+  Abrufdatum: ein heutiger Abruf einer August-Tabelle macht sie nicht zu Oktober-Daten.
 
-/backup reinvite id:BACKUP_ID channel:#willkommen
-Private Empfängerliste und DM-Vorschau, dann Bestätigung durch den Bot-Owner.
-Bots, gebannte/anwesende Mitglieder, Abmeldungen und frühere Versuche überspringen.
-Maximal 1 Versuch/Minute, 20/Stunde, 100/24 Stunden über Wiederherstellungs-Queues.
-Je Empfänger und Server nur ein Versuch; geschlossene DMs können scheitern.
-Unklare Zustellungen werden nicht blind wiederholt. Link: 24 Stunden, einmal
-nutzbar, nicht an den Empfänger gebunden. Beitritt bleibt freiwillig.
-/backup invite-status | invite-stop | invite-resume
-Die ganze server-backups-Struktur bei Migrationen behalten. Stop und Historie
-bleiben nur erhalten, solange der Host die gespeicherten Dateien aufbewahrt.
+/game values und /game trade bleiben vorhanden.
+  values trennt datierte Server-Trade-Schätzungen von gemeldetem Basis-Einkommen und
+  Kaufkosten. trade vergleicht genaue Varianten, Mengen und gleiche Bewertungseinheiten.
+  Eine zusätzliche natürliche Form lautet:
+    I give 2x Item [Normal] for Item [Gold]
+  Oder wie bisher:
+    trade: 2x Item [Normal] => Item [Gold]
+  Fehlende, mehr als sieben Tage alte oder unterschiedlich skalierte Trade-Schätzungen
+  ergeben kein erfundenes W/F/L. /game value-set und value-remove bleiben geschützte
+  Team-Befehle zum Eintragen bzw. Entfernen datierter Server-Schätzungen.
 
-PRÜFUNG
-Der enthaltene Stand 1.32 hat 1.097 lokale Tests bestanden.
-Dieses Paket enthält dieselben geprüften Laufzeitbytes, ohne neue Codeänderungen.
-Es wurde als Overlay sowohl auf 1.17 als auch auf 1.18 geprüft: alle benötigten
-aktuellen Laufzeitmodule/JSON-Dateien stimmen mit dem vollständigen Stand überein.
-Unveränderte Dateien werden bewusst nicht erneut geliefert. Keine echten Discord-
-Aktionen, DMs oder Railway-Deploys wurden bei der Paket-Erstellung durchgeführt.
+GESPEICHERTE ABDECKUNG
+Insgesamt 779 Item-Einträge:
+  Steal An Egg: 250 Community-Pet-Einträge inklusive Varianten und historischen Einträgen.
+    11 Mutationen, 14 Gebiete, 12 Laufbänder und 11 Trails.
+  Steal a Brainrot: 529 Community-Brainrot-Einträge, auch historische/unverfügbare Einträge.
+    15 Mutationen, 107 tatsächlich auslesbare Trait-Einträge und 19 Rebirthstufen.
+    In den Quellfeldern zu Rebirth 14 und 16 sind die benötigten Brainrots nicht aufgelöst.
+    Diese Lücken werden ausdrücklich als ungeklärt angezeigt; es wird kein Name geraten.
+
+Das sind die auslesbaren Datensätze dieser Quellen, KEINE bestätigte aktuelle Anzahl
+aller Index-Plätze im Live-Spiel. Der Bot sieht weder deinen Roblox-Server noch dein
+Inventar und kennt keine unveröffentlichten Updates. Sammlung und Index-Belohnungen
+müssen im aktuellen Spiel geprüft werden.
+
+QUELLEN UND DATENSTAND
+Öffentliche Faktenfelder am 31.10.2026 abgerufen und neu strukturiert:
+Steal An Egg Item-Katalog:
+  https://stealanegg.app/wiki/egg-index/
+  Community-Tabelle geprüft am 20.10.2026; einzelne Basisraten mit eigenem Datum.
+Steal An Egg weitere Referenztabellen:
+  https://stealaneggindex.com/mutations
+  https://stealaneggindex.com/zones
+  https://stealaneggindex.com/treadmills
+  Tabellenstand/Synchronisierung 31.10.2026. Nitro, Spectral und Enchanted sind dort
+  Spielerberichte, keine durch den Entwickler bestätigten exakten Werte.
+Steal a Brainrot:
+  https://stealabrainrotgame.wiki/brainrots/
+  https://stealabrainrotgame.wiki/mutations/
+  https://stealabrainrotgame.wiki/traits/
+  https://stealabrainrotgame.wiki/rebirths/
+  Die Quelle bezeichnet den Datenabzug als 28.08.2026. Dieser ältere Archivstand wird
+  sichtbar datiert; der Abruf am 31.10.2026 bestätigt keine heutige Vollständigkeit.
+
+Dies sind unabhängige Community-Quellen, keine offiziellen Entwickler-Datenbanken.
+Die beiden Roblox-Links dienen der offiziellen Spielidentität und dem beschriebenen
+Grundablauf. Gespeichert sind strukturierte Faktenfelder wie Name, Seltenheit, Rate,
+Kosten und Anforderungen, keine kopierten ganzen Guide-Artikel.
+
+WAS DIE OFFLINE-ANTWORTEN BESSER KÖNNEN
+- Lokaler vollständiger Zugriff auf die mitgelieferten Kataloge auch bei Website-Ausfall.
+- Namenssuche mit Aliasen, Akzent-Ausgleich und begrenzter Tippfehler-Toleranz.
+- Passende Angaben zu Namen, gemeldeter Seltenheit, Biom/Ei oder Erwerbsquelle.
+- Gemeldetes Basis-Einkommen und Kaufkosten getrennt von Markt-/Trade-Schätzungen.
+- Mutationen, Traits, konkrete Rebirthstufen, Gebiete, Laufbänder und Trails abrufen.
+- Grundlagen, Index, Fortschritt, Einkommen, Verteidigung, Trades und Quellen erklären.
+- Datierte Rangliste der bekannten Basis-Einkommen; widersprüchliche Einträge ausschließen.
+- Bei unbekannten Details, Codes und künftigen Events die Unsicherheit klar ausgeben.
+
+Bei Gewicht, Größe, mehreren Mutationen und Traits wird keine ungesicherte Stapelformel
+angenommen. Ein Multiplikator für Einkommen ist kein automatischer Trade-Wert-Faktor.
+Ein Katalog-Eintrag beweist keine heutige Erhältlichkeit; Archivkennzeichnungen beachten.
+Admin Abuse / Taco Tuesday / Updates erhalten ohne aktuelle Creator-Ankündigung keine
+erfundene Startzeit. Für eine aktuelle Bewertung genaue Variante und Belege verwenden.
+
+AI-SUPPORT-TICKETS
+Textfragen zu den beiden Spielen können über dieselbe lokale Wissenssuche beantwortet
+werden, bevor eine Gemini-Verbindung aufgebaut wird. Vorherige Einwilligung, Ticket-Owner,
+Handoff-/Moderationsregeln und Server-Freischaltung bleiben wirksam. Bei Bildanhängen wird
+nicht vorgetäuscht, der lokale Textkatalog hätte das Bild verstanden; der bestehende
+Bild-/Modellweg bzw. dessen ehrliche Offline-Grenze bleibt erhalten.
+
+AKTUALISIERUNG UND SCHUTZ
+Die lokale Datei bleibt als Fallback verfügbar. Ein erfolgreicher öffentlicher Refresh
+wird in der bestehenden db.json gespeichert. Ältere Cache-Formate bleiben erhalten,
+während die neue Referenz die reicheren Felder bereitstellt. Neuere erfolgreiche Daten
+werden weiterverwendet. Nach einem Tag kann eine Anfrage im Hintergrund einen begrenzten
+neuen Katalogabruf anstoßen; die lokale Antwort wartet nicht auf diesen Abruf.
+
+Abrufe sind je Spiel zusammengefasst und zeitlich begrenzt. Nur die beiden fest hinterlegten
+HTTPS-Item-Quellen werden gelesen; keine frei eingegebenen URLs oder Weiterleitungen.
+Antwortgröße, Datensatzanzahl, Namen und Zahlen werden geprüft. Leere oder verdächtig
+stark geschrumpfte Tabellen ersetzen keinen großen gespeicherten Katalog. Ein fehlgeschla-
+gener Abruf oder Schreibfehler wird markiert und setzt keine Nutzer-/Serverdaten zurück.
+/game refresh aktualisiert die Item-Tabelle; die übrigen Referenztabellen dieses Pakets
+bleiben datierte lokale Schnappschüsse und werden nicht als live aktualisiert ausgegeben.
+
+BISHERIGE FUNKTIONEN
+Welcome mit Video, Invite-Logs, Badges, Ticket-Einmalfrage, Owner-Community-Freischaltung,
+Sprachen, Giveaways, Invite-Events/Rewards, Security, Backups, Rollen und Voice bleiben.
+Server-Sprache Englisch/Deutsch wird auch für die neuen Wissensantworten verwendet.
+Berechtigungen, Owner-Ausnahmen, Anti-Spam, Cooldowns und die bestehende Freischaltung
+über Community-Server 1562906673549541427 werden nicht aufgehoben.
+
+DATEN / HOSTING
+Die bestehende db.json auf einem dauerhaften Railway-Volume behalten, zum Beispiel
+Volume unter /data und BOT_DATA_DIR=/data. Bestehende Daten zuerst übernehmen.
+OWNER_ID und DISCORD_TOKEN bleiben deine vorhandenen Railway-Werte.
+Für VC-Musik muss FFmpeg im finalen Runtime-Image vorhanden sein: mitgelieferte
+railpack.json verwenden und neu deployen. /music diagnose prüfen.
+Für Welcome/Invite-Log bei Bedarf /setupmap set für welcome und invite-log verwenden;
+Bot-Schreibrechte, Dateien anhängen fürs Video und Server verwalten fürs Invite-Tracking
+sicherstellen. Server Members Intent muss im Developer Portal freigegeben sein.
+
+LOKALE PRÜFUNG
+1.249 Tests erfolgreich, einschließlich 32 neuer Wissens-/Spiel-Fälle. Die gespeicherten
+779 Items wurden mit den abgerufenen Tabellen auf Namen, Seltenheit, Gruppen, Einkommen
+und Kaufkosten verglichen: keine Abweichungen. UTC-Quelldaten, große Währungs-Suffixe,
+unaufgelöste Rebirth-Anforderungen, getrennte Spiele, Offline-Modus, Refresh-Ausfälle,
+Schreibfehler, Varianten, Berechtigungen, AI-Kontext und Ticket-Textweg geprüft.
+Syntax und Modul-Vollständigkeit geprüft. Originalprojekt plus Update und alle bisherigen
+Originalassets gegen ihre erhaltenen Stände geprüft. Keine Live-Discord-/Railway-Änderung.
