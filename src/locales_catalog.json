@@ -10543,5 +10543,13 @@
   {
     "en": "Use /read for a private channel review. /read question:What do you think of this application?",
     "de": "Nutze /read für eine private Kanal-Einschätzung. /read question:Was sagst du zu dieser Bewerbung?"
+  },
+  {
+    "de": "FFmpeg fehlt. Railway: RAILPACK_DEPLOY_APT_PACKAGES=\"... ffmpeg\" setzen und neu deployen, danach /music diagnose. Andere Hosts: FFmpeg installieren oder FFMPEG_PATH setzen.",
+    "en": "FFmpeg is missing. Railway: set RAILPACK_DEPLOY_APT_PACKAGES=\"... ffmpeg\" and redeploy, then run /music diagnose. Other hosts: install FFmpeg or set FFMPEG_PATH."
+  },
+  {
+    "de": "✅ **{#0}** ist jetzt fest {#1} zugeordnet und sofort aktiv.",
+    "en": "✅ **{#0}** is now assigned to {#1} and active immediately."
   }
 ]

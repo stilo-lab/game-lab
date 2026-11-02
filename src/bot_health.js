@@ -30,6 +30,27 @@ function buildReport({ guild, channel, member, data = {}, staffChannels = {}, pu
     ?t(`${valid}/${configured} usable · ${missing} missing or unsuitable · ${inaccessible} inaccessible · ${unknown} unchecked.`,`${valid}/${configured} nutzbar · ${missing} nicht gefunden oder ungeeignet · ${inaccessible} ohne Bot-Zugriff · ${unknown} ungeprüft.`)
     :t('No mappings saved. Use /setup or /serversetup.','Noch keine Zuordnungen gespeichert. Nutze /setup oder /serversetup.')});
   if(missing||inaccessible)issues.push(t('Use /setup to check mappings, or /setupmap set for a specific function.','Nutze /setup zum Prüfen der Zuordnungen oder /setupmap set für eine einzelne Funktion.'));
+  const joinLines=[];
+  for(const purpose of ['welcome','invite-log']){
+    const forced=data.setupOverrides?.[purpose],ids=forced?[forced]:runtime.bindingIds(data,purpose,staffChannels);
+    const target=ids.map(id=>channels.get(id)).find(ch=>runtime.validBinding(ch,guild,purpose));
+    const label=purpose==='welcome'?'Welcome':'Invite log';let status;
+    if(purpose==='welcome'&&data.settings?.welcomeEnabled===false)status=t('off in /settings','in /settings ausgeschaltet');
+    else if(!ids.length)status=t('not configured; use /setupmap set','nicht zugeordnet; /setupmap set nutzen');
+    else if(!target)status=channelsComplete?t('saved channel missing or unsuitable','gespeicherter Kanal fehlt oder ist ungeeignet'):t('channel not confirmed','Kanal nicht bestätigt');
+    else{
+      const rights=member&&target.permissionsFor?.(member);
+      if(!rights)status=t('channel permissions unknown','Kanalrechte ungeprüft');
+      else if(!rights.has([F.ViewChannel,F.SendMessages]))status=t('missing View Channel / Send Messages','Kanal ansehen / Nachrichten senden fehlen');
+      else if(purpose==='welcome')status=!rights.has(F.AttachFiles)?t('text available; video needs Attach Files','Text möglich; Video braucht Dateien anhängen'):!rights.has(F.EmbedLinks)?t('plain text fallback; Embed Links missing','Text-Ersatz; Links einbetten fehlt'):t('channel and message/file permissions present','Kanal- und Nachrichten-/Dateirechte vorhanden');
+      else status=member?.permissions?.has(F.ManageGuild)?t('channel permissions present; tracking not tested live','Kanalrechte vorhanden; Tracking nicht live geprüft'):t('log channel available; tracking needs Manage Server','Log-Kanal verfügbar; Tracking braucht Server verwalten');
+    }
+    joinLines.push(`**${label}:** ${status}.`);
+    if(!ids.length||!target||member&&target&&!target.permissionsFor?.(member)?.has([F.ViewChannel,F.SendMessages]))issues.unshift(t(`Check /setupmap set for ${purpose} and its channel permissions.`,`Prüfe /setupmap set für ${purpose} und die Kanalrechte.`));
+  }
+  joinLines.push(t('Join events require Server Members Intent in the Developer Portal; portal allowance is not verified here.','Beitritte benötigen Server Members Intent im Developer Portal; die Portal-Freigabe ist hier ungeprüft.'));
+  if(data.inviteProgram?.trackingGap)joinLines.push(t('Invite tracking has a gap; the next successful comparison resynchronizes without guessing credits.','Invite-Tracking hat eine Lücke; der nächste erfolgreiche Vergleich gleicht ab und rät keine Gutschriften.'));
+  fields.push({name:t('👋 Welcome and invite log','👋 Welcome und Invite-Log'),value:joinLines.join('\n')});
   const counting=countingIds.map(id=>channels.get(id)).find(ch=>runtime.validBinding(ch,guild,'counting'));
   if(!countingIds.length)fields.push({name:'🔢 Counting',value:t('Not configured. Select a counting channel with /setup.','Noch nicht eingerichtet. Mit /setup einen Counting-Kanal zuordnen.')});
   else if(!counting)fields.push({name:'🔢 Counting',value:channelsComplete?t('⚠️ Saved channel missing or unsuitable. Check /setupmap set.','⚠️ Gespeicherter Kanal nicht gefunden oder ungeeignet. Prüfe /setupmap set.'):t('⚠️ Channel could not be confirmed. Check /setup.','⚠️ Kanal konnte nicht bestätigt werden. Prüfe /setup.')});

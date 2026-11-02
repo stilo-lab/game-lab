@@ -1500,7 +1500,8 @@ async function createSupportTicket(interaction, category, priority) {
     awaitingFirstUserMessage: true,
     external: false,
     rating: null,
-    everClosed: false
+    everClosed: false,
+    supportPromptSent: false
   };
   supportStats(guild.id).opened += 1;
   staff.recordTicketOpened(guild.id);
@@ -1523,10 +1524,7 @@ async function createSupportTicket(interaction, category, priority) {
     new ButtonBuilder().setCustomId(`ticket_human:${ch.id}`).setLabel("Get Human Support").setEmoji("👤").setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`ticket_close:${ch.id}`).setLabel("Close ticket").setEmoji("🔒").setStyle(ButtonStyle.Danger)
   );
-  const aiRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`ticket_ai_yes:${ch.id}`).setLabel("Yes").setEmoji("🤖").setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId(`ticket_ai_no:${ch.id}`).setLabel("No").setStyle(ButtonStyle.Secondary)
-  );
+
 
   const ping = gd.supportRoleId ? `<@&${gd.supportRoleId}>` : "";
   const introMsg = await ch.send({
@@ -1536,16 +1534,7 @@ async function createSupportTicket(interaction, category, priority) {
     allowedMentions: gd.supportRoleId ? { roles: [gd.supportRoleId] } : { parse: [] }
   });
   await makeTicketMessageEditable(introMsg);
-  if (serverSettings(guild.id).supportAiEnabled) {
-    const aiPromptMsg = await ch.send({
-      content: `**Do you want to get help from our AI?**
-If you choose **Yes**, the AI automatically replies to every message you send here, can inspect screenshots/images, remembers the ticket context and can use Google Search when useful.
-
-*AI note: messages and images sent while AI support is enabled are sent to Google Gemini to generate the support response.*`,
-      components: [aiRow]
-    });
-    await makeTicketMessageEditable(aiPromptMsg);
-  }
+  if (serverSettings(guild.id).supportAiEnabled) await getTicketConsent().offer(ch);
 
   const intakeType = require("./ticket_intake").CATEGORY[category];
   if (intakeType) await getTicketIntake().offer(guild, ch.id, intakeType).catch(() => false);
@@ -2434,7 +2423,15 @@ async function sendEditableTicketContent(channel, payload, { replyTo = null } = 
   await makeTicketMessageEditable(sent); return sent;
 }
 
-async function ensureExternalTicketRecord(channel, preferredUserId = null, options = {}) {
+const externalTicketAdoptions = new Map();
+function ensureExternalTicketRecord(channel, preferredUserId = null, options = {}) {
+  if (!channel?.id) return Promise.resolve(null);
+  if (externalTicketAdoptions.has(channel.id)) return externalTicketAdoptions.get(channel.id);
+  const task = adoptExternalTicketRecord(channel, preferredUserId, options).finally(() => externalTicketAdoptions.delete(channel.id));
+  externalTicketAdoptions.set(channel.id, task);
+  return task;
+}
+async function adoptExternalTicketRecord(channel, preferredUserId = null, options = {}) {
   if (!channel?.guild || !externalTicketChannelIsPrivateEnough(channel)) return null;
   if (String(channel.topic || "").startsWith("ticket-owner:")) return null;
   if (botRuntime.systemChannelIds(guildData(channel.guild.id), db.staff?.[channel.guild.id]?.channels).has(channel.id)) return null;
@@ -2474,27 +2471,8 @@ async function ensureExternalTicketRecord(channel, preferredUserId = null, optio
     saveDB();
   }
 
-  if (options.announce !== false && !ticket.supportPromptSent && serverSettings(channel.guild.id).supportAiEnabled) {
-    const me = channel.guild.members.me;
-    const canSend = channel.permissionsFor?.(me)?.has(PermissionsBitField.Flags.SendMessages);
-    if (canSend) {
-      const who = ticket.ownerId ? `<@${ticket.ownerId}>` : 'Der Ticket-Ersteller';
-      await channel.send({
-        content: `🤖 **Support-AI erkannt**
-${who}: Soll meine Support-AI in diesem Ticket mithelfen?
-
-**Yes** = AI hilft hier mit.
-**No** = nur menschlicher Support.
-
-Wenn du noch nichts schreibst, wartet die AI einfach weiter.`,
-        components: [externalTicketAiRow(channel.id)],
-        allowedMentions: ticket.ownerId ? { users: [ticket.ownerId] } : { parse: [] }
-      }).then(async sent => {
-        ticket.supportPromptSent = true;
-        saveDB();
-        await makeTicketMessageEditable(sent);
-      }).catch(err => console.warn('External ticket AI prompt failed:', err?.message || err));
-    }
+  if (options.announce !== false && serverSettings(channel.guild.id).supportAiEnabled) {
+    await getTicketConsent().offer(channel);
   }
   return ticket;
 }
@@ -2732,6 +2710,8 @@ function aiPulseButtons(id) {
 }
 
 async function askGeminiSupport(message, ticket) {
+  const gameAnswer = !message.attachments?.size && await gameAssistant()?.answerQuestion?.(message.guild?.id, ticket.ownerId || message.author.id, message.content || "");
+  if (gameAnswer) return gameAnswer;
   const ai = await getGeminiClient();
   if (!ai) {
     const quality=aiQuality(),text=message.content?.trim() || "Bitte beschreibe den Inhalt des Anhangs als Text.";
@@ -2834,6 +2814,7 @@ async function runTicketAi(message) {
   if (!ticket?.aiEnabled || ticket.status === "closed") return false;
   if (!ticket.ownerId && ticket.external && !isSupportMember(message.member, message.guild.id)) ticket.ownerId = message.author.id;
   if (ticket.ownerId !== message.author.id) return false;
+  if (!await getFeatureAccess().hasFull(message.guild, message.author.id)) { await getFeatureAccess().messageNotice(message); return false; }
 
   ticket.lastActivityAt = Date.now();
   ticket.inactivityWarnedAt = null;
@@ -2975,6 +2956,7 @@ function startAiCooldown(userId) {
 }
 
 const commands = [
+  require("./feature_access").command(),
   require("./security_guard").command(),
   new SlashCommandBuilder()
     .setName("diagnose")
@@ -3396,12 +3378,16 @@ client.on("guildCreate", async guild => {
 });
 
 client.on("guildMemberAdd", async member => {
+  getFeatureAccess().invalidateMember(member);
+  if (!isGuildApproved(member.guild.id)) await getFeatureAccess().hasFull(member.guild).catch(() => false);
   if (!isGuildApproved(member.guild.id)) return;
   const defenseRemoved = await getGuildDefense().memberJoined(member).catch(() => false);
   if (defenseRemoved) return;
-  await getInviteRewards().memberJoined(member).catch(err => console.warn("Invite attribution unavailable:", err?.code || err?.name));
-  if (serverSettings(member.guild.id).welcomeEnabled) await community.onMemberAdd(member).catch(() => {});
-  if (serverSettings(member.guild.id).autoModEnabled) await staff.onMemberAdd(member).catch(() => {});
+  await Promise.allSettled([
+    getInviteRewards().memberJoined(member).catch(err => console.warn("Invite attribution unavailable:", err?.code || err?.name)),
+    serverSettings(member.guild.id).welcomeEnabled ? community.onMemberAdd(member).catch(err => console.warn("Welcome delivery failed:", err?.code || err?.name)) : Promise.resolve(),
+    serverSettings(member.guild.id).autoModEnabled ? staff.onMemberAdd(member).catch(() => {}) : Promise.resolve()
+  ]);
 });
 
 client.on("guildAuditLogEntryCreate", (entry, guild) => {
@@ -3409,10 +3395,13 @@ client.on("guildAuditLogEntryCreate", (entry, guild) => {
 });
 
 client.on("guildMemberRemove", member => {
+  getFeatureAccess().invalidateMember(member);
   if (!isGuildApproved(member.guild.id)) return;
   getInviteRewards().memberLeft(member).catch(err => console.warn("Invite departure update failed:", err?.code || err?.name));
   staff.onMemberRemove(member).catch(() => {});
 });
+client.on("guildMemberUpdate", (_old, member) => getFeatureAccess().invalidateMember(member));
+client.on("guildUpdate", (oldGuild, guild) => { if (oldGuild.ownerId !== guild.ownerId) getFeatureAccess().invalidateGuild(guild); });
 client.on("messageDelete", message => {
   if (message.guild && !isGuildApproved(message.guild.id)) return;
   // Absolute ignore: messages containing @everyone/@here are not processed,
@@ -3451,6 +3440,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
     if (reaction.message?.partial) await reaction.message.fetch();
   } catch {}
   if (hasMassMention(reaction.message)) return;
+  if (reaction.message?.guild && !await getFeatureAccess().hasFull(reaction.message.guild, user.id)) return;
   await handleTranslationReaction(reaction, user).catch(err => console.warn("Translation reaction failed:", err?.message || err));
   await community.onReactionAdd(reaction, user).catch(() => {});
 });
@@ -3537,7 +3527,11 @@ client.on("messageCreate", async message => {
       if (!ticket.firstUserMessageAt) ticket.firstUserMessageAt = Date.now();
       ticket.awaitingFirstUserMessage = false;
       saveDB();
-      intakeHandled = await getTicketIntake().onMessage(message).catch(() => false);
+      const ticketAccess = await getFeatureAccess().hasFull(message.guild, message.author.id);
+      if (ticketAccess) {
+        if (!ticket.supportPromptSent) await getTicketConsent().offer(message.channel).catch(() => null);
+        intakeHandled = await getTicketIntake().onMessage(message).catch(() => false);
+      }
       if (!intakeHandled && ticket.aiEnabled && serverSettings(message.guild.id).supportAiEnabled) {
         await enqueueTicketAi(message);
         return;
@@ -3546,7 +3540,7 @@ client.on("messageCreate", async message => {
   }
 
   if (serverSettings(message.guild.id).autoModEnabled && await staff.onMessage(message).catch(() => false)) return;
-  await community.onMessage(message).catch(() => {});
+  if (gd.community?.channels?.suggestions !== message.channel.id || await getFeatureAccess().hasFull(message.guild, message.author.id)) await community.onMessage(message).catch(() => {});
 
   const now = Date.now();
 
@@ -3579,6 +3573,7 @@ client.on("messageCreate", async message => {
 
   // Gemini AI: Antwortet, wenn der Bot direkt erwähnt wird.
   if (!intakeHandled && client.user && message.mentions.has(client.user) && serverSettings(message.guild.id).aiEnabled && gd.community?.channels?.suggestions !== message.channel.id) {
+    if (!await getFeatureAccess().hasFull(message.guild, message.author.id)) { await getFeatureAccess().messageNotice(message); return; }
     const question = message.content
       .replace(new RegExp(`<@!?${client.user.id}>`, "g"), "")
       .trim();
@@ -4163,6 +4158,30 @@ let raidSecurity;
 function getRaidSecurity() {
   if (!raidSecurity) raidSecurity = require("./raid_security").createRaidSecurity({client, guildData, saveDB, OWNER_ID, isGuildApproved, setupLocks: setupInProgress, aiConfigured: Boolean(GEMINI_API_KEY)});
   return raidSecurity;
+}
+let featureAccess;
+function getFeatureAccess() {
+  if (!featureAccess) featureAccess = require("./feature_access").createFeatureAccess({
+    client, db, saveDB, OWNER_ID,
+    isRejected: guildId => guildApprovalRecord(guildId)?.status === "rejected",
+    approveFromMembership: (guildId, ownerId) => {
+      if (isGuildApproved(guildId)) return;
+      const previous = db.guildApprovals.guilds[guildId];
+      if (previous?.status === "rejected") throw Error("Explicit rejection remains active.");
+      try { setGuildApproval(guildId, "approved", { approvedAt: Date.now(), approvedBy: ownerId, reason: "community_owner_membership", membershipAuto: true }); }
+      catch (error) { if (previous) db.guildApprovals.guilds[guildId] = previous; else delete db.guildApprovals.guilds[guildId]; throw error; }
+    }
+  });
+  return featureAccess;
+}
+let ticketConsent;
+function getTicketConsent() {
+  if (!ticketConsent) ticketConsent = require("./ticket_consent").createTicketConsent({
+    client, getTicket: channelId => db.tickets[channelId], saveDB,
+    enabled: guild => serverSettings(guild.id).supportAiEnabled && getFeatureAccess().hasFull(guild),
+    isPrivate: externalTicketChannelIsPrivateEnough, makeEditable: makeTicketMessageEditable
+  });
+  return ticketConsent;
 }
 let interactionReliability;
 function getInteractionReliability() {
@@ -5104,6 +5123,8 @@ client.on("interactionCreate", getInteractionReliability().wrap(async interactio
 
     if (interaction.guild) rememberInteractionLanguage(interaction);
 
+    if (await getFeatureAccess().handleInteraction(interaction)) return;
+
     // Owner-only server invite overview. Works before guild approval gating.
     if (interaction.isChatInputCommand() && interaction.commandName === "links") {
       if (interaction.user.id !== OWNER_ID) {
@@ -5135,9 +5156,12 @@ client.on("interactionCreate", getInteractionReliability().wrap(async interactio
       return interaction.reply({ content: result.message, flags: MessageFlags.Ephemeral });
     }
 
-    // On pending/unapproved servers the bot is intentionally inert.
+    if (!await getFeatureAccess().allowInteraction(interaction)) return;
+    const accessBasic = getFeatureAccess().basic(interaction);
+
+    // Explicit rejections remain blocked; verified community owners can unlock pending servers.
     const ownerLearnAnywhere = interaction.isChatInputCommand() && interaction.commandName === "learn" && interaction.user.id === OWNER_ID;
-    if (interaction.guild && !isGuildApproved(interaction.guild.id) && !ownerLearnAnywhere) {
+    if (interaction.guild && !isGuildApproved(interaction.guild.id) && !ownerLearnAnywhere && !accessBasic) {
       const content = "🔐 **Dieser Server wartet noch auf Freigabe durch den Bot-Owner.** Bis dahin sind alle Funktionen deaktiviert.";
       if (interaction.isRepliable()) return interaction.reply({ content, flags: MessageFlags.Ephemeral }).catch(() => {});
       return;
@@ -5285,8 +5309,10 @@ client.on("interactionCreate", getInteractionReliability().wrap(async interactio
         const channel = interaction.options.getChannel("kanal", true);
         if (![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)) return interaction.reply({ content: "❌ Bitte wähle einen Text- oder Announcement-Kanal.", flags: MessageFlags.Ephemeral });
         if (PRIVATE_SETUP_PURPOSES.has(canonical) && !channelIsPrivateForEveryone(channel)) return interaction.reply({ content: "❌ Diese Staff-/Log-Funktion darf nur einem privaten Kanal zugeordnet werden.", flags: MessageFlags.Ephemeral });
-        gd.setupOverrides[canonical] = channel.id; saveDB();
-        return interaction.reply({ content: `✅ **${canonical}** ist jetzt fest ${channel} zugeordnet. /setup verwendet diese Zuordnung vor der AI-Erkennung.`, flags: MessageFlags.Ephemeral });
+        gd.setupOverrides[canonical] = channel.id;
+        botRuntime.restoreBindings(interaction.guild, gd, db.staff?.[interaction.guild.id]?.channels || {});
+        saveDB();
+        return interaction.reply({ content: `✅ **${canonical}** ist jetzt fest ${channel} zugeordnet und sofort aktiv.`, flags: MessageFlags.Ephemeral });
       }
       switch (interaction.commandName) {
         case "security":
@@ -5868,12 +5894,10 @@ ${lines.join("\n\n")}`.slice(0, 1900), flags: MessageFlags.Ephemeral });
             saveDB();
             return interaction.reply({ content: "🎫 Die Support-AI ist auf diesem Server aktuell in `/settings` ausgeschaltet.", flags: MessageFlags.Ephemeral });
           }
-          ticket.aiEnabled = true;
-          ticket.allowAiAfterHandoff = false;
-          ticket.previousInteractionId = null;
-          ticket.lastActivityAt = Date.now();
-          ticket.awaitingFirstUserMessage = !ticket.firstUserMessageAt;
-          saveDB();
+          if (!getTicketConsent().choose(ticket, true, interaction.message.id, value => {
+            value.aiEnabled = true; value.allowAiAfterHandoff = false; value.previousInteractionId = null;
+            value.lastActivityAt = Date.now(); value.awaitingFirstUserMessage = !value.firstUserMessageAt;
+          })) return interaction.reply({ content: "This AI choice was already answered. Use the current ticket controls.", flags: MessageFlags.Ephemeral });
           await interaction.update({
             content: "🤖 **AI-Support aktiviert.** Schreib dein Problem, deine Frage oder sende einen Screenshot, sobald du bereit bist. Wenn du erstmal nichts schreibst, wartet die AI weiter und gibt den Fall nicht auf. Bei Scam-, Staff-, Ban- oder anderen Moderationsfällen wird automatisch ein menschlicher Supporter hinzugezogen.",
             components: [ticketEditMessageRow(channelId, interaction.message.id)]
@@ -5882,11 +5906,9 @@ ${lines.join("\n\n")}`.slice(0, 1900), flags: MessageFlags.Ephemeral });
           return;
         }
 
-        ticket.aiEnabled = false;
-        ticket.allowAiAfterHandoff = false;
-        ticket.previousInteractionId = null;
-        ticket.humanRequested = true;
-        saveDB();
+        if (!getTicketConsent().choose(ticket, false, interaction.message.id, value => {
+          value.aiEnabled = false; value.allowAiAfterHandoff = false; value.previousInteractionId = null; value.humanRequested = true;
+        })) return interaction.reply({ content: "AI support is already disabled for this ticket.", flags: MessageFlags.Ephemeral });
         await interaction.update({
           content: "👤 **AI support disabled.** Your ticket stays open for human support.",
           components: [ticketEditMessageRow(channelId, interaction.message.id)]
@@ -6023,7 +6045,7 @@ ${lines.join("\n\n")}`.slice(0, 1900), flags: MessageFlags.Ephemeral });
   } catch (err) {
     await getInteractionReliability().report(interaction, err);
   }
-}));
+}, { after: interaction => getFeatureAccess().afterInteraction(interaction) }));
 
 (async () => {
   try {

@@ -51,7 +51,19 @@ function createWelcomeVideo({ client, file = DEFAULT_FILE, enabled = () => true,
     const gid = member.guild.id;
     if (!allowed(gid)) return { status: 'disabled' };
     let welcome;
-    try { welcome = await text(channel, payload, key, member.id); }
+    try {
+      const me = await require('./join_delivery').within(member.guild.members.fetchMe({ force: true }));
+      if (!me || me.id !== client?.user?.id || !channel.permissionsFor?.(me)?.has([P.ViewChannel, P.SendMessages])) {
+        warn(gid, 'missing-welcome-permissions'); return { status: 'welcome-failed' };
+      }
+      let outgoing = payload;
+      if (payload.embeds?.length && !channel.permissionsFor(me).has(P.EmbedLinks)) {
+        const details = payload.embeds.map(e => { const raw = e.toJSON ? e.toJSON() : e; return [raw.title, raw.description].filter(Boolean).join('\n'); }).join('\n\n');
+        outgoing = { ...payload, content: [payload.content, details].filter(Boolean).join('\n').slice(0,1950), embeds: [] };
+        warn(gid, 'missing-embed-permission-text-fallback');
+      }
+      welcome = await require('./join_delivery').within(text(channel, outgoing, key, member.id));
+    }
     catch { warn(gid, 'welcome-send-failed'); return { status: 'welcome-failed' }; }
     if (!video) return { status: 'text-only' };
     if (!ID.test(welcome?.id)) { warn(gid, 'welcome-not-confirmed'); return { status: 'text-only' }; }

@@ -1,7 +1,7 @@
 'use strict';
 const {randomBytes}=require('node:crypto');
 const {SlashCommandBuilder,ChannelType,PermissionFlagsBits:P,MessageFlags,ActionRowBuilder,ButtonBuilder,ButtonStyle,escapeMarkdown}=require('discord.js');
-const {createSource,input}=require('./music_source');
+const {createSource,input,FFMPEG_HELP}=require('./music_source');
 const {createVoice}=require('./music_voice');
 function buildMusicCommands(){
   return [new SlashCommandBuilder().setName('music').setDescription('YouTube-Musik direkt im Discord-Sprachkanal')
@@ -83,6 +83,7 @@ function createVCMusic({client,isGuildApproved=()=>true,isMaintenance=()=>false,
     let me;try{me=await i.guild.members.fetchMe({force:true});}catch{throw fail('Die Voice-Rechte des Bots konnten nicht geprüft werden.');}
     if(!channel.permissionsFor(me)?.has([P.ViewChannel,P.Connect,P.Speak])||me.voice?.serverMute)throw fail('Pixel braucht im VC Kanal anzeigen, Verbinden und Sprechen und darf nicht serverweit stummgeschaltet sein.');
     if(shuttingDown||isMaintenance()||!isGuildApproved(i.guild.id))throw fail('Die Musik kann gerade nicht gestartet werden.');
+    source.assertReady?.();
     let s=sessions.get(i.guild.id);
     if(s&&s.channel.id!==channel.id)throw fail('Pixel spielt schon in einem anderen VC. Geh in denselben Sprachkanal oder beende die Musik dort.');
     if(!s){
@@ -143,7 +144,7 @@ function createVCMusic({client,isGuildApproved=()=>true,isMaintenance=()=>false,
       if(action==='play')content=await enqueue(i);
       else if(action==='queue')content=queueText(sessions.get(i.guild.id));
       else if(action==='diagnose'){
-        const r=source.report();content=`**VC-Musik-Diagnose**\nYouTube-Abrufdienst: ${r.youtubeTool?'bereit':'fehlt – npm run music:setup ausführen'}\nFFmpeg: ${r.ffmpeg?'bereit':'fehlt – ffmpeg-static installieren oder FFMPEG_PATH setzen'}\n${queueText(sessions.get(i.guild.id))}\nYouTube kann Abrufe vom Hosting-Anbieter blockieren. Spotify-Anmeldung ist für /music nicht erforderlich.`;
+        const r=source.report();content=`**VC-Musik-Diagnose**\nYouTube-Abrufdienst: ${r.youtubeTool?'bereit':'fehlt – npm run music:setup ausführen'}\nFFmpeg: ${r.ffmpeg?'bereit':FFMPEG_HELP}\n${queueText(sessions.get(i.guild.id))}\nYouTube kann Abrufe vom Hosting-Anbieter blockieren. Spotify-Anmeldung ist für /music nicht erforderlich.`;
       }else content=await control(i,action,parts?.[1]);
       await reply(content);
     }catch(error){try{await reply('❌ '+publicError(error));}catch{}}

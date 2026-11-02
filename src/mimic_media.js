@@ -1,10 +1,9 @@
 'use strict';
-const {spawn}=require('node:child_process');const fs=require('node:fs');
+const {spawn}=require('node:child_process');
 const {RATE,wavDecode,wavEncode}=require('./mimic_audio');
 function ffmpegPath(){
   if(process.env.MIMIC_FFMPEG_PATH)return process.env.MIMIC_FFMPEG_PATH;
-  try{const binary=require('ffmpeg-static');if(binary&&fs.existsSync(binary))return binary;}catch{}
-  return 'ffmpeg';
+  return require('./music_source').ffmpegPath()||'ffmpeg';
 }
 function decodeMedia(bytes,extension,{start=0,duration,padShort=false}={}){
   if(!['wav','mp3','ogg'].includes(extension))return Promise.reject(Error('Unterstützt: WAV, MP3 und OGG.'));

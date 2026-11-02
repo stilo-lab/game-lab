@@ -23,7 +23,7 @@ function createGuard({guildData,saveDB=()=>{},recordPunishment=async()=>{},alert
     for(const [key,row]of deleteBudgets)if(now()-row.at>10000)deleteBudgets.delete(key);
   }
   function commandGate(interaction) {
-    if(!interaction.guild?.id || !interaction.user?.id || !['ai','new','command','befehl','invite','game','giveaway','addinvites','resetinvites','rewards','inviteevent','help','diagnose','raid','botsecurity','read','stickers','ticketform','no-bot','backup','serverbackup','serversetup','setup','create','staffai','aipulse','learn','staffapplication'].includes(interaction.commandName))return true;
+    if(!interaction.guild?.id || !interaction.user?.id || !['ai','new','command','befehl','invite','game','giveaway','addinvites','resetinvites','rewards','inviteevent','help','diagnose','access','raid','botsecurity','read','stickers','ticketform','no-bot','backup','serverbackup','serversetup','setup','create','staffai','aipulse','learn','staffapplication'].includes(interaction.commandName))return true;
     // Resource limits also protect the bot when moderation is disabled.
     prune();const key=interaction.guild.id+':'+interaction.user.id,at=now(),row=commands.get(key)||{at,times:[]};
     row.times=row.times.filter(t=>at-t<20000);row.at=at;

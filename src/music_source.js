@@ -2,8 +2,9 @@
 const fs=require('node:fs'),path=require('node:path'),{spawn}=require('node:child_process'),{PassThrough}=require('node:stream');
 const RELEASE='2026.08.19',ID=/^[A-Za-z0-9_-]{11}$/,MAX_DURATION=7200;
 const error=(code,message)=>Object.assign(new Error(message),{code});
+const FFMPEG_HELP='FFmpeg fehlt. Railway: RAILPACK_DEPLOY_APT_PACKAGES="... ffmpeg" setzen und neu deployen, danach /music diagnose. Andere Hosts: FFmpeg installieren oder FFMPEG_PATH setzen.';
 function binaryPath(){return process.env.YTDLP_PATH||path.join(__dirname,'..','tools',process.platform==='win32'?'yt-dlp.exe':'yt-dlp');}
-function executable(file){try{fs.accessSync(file,fs.constants.X_OK);return true;}catch{return false;}}
+function executable(file){try{if(!fs.statSync(file).isFile())return false;fs.accessSync(file,fs.constants.X_OK);return true;}catch{return false;}}
 function ffmpegPath(){
   if(process.env.FFMPEG_PATH&&executable(process.env.FFMPEG_PATH))return process.env.FFMPEG_PATH;
   try{const file=require('ffmpeg-static');if(file&&executable(file))return file;}catch{}
@@ -44,6 +45,7 @@ function kill(child){
 function createSource({spawnImpl=spawn,ytdlp=binaryPath,ffmpeg=ffmpegPath,available=executable}={}){
   const args=()=>['--ignore-config','--no-plugin-dirs','--no-cache-dir','--no-playlist','--no-progress','--no-warnings','--no-remote-components','--js-runtimes','node:'+process.execPath,'--socket-timeout','15','--retries','1','--fragment-retries','1','--extractor-retries','1','-f','bestaudio[ext=webm]/bestaudio/best'];
   function required(){const bin=ytdlp();if(!bin||!available(bin))throw error('MUSIC_TOOL','Der YouTube-Abrufdienst fehlt. Führe npm run music:setup aus oder prüfe den Installations-Log.');return bin;}
+  function assertReady(){const bin=required(),decoder=ffmpeg();if(!decoder)throw error('MUSIC_FFMPEG',FFMPEG_HELP);return {bin,decoder};}
   async function resolve(query,signal){
     const target=input(query),bin=required();if(signal?.aborted)throw error('MUSIC_CANCELLED','Musikauftrag beendet.');
     return new Promise((resolve,reject)=>{
@@ -61,7 +63,7 @@ function createSource({spawnImpl=spawn,ytdlp=binaryPath,ffmpeg=ffmpegPath,availa
     });
   }
   function stream(track,signal){
-    if(!ID.test(track?.id||''))throw mediaError();const bin=required(),decoder=ffmpeg();if(!decoder)throw error('MUSIC_FFMPEG','FFmpeg fehlt. Prüfe /music diagnose und den ffmpeg-static-Installations-Log.');
+    if(!ID.test(track?.id||''))throw mediaError();const {bin,decoder}=assertReady();
     const pcm=new PassThrough({highWaterMark:192000});pcm.on('error',()=>{});
     let download,convert,closed=false,bytes=0,detail='';
     const close=()=>{if(closed)return;closed=true;clearTimeout(firstTimer);signal?.removeEventListener('abort',abort);download?.stdout?.unpipe();convert?.stdout?.unpipe();download?.stdout?.destroy();convert?.stdin?.destroy();convert?.stdout?.destroy();kill(download);kill(convert);pcm.destroy();};
@@ -81,6 +83,6 @@ function createSource({spawnImpl=spawn,ytdlp=binaryPath,ffmpeg=ffmpegPath,availa
     }catch{fail(mediaError());}
     return {pcm,close};
   }
-  return {resolve,stream,report:()=>({youtubeTool:available(ytdlp()),ffmpeg:Boolean(ffmpeg()),release:RELEASE})};
+  return {resolve,stream,assertReady,report:()=>({youtubeTool:available(ytdlp()),ffmpeg:Boolean(ffmpeg()),release:RELEASE})};
 }
-module.exports={RELEASE,MAX_DURATION,input,metadata,binaryPath,ffmpegPath,createSource,mediaError};
+module.exports={RELEASE,MAX_DURATION,FFMPEG_HELP,input,metadata,binaryPath,ffmpegPath,createSource,mediaError};

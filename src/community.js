@@ -209,14 +209,7 @@ function createCommunity(ctx) {
     saveDB();
   }
 
-  async function awardBadge(guildId, userId, badge, channel = null) {
-    const c = ensureUser(guildId, userId);
-    if (c.badges.includes(badge)) return false;
-    c.badges.push(badge);
-    saveDB();
-    if (channel) await channel.send(`🏅 <@${userId}> hat das Badge **${badge}** freigeschaltet!`).catch(() => {});
-    return true;
-  }
+  const awardBadge = require('./community_badges').createBadgeAwards({getRecord:ensureUser,save:saveDB});
 
   async function checkAchievements(messageOrGuild, userId, channel = null) {
     const guildId = messageOrGuild.id || messageOrGuild.guild?.id;
@@ -474,9 +467,10 @@ function createCommunity(ctx) {
   }
 
   async function onMemberAdd(member) {
-    const c = ensureGuild(member.guild.id);
-    const ch = member.guild.channels.cache.get(c.channels.welcome);
-    if (!ch) return;
+    if (!isGuildApproved(member.guild.id) || guildData(member.guild.id).settings?.welcomeEnabled === false) return;
+    const target = await require('./join_delivery').resolveChannel(member.guild, guildData(member.guild.id), 'welcome');
+    const ch = target.channel;
+    if (!ch) { console.warn('Welcome delivery unavailable:', target.status); return target; }
     const embed = footer(new EmbedBuilder().setTitle(`👋 Willkommen, ${member.user.username}!`).setDescription(`Schön, dass du da bist, ${member}.\n\n🎮 Mitspieler: \`/teamsearch\`\n🎯 Daily Quests: \`/quests\`\n🪙 Coins: \`/balance\`\n🏅 Profil: \`/profile\`\n🎭 Rollen: \`/roles\`\n🎫 Hilfe: im Support-Kanal`));
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId("welcome_roles").setLabel("Choose Roles").setEmoji("🎭").setStyle(ButtonStyle.Primary),
@@ -484,7 +478,7 @@ function createCommunity(ctx) {
       new ButtonBuilder().setCustomId("welcome_support").setLabel("Support").setEmoji("🎫").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId("welcome_member").setLabel("Member Hub").setEmoji("✨").setStyle(ButtonStyle.Secondary)
     );
-    await welcomeVideo.send(member, ch, { content: `${member}`, embeds: [embed], components: [row] });
+    return welcomeVideo.send(member, ch, { content: `${member}`, embeds: [embed], components: [row] });
   }
 
   async function onVoiceStateUpdate(oldState, newState) {

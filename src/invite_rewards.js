@@ -3,6 +3,7 @@ const {SlashCommandBuilder,PermissionFlagsBits:P,MessageFlags,EmbedBuilder,Actio
 const l10n=require('./localization');
 const races=require('./invite_races');
 const events=require('./invite_events');
+const delivery=require('./join_delivery');
 const isCompetition=r=>races.isRace(r)||events.isEvent(r);
 const {randomUUID}=require('node:crypto');
 const MAX_COUNT=1000000;
@@ -39,6 +40,7 @@ function createInviteRewards({client,db,guildData,userData,saveDB,OWNER_ID,isGui
   function state(gid){
     const gd=guildData(gid);if(!gd.inviteProgram||typeof gd.inviteProgram!=='object')gd.inviteProgram={};const p=gd.inviteProgram;
     if(!Array.isArray(p.rewards))p.rewards=[];if(!p.claims||typeof p.claims!=='object')p.claims={};if(!p.members||typeof p.members!=='object')p.members={};if(!Array.isArray(p.audit))p.audit=[];if(!Array.isArray(p.pending))p.pending=[];if(!Number.isSafeInteger(p.nextRewardId)||p.nextRewardId<1)p.nextRewardId=1;
+    if(!Array.isArray(p.joinNotices))p.joinNotices=[];
     races.migrate(p);
     if(p.countersVersion!==2){
       const known={};for(const row of Object.values(p.members))if(row?.inviterId)known[row.inviterId]=(known[row.inviterId]||0)+1;
@@ -91,23 +93,34 @@ function createInviteRewards({client,db,guildData,userData,saveDB,OWNER_ID,isGui
     const p=state(guild.id),all=[...p.rewards,...Object.values(p.rewardHistory)];
     for(const r of all){if(!isCompetition(r)||r.status!=='won'||r.winnerId!==uid)continue;await announceWinner(guild,r);if(r.roleId&&state(guild.id).claims[uid]?.[r.id]?.status!=='claimed')try{await grantRole(guild,uid,r);}catch(error){console.warn('Invite reward not granted:',guild.id,r.id,error.code||error.message);}}
   }
-  async function snapshot(guild){return serial(guild.id,async()=>{const invites=await guild.invites.fetch();commit(guild.id,p=>{guildData(guild.id).invites=Object.fromEntries([...invites].map(([code,inv])=>[code,inv.uses||0]));p.initialized=true;p.snapshotAt=now();p.pending=[];});});}
+  async function snapshot(guild){return serial(guild.id,async()=>{const invites=await delivery.within(guild.invites.fetch());commit(guild.id,p=>{guildData(guild.id).invites=Object.fromEntries([...invites].map(([code,inv])=>[code,inv.uses||0]));p.initialized=true;p.trackingGap=false;p.snapshotAt=now();p.pending=[];});});}
   async function inviteCreated(inv){if(!inv.guild||!isGuildApproved(inv.guild.id))return;return serial(inv.guild.id,()=>{commit(inv.guild.id,()=>{guildData(inv.guild.id).invites={...guildData(inv.guild.id).invites,[inv.code]:inv.uses||0};});});}
   async function memberJoined(member){const guild=member.guild,gid=guild.id;if(!isGuildApproved(gid))return;
     return serial(gid,async()=>{
       const p=state(gid),old=p.members[member.id];
       if(old?.active&&old.joinedAt===member.joinedTimestamp)return;
-      const invites=await guild.invites.fetch(),before=guildData(gid).invites||{},pending=p.pending.filter(row=>row.expiresAt>now());
-      const changes=[];if(p.initialized)for(const [code,inv]of invites){if(Object.hasOwn(before,code)){const delta=(inv.uses||0)-before[code];if(Number.isInteger(delta)&&delta>0&&delta<=100)for(let i=0;i<delta;i++)changes.push({inviterId:inv.inviterId||inv.inviter?.id,expiresAt:now()+30000});}}
+      const noticeKey=member.id+':'+(member.joinedTimestamp||0);
+      if(p.joinNotices.some(row=>row.key===noticeKey))return;
+      const reserve=s=>{s.joinNotices.push({key:noticeKey,at:now(),status:'pending'});s.joinNotices=s.joinNotices.slice(-1000);};
+      const notify=async info=>{
+        const result=await delivery.sendInviteLog({client,member,data:guildData(gid),...info});
+        commit(gid,s=>{const record=s.joinNotices.find(row=>row.key===noticeKey);if(record)Object.assign(record,{status:result.status,messageId:result.messageId||null});});
+        if(result.status!=='sent')console.warn('Invite log delivery unavailable:',result.status);
+      };
+      let invites;
+      try{invites=await delivery.within(guild.invites.fetch());}
+      catch{commit(gid,s=>{s.trackingGap=true;s.pending=[];reserve(s);});await notify({reason:'unavailable'});return;}
+      const baseline=!p.initialized||p.trackingGap,before=guildData(gid).invites||{},pending=baseline?[]:p.pending.filter(row=>row.expiresAt>now());
+      const changes=[];if(!baseline)for(const [code,inv]of invites){if(Object.hasOwn(before,code)){const delta=(inv.uses||0)-before[code];if(Number.isInteger(delta)&&delta>0&&delta<=100)for(let i=0;i<delta;i++)changes.push({inviterId:inv.inviterId||inv.inviter?.id,expiresAt:now()+30000});}}
       pending.push(...changes);const inviters=new Set(pending.map(row=>row.inviterId).filter(Boolean));
       // Multiple different invite increases cannot safely be attributed to one member.
       const ticket=inviters.size===1?pending.shift():null;if(inviters.size!==1)pending.length=0;
       const inviterId=ticket?.inviterId;
-      const valid=inviterId&&inviterId!==member.id&&!member.user.bot&&!old?.active&&(!old||old.inviterId===inviterId);
+      let valid=inviterId&&inviterId!==member.id&&!member.user.bot&&!old?.active&&(!old||old.inviterId===inviterId),reason=member.user.bot?'bot':baseline?'baseline':'unknown';
       let racer=null;
-      if(valid)try{racer=await guild.members.fetch({user:inviterId,force:true});}catch(error){if(Number(error.code)!==10007)throw error;}
+      if(valid)try{racer=await delivery.within(guild.members.fetch({user:inviterId,force:true}));}catch(error){if(Number(error.code)!==10007){valid=false;reason='unavailable';}}
       commit(gid,s=>{
-        guildData(gid).invites=Object.fromEntries([...invites].map(([code,inv])=>[code,inv.uses||0]));s.initialized=true;s.snapshotAt=now();s.pending=pending;
+        guildData(gid).invites=Object.fromEntries([...invites].map(([code,inv])=>[code,inv.uses||0]));s.initialized=true;s.trackingGap=false;s.snapshotAt=now();s.pending=pending;reserve(s);
         if(valid){
           const u=ensureTotal(gid,inviterId);u.invites=Math.min(MAX_COUNT,count(gid,inviterId)+1);
           if(!old)u.inviteTotal=Math.min(Number.MAX_SAFE_INTEGER,u.inviteTotal+1);else u.inviteTotal=Math.max(u.inviteTotal,u.invites);
@@ -117,7 +130,8 @@ function createInviteRewards({client,db,guildData,userData,saveDB,OWNER_ID,isGui
           audit(s,{type:'join',userId:inviterId,memberId:member.id,amount:1});
         }
       },valid?[inviterId]:[]);
-      if(valid){const logId=guildData(gid).channels?.inviteLog,log=logId&&guild.channels.cache.get(logId);if(log)await log.send({content:t(gid,`📨 <@${member.id}> joined using <@${inviterId}>'s invite. **${count(gid,inviterId)} invites**.`,`📨 <@${member.id}> ist über die Einladung von <@${inviterId}> beigetreten. **${count(gid,inviterId)} Invites**.`),allowedMentions:{parse:[]}}).catch(()=>{});await applyRoles(guild,inviterId);}
+      await notify(valid?{inviterId,count:count(gid,inviterId)}:{reason});
+      if(valid)await applyRoles(guild,inviterId);
     });
   }
   async function memberLeft(member){const gid=member.guild.id;if(!isGuildApproved(gid))return;return serial(gid,()=>{

@@ -74,7 +74,7 @@ function createInteractionReliability({ now = Date.now, logger = console } = {})
         flags: MessageFlags.Ephemeral, allowedMentions: { parse: [] } });
     } catch {}
   }
-  function wrap(handler) {
+  function wrap(handler, { after = null } = {}) {
     return async i => {
       if (!i || active.has(i) || seen.has(i)) return;
       if (/^\d{17,20}$/.test(String(i.id || ''))) {
@@ -84,7 +84,7 @@ function createInteractionReliability({ now = Date.now, logger = console } = {})
         while (dispatched.size > 2000) dispatched.delete(dispatched.keys().next().value);
       }
       active.add(i);
-      try { await handler(i); await unhandled(i); }
+      try { await handler(i); if (after) await after(i); await unhandled(i); }
       catch (error) { await report(i, error); }
       finally { active.delete(i); seen.add(i); }
     };
